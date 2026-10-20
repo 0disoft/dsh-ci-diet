@@ -35,7 +35,10 @@ const EXIT_OK = 0;
 const EXIT_USAGE = 1;
 const EXIT_SCHEMA = 2;
 const EXIT_INCOMPLETE = 3;
+const EXIT_INVARIANT = 4;
 const EXIT_NONCE = 5;
+const EXIT_BACKUP = 6;
+const EXIT_CANCELLED = 130;
 
 interface Options {
   readonly command: string;
@@ -612,7 +615,9 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
   }
   reportText(JSON.stringify({ state: result.state, reasons: result.reasons, change: result.change }, null, 2) + "\n", options, lines);
   if (result.state === "applied") return EXIT_OK;
-  return result.reasons.includes("NONCE_INVALID") ? EXIT_NONCE : EXIT_INCOMPLETE;
+  if (result.reasons.includes("NONCE_INVALID")) return EXIT_NONCE;
+  if (result.reasons.includes("BACKUP_UNAVAILABLE")) return EXIT_BACKUP;
+  return EXIT_INCOMPLETE;
 }
 
 async function revertCommand(options: Options, locale: Locale): Promise<number> {
@@ -627,7 +632,9 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
   if (result.state === "REVERTED") lines.push(t("cli.revert.done", { change: options.change }));
   else lines.push(t("cli.revert.refused", { state: result.state, reason: result.reason ?? "" }));
   reportText(JSON.stringify(result, null, 2) + "\n", options, lines);
-  return result.state === "REVERTED" ? EXIT_OK : EXIT_USAGE;
+  if (result.state === "REVERTED") return EXIT_OK;
+  if (result.state === "RECOVERY_REQUIRED") return EXIT_INVARIANT;
+  return EXIT_INCOMPLETE;
 }
 
 function showChanged(options: Options, locale: Locale): number {
@@ -858,6 +865,9 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 const invokedDirectly = process.argv[1] !== undefined && /(?:^|[\\/])cli(?:[\\/]index)?\.[cm]?[jt]s$/.test(process.argv[1]);
 if (invokedDirectly) {
+  process.on("SIGINT", () => {
+    process.exit(EXIT_CANCELLED);
+  });
   main(process.argv.slice(2)).then(
     (code) => {
       process.exitCode = code;

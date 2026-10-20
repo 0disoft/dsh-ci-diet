@@ -51,8 +51,9 @@ ci-diet prune
 
 Exit codes: `0` success (a partial report is still success), `1` usage or
 unexpected error, `2` contract violation, `3` incomplete evidence or refused
-write, `4` invariant failure, `5` approval refused or nonce invalid, `6`
-backup unavailable, `130` cancelled.
+write, `4` invariant failure (a revert could not restore matching bytes),
+`5` approval refused or nonce invalid, `6` backup unavailable, `130`
+cancelled with Ctrl+C.
 
 Pass `--require-complete` to turn a partial coverage report into exit `3`.
 
