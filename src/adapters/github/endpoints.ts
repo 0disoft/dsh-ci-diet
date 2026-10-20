@@ -25,7 +25,7 @@ const RULES: readonly EndpointRule[] = [
   { name: "run-jobs", pattern: new RegExp(REPO + "/actions/runs/[0-9]+/attempts/[0-9]+/jobs$"), query: ["per_page", "page", "filter"] },
   { name: "artifacts", pattern: new RegExp(REPO + "/actions/artifacts$"), query: ["per_page", "page"] },
   { name: "artifact-retention", pattern: new RegExp(REPO + "/actions/permissions/artifact-and-log-retention$"), query: [] },
-  { name: "contents", pattern: new RegExp(REPO + "/contents/[^/]+$"), query: ["ref"], requiredQuery: ["ref"] },
+  { name: "contents", pattern: new RegExp(REPO + "/contents/(?:[^/]+/)*[^/]+$"), query: ["ref"], requiredQuery: ["ref"] },
   { name: "pull", pattern: new RegExp(REPO + "/pulls/[0-9]+$"), query: [] },
   { name: "pull-files", pattern: new RegExp(REPO + "/pulls/[0-9]+/files$"), query: ["per_page", "page"] },
   { name: "compare", pattern: new RegExp(REPO + "/compare/[^/]+$"), query: ["per_page", "page"] },

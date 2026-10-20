@@ -5,6 +5,7 @@ import { contentsSegments, ownerRepoPath, renderPath } from "../../src/adapters/
 import { RequestBudget } from "../../src/adapters/github/budget.ts";
 import { GhTransport } from "../../src/adapters/github/transport.ts";
 import type { GhResult, GhRunner } from "../../src/adapters/github/transport.ts";
+import { GitHubClient } from "../../src/adapters/github/client.ts";
 
 function budget(): RequestBudget {
   return new RequestBudget({ discovery: 5, jobs: 5, definitions: 5, policyAndFiles: 5 });
@@ -37,7 +38,9 @@ describe("read-only endpoint allowlist", () => {
       "/repos/0disoft/dsh-ci-diet/actions/runs?page=2&per_page=100",
     );
     assert.equal(renderPath({ path: base + "/actions/runs/42/attempts/1/jobs", query: { filter: "all" } }), base + "/actions/runs/42/attempts/1/jobs?filter=all");
-    assert.equal(renderPath({ path: base + "/contents/.github%2Fworkflows%2Fci.yml", query: { ref: "abc123" } }), base + "/contents/.github%2Fworkflows%2Fci.yml?ref=abc123");
+    const contentsPath = base + "/contents/" + contentsSegments(".github/workflows/ci.yml");
+    assert.equal(renderPath({ path: contentsPath, query: { ref: "abc123" } }), base + "/contents/.github/workflows/ci.yml?ref=abc123");
+    assert.throws(() => renderPath({ path: base + "/contents/.github/workflows/ci.yml", query: {} }), /missing query key/);
   });
 
   it("rejects paths and query keys outside the allowlist", () => {
@@ -48,6 +51,32 @@ describe("read-only endpoint allowlist", () => {
     assert.throws(() => ownerRepoPath("..", "repo"), /invalid repository/);
     assert.throws(() => ownerRepoPath("owner", "repo name"), /invalid repository/);
     assert.throws(() => contentsSegments("../secrets"), /invalid contents path/);
+    assert.throws(() => contentsSegments("docs/../.github/workflows/ci.yml"), /invalid contents path/);
+    assert.equal(contentsSegments("docs/design notes/a.yml"), "docs/design%20notes/a.yml");
+  });
+});
+
+
+describe("github client", () => {
+  it("fetches a nested workflow file as path segments", async () => {
+    const text = "name: CI\non: push\n";
+    const { runner, calls } = runnerFrom(
+      httpResponse(200, { sha: "abc123", content: Buffer.from(text, "utf8").toString("base64"), encoding: "base64" }),
+    );
+    const transport = new GhTransport({ budget: budget(), runner, retries: 0 });
+    const client = new GitHubClient(transport, "0disoft", "dsh-ci-diet");
+    const content = await client.contents(".github/workflows/ci.yml", "abc123");
+    assert.equal(content?.text, text);
+    assert.equal(content?.sha, "abc123");
+    const requestPath = calls[0]?.at(-1) ?? "";
+    assert.match(requestPath, /\/contents\/\.github\/workflows\/ci\.yml\?ref=abc123$/);
+  });
+
+  it("rejects traversal in a contents path", async () => {
+    const { runner } = runnerFrom();
+    const transport = new GhTransport({ budget: budget(), runner, retries: 0 });
+    const client = new GitHubClient(transport, "0disoft", "dsh-ci-diet");
+    await assert.rejects(client.contents("../secrets", "main"), /invalid contents path/);
   });
 });
 
