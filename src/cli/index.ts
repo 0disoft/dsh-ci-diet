@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { RULE_IDS } from "../core/model/domain.ts";
 import type { RuleId } from "../core/model/domain.ts";
 import { runStaticScan } from "../core/scan/scan.ts";
@@ -9,19 +10,31 @@ import { discoverWorkflows } from "../core/scan/discover.ts";
 import { parseWorkflow } from "../core/workflow/parse.ts";
 import { syncRepositoryHistory } from "../core/history/sync.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
+import { composeCoverage } from "../core/analysis/coverage.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import type { Config } from "../core/contracts/schema.ts";
 import type { Coverage } from "../core/contracts/schema.ts";
+import type { HistoryBundle } from "../core/history/model.ts";
 import { GitHubError } from "../adapters/github/errors.ts";
 import { ContractViolationError } from "../core/contracts/validate.ts";
 import { ENGINE_VERSION } from "../core/version.ts";
+import { PatchStore } from "../core/patch/store.ts";
+import type { PlanMeta } from "../core/patch/store.ts";
+import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../core/patch/plan.ts";
+import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../core/patch/edits.ts";
+import type { EditResult } from "../core/patch/edits.ts";
+import type { ByteEdit } from "../core/contracts/schema.ts";
+import { createAttestation } from "../core/patch/attestation.ts";
+import { approvePlan, approvalConfirmation } from "../core/patch/approval.ts";
+import { applyPlan, revertChange, resolveWorkflowFile } from "../core/patch/apply.ts";
 import { createTranslator, resolveLocale, resolveLocaleFromEnv } from "../shared/i18n/index.ts";
-import type { Locale } from "../shared/i18n/index.ts";
+import type { Locale, MessageKey } from "../shared/i18n/index.ts";
 
 const EXIT_OK = 0;
 const EXIT_USAGE = 1;
 const EXIT_SCHEMA = 2;
 const EXIT_INCOMPLETE = 3;
+const EXIT_NONCE = 5;
 
 interface Options {
   readonly command: string;
@@ -36,9 +49,28 @@ interface Options {
   readonly repo: string | null;
   readonly network: boolean;
   readonly days: number | null;
+  readonly stateDir: string | null;
+  readonly workflow: string | null;
+  readonly rule: RuleId | null;
+  readonly job: string | null;
+  readonly step: number | null;
+  readonly minutes: number | null;
+  readonly plan: string | null;
+  readonly change: string | null;
+  readonly confirm: string | null;
+  readonly subject: string;
+  readonly claims: readonly string[];
 }
 
 class UsageError extends Error {}
+
+function parseRepoArgument(value: string): { owner: string; repository: string } {
+  const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(value);
+  if (!match || match[1] === undefined || match[2] === undefined || match[1] === "." || match[1] === "..") {
+    throw new UsageError("INVALID_VALUE:--repo");
+  }
+  return { owner: match[1], repository: match[2] };
+}
 
 function parseArgs(argv: readonly string[]): Options {
   let command = "";
@@ -53,6 +85,17 @@ function parseArgs(argv: readonly string[]): Options {
   let repo: string | null = null;
   let network = false;
   let days: number | null = null;
+  let stateDir: string | null = null;
+  let workflow: string | null = null;
+  let rule: RuleId | null = null;
+  let job: string | null = null;
+  let step: number | null = null;
+  let minutes: number | null = null;
+  let plan: string | null = null;
+  let change: string | null = null;
+  let confirm: string | null = null;
+  let subject = "local-user";
+  let claims: readonly string[] = [];
 
   const takeValue = (index: number, flag: string): string => {
     const value = argv[index + 1];
@@ -100,6 +143,47 @@ function parseArgs(argv: readonly string[]): Options {
         if (!(RULE_IDS as readonly string[]).includes(entry)) throw new UsageError("UNKNOWN_RULE:" + entry);
       }
       rules = requested as readonly RuleId[];
+    } else if (arg === "--state-dir") {
+      stateDir = resolve(takeValue(index, "--state-dir"));
+      index += 1;
+    } else if (arg === "--workflow") {
+      workflow = takeValue(index, "--workflow");
+      index += 1;
+    } else if (arg === "--rule") {
+      const value = takeValue(index, "--rule");
+      index += 1;
+      if (!(RULE_IDS as readonly string[]).includes(value)) throw new UsageError("UNKNOWN_RULE:" + value);
+      rule = value as RuleId;
+    } else if (arg === "--job") {
+      job = takeValue(index, "--job");
+      index += 1;
+    } else if (arg === "--step") {
+      const value = takeValue(index, "--step");
+      index += 1;
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) throw new UsageError("INVALID_VALUE:--step");
+      step = parsed;
+    } else if (arg === "--minutes") {
+      const value = takeValue(index, "--minutes");
+      index += 1;
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 1440) throw new UsageError("INVALID_VALUE:--minutes");
+      minutes = parsed;
+    } else if (arg === "--plan") {
+      plan = takeValue(index, "--plan");
+      index += 1;
+    } else if (arg === "--change") {
+      change = takeValue(index, "--change");
+      index += 1;
+    } else if (arg === "--confirm") {
+      confirm = takeValue(index, "--confirm");
+      index += 1;
+    } else if (arg === "--subject") {
+      subject = takeValue(index, "--subject");
+      index += 1;
+    } else if (arg === "--claims") {
+      claims = takeValue(index, "--claims").split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
+      index += 1;
     } else if (arg.startsWith("-")) {
       throw new UsageError("UNKNOWN_FLAG:" + arg);
     } else if (command === "") {
@@ -109,7 +193,41 @@ function parseArgs(argv: readonly string[]): Options {
     }
   }
 
-  return { command, cwd: resolve(cwd), json, out, rules, requireComplete, lang, help, version, repo, network, days };
+  return {
+    command,
+    cwd: resolve(cwd),
+    json,
+    out,
+    rules,
+    requireComplete,
+    lang,
+    help,
+    version,
+    repo,
+    network,
+    days,
+    stateDir,
+    workflow,
+    rule,
+    job,
+    step,
+    minutes,
+    plan,
+    change,
+    confirm,
+    subject,
+    claims,
+  };
+}
+
+function defaultStateDir(): string {
+  const local = process.env.LOCALAPPDATA;
+  if (local !== undefined && local !== "") return join(local, "CI-Diet", "profiles", "default");
+  return join(homedir(), ".local", "state", "ci-diet", "profiles", "default");
+}
+
+function stateDirOf(options: Options): string {
+  return options.stateDir ?? defaultStateDir();
 }
 
 function resolveUiLocale(lang: string | null): Locale {
@@ -192,14 +310,6 @@ function scan(options: Options, locale: Locale): number {
   return EXIT_OK;
 }
 
-function parseRepoArgument(value: string): { owner: string; repository: string } {
-  const match = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/.exec(value);
-  if (!match || match[1] === undefined || match[2] === undefined || match[1] === "." || match[1] === "..") {
-    throw new UsageError("INVALID_VALUE:--repo");
-  }
-  return { owner: match[1], repository: match[2] };
-}
-
 async function sync(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   if (!options.network) {
@@ -244,6 +354,11 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   });
   const report = built.report;
 
+  const store = PatchStore.open(stateDirOf(options));
+  store.saveBinding(upgraded.binding);
+  store.saveReport(report);
+  store.saveHistory(upgraded.binding.bindingId, history);
+
   const lines: string[] = [];
   lines.push(t("cli.sync.root", { name: history.repositoryFullName, root: upgraded.binding.workspaceRoot }));
   lines.push(
@@ -282,7 +397,284 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   return EXIT_OK;
 }
 
-/** Render a UsageError through the message catalogue, using --lang when it was already parsed. */
+function requireEdit(result: EditResult): ByteEdit {
+  if (result.edit === null) throw new UsageError("INVALID_VALUE:edit");
+  return result.edit;
+}
+
+function pickWorkflowPath(options: Options, available: readonly string[]): string {
+  if (options.workflow !== null) {
+    const path = options.workflow.replace(/\\/g, "/");
+    if (!available.includes(path)) throw new UsageError("INVALID_VALUE:--workflow");
+    return path;
+  }
+  if (available.length === 1 && available[0] !== undefined) return available[0];
+  throw new UsageError("MISSING_VALUE:--workflow");
+}
+
+async function planCommand(options: Options, locale: Locale): Promise<number> {
+  const t = createTranslator(locale);
+  const stateDir = stateDirOf(options);
+  const store = existsSync(stateDir) ? PatchStore.open(stateDir) : null;
+  const report = store === null ? null : store.latestReport();
+  if (store === null || report === null) {
+    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  const binding = store.readBinding(report.bindingId);
+  if (binding === null) {
+    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  const rule = options.rule;
+  if (rule !== "CD001" && rule !== "CD005" && rule !== "CD008") {
+    process.stderr.write(t("cli.plan.ruleRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  const discovery = discoverWorkflows(binding.workspaceRoot, {});
+  const workflowPath = pickWorkflowPath(options, discovery.workflows.map((file) => file.path));
+  const file = discovery.workflows.find((entry) => entry.path === workflowPath);
+  if (file === undefined) {
+    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  if (file.text.length > 512 * 1024) {
+    process.stderr.write(t("cli.plan.workflowTooLarge") + "\n");
+    return EXIT_USAGE;
+  }
+  const workflow = parseWorkflow(file.path, file.text);
+  if (workflow.parseError !== null || workflow.unsupported.length > 0) {
+    process.stderr.write(t("cli.plan.unsupported") + "\n");
+    return EXIT_USAGE;
+  }
+
+  const coverage = composeCoverage(report.coverage, rule, {
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: rule !== "CD005",
+  });
+  if (!coverage.writeAllowed) {
+    process.stderr.write(t("cli.plan.writeBlocked", { rule, level: coverage.level }) + "\n");
+    for (const reason of coverage.reasons) process.stderr.write("  - " + reason + "\n");
+    return EXIT_INCOMPLETE;
+  }
+
+  let edits: ByteEdit[] = [];
+  let scope: "workflow" | "job" | "step" = "workflow";
+  let jobKey: string | null = null;
+  let stepKey: string | null = null;
+  let expected: { group?: string; minutes?: number; days?: number } = {};
+  if (rule === "CD001") {
+    if (workflow.concurrency !== null) {
+      process.stderr.write(t("cli.plan.existingConcurrency") + "\n");
+      return EXIT_USAGE;
+    }
+    edits = [requireEdit(planConcurrencyEdit(file.text, workflow, binding.repositoryId))];
+    const group = edits[0]?.replacementUtf8.split("group: ")[1]?.trim() ?? "";
+    expected = { group };
+  } else if (rule === "CD005") {
+    const job = workflow.jobs.find((entry) => entry.key === options.job);
+    if (job === undefined || options.minutes === null) {
+      process.stderr.write(t("cli.plan.jobRequired") + "\n");
+      return EXIT_USAGE;
+    }
+    edits = [requireEdit(planTimeoutEdit(file.text, workflow, job, options.minutes))];
+    scope = "job";
+    jobKey = job.key;
+    expected = { minutes: options.minutes };
+  } else {
+    const job = workflow.jobs.find((entry) => entry.key === options.job);
+    const step = job?.steps[options.step ?? -1];
+    if (job === undefined || step === undefined || options.step === null) {
+      process.stderr.write(t("cli.plan.stepRequired") + "\n");
+      return EXIT_USAGE;
+    }
+    const days = 7;
+    edits = [requireEdit(planRetentionEdit(file.text, job, step, days))];
+    scope = "step";
+    jobKey = job.key;
+    stepKey = "steps[" + options.step + "]";
+    expected = { days };
+  }
+
+  const claims = new Set(options.claims);
+  const artifactPurpose = claims.has("artifact-purpose:release") ? "release" : claims.has("artifact-purpose:temporary") ? "temporary" : "unknown";
+  const consumerMinDays = Number((options.claims.find((entry) => entry.startsWith("consumer-min-days:")) ?? "consumer-min-days:0").split(":")[1]);
+  const now = new Date();
+  const attestation = createAttestation({
+    bindingId: binding.bindingId,
+    workflowPath: file.path,
+    workflowHash: workflow.sha256,
+    dependencyHash: dependencyHashOf([]),
+    scope,
+    jobKey,
+    stepKey,
+    claims: {
+      ciOnly: claims.has("ci-only"),
+      replaceSafe: claims.has("replace-safe"),
+      artifactPurpose,
+      consumerMinDays: Number.isSafeInteger(consumerMinDays) ? consumerMinDays : 0,
+      reviewedOpaqueNodes: claims.has("reviewed-opaque-nodes") ? ["workflow"] : [],
+    },
+    evidenceRefs: ["cli:plan:" + rule],
+    issuedBy: { channel: "human-cli", subjectId: options.subject },
+    now,
+  });
+  store.saveAttestation(attestation);
+
+  const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
+  if (historyJson === null) {
+    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  const policies = buildPolicySnapshots({
+    binding,
+    protection: historyJson.protection,
+    retention: historyJson.retention,
+    now,
+  });
+
+  const finding = report.findings.find((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
+  if (finding === undefined || finding.patchability !== "eligible") {
+    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
+    for (const blocker of finding?.blockers ?? []) process.stderr.write("  - " + blocker + "\n");
+    return EXIT_INCOMPLETE;
+  }
+
+  const built = buildPatchPlan({
+    binding,
+    workflow,
+    text: file.text,
+    edits,
+    attestations: [attestation],
+    policies,
+    blockers: [],
+    coverageWriteAllowed: coverage.writeAllowed,
+    now,
+  });
+  const plan = built.plan;
+  const meta: PlanMeta = { coverageWriteAllowed: coverage.writeAllowed, reportId: report.reportId };
+  store.savePlan(plan, meta);
+
+  const lines: string[] = [];
+  lines.push(t("cli.plan.created", { plan: plan.planId, workflow: file.path, rule }));
+  lines.push(t("cli.plan.digest", { digest: plan.planDigest }));
+  lines.push(t("cli.plan.confirm", { confirmation: approvalConfirmation(plan) }));
+  lines.push(t("cli.plan.next", { plan: plan.planId }));
+  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
+  reportText(JSON.stringify(plan, null, 2) + "\n", options, lines);
+  return EXIT_OK;
+}
+
+function approveCommand(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  if (options.plan === null || options.confirm === null) {
+    process.stderr.write(t("cli.approve.usage") + "\n");
+    return EXIT_USAGE;
+  }
+  const store = PatchStore.open(stateDirOf(options));
+  const result = approvePlan({
+    store,
+    planId: options.plan,
+    confirmation: options.confirm,
+    subjectId: options.subject,
+    channel: "human-cli",
+    now: new Date(),
+  });
+  const lines: string[] = [];
+  lines.push(t("cli.approve.done", { plan: result.plan.planId }));
+  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
+  reportText(JSON.stringify(result.plan, null, 2) + "\n", options, lines);
+  return EXIT_OK;
+}
+
+async function applyCommand(options: Options, locale: Locale): Promise<number> {
+  const t = createTranslator(locale);
+  if (options.plan === null) {
+    process.stderr.write(t("cli.apply.usage") + "\n");
+    return EXIT_USAGE;
+  }
+  const store = PatchStore.open(stateDirOf(options));
+  const result = await applyPlan({ store, planId: options.plan, now: new Date(), subjectId: options.subject });
+  const lines: string[] = [];
+  if (result.state === "applied") {
+    lines.push(t("cli.apply.done", { change: result.change?.changeId ?? "", workflow: result.change?.workflowPath ?? "" }));
+  } else {
+    lines.push(t("cli.apply.refused", { reasons: result.reasons.join(", ") }));
+  }
+  reportText(JSON.stringify({ state: result.state, reasons: result.reasons, change: result.change }, null, 2) + "\n", options, lines);
+  if (result.state === "applied") return EXIT_OK;
+  return result.reasons.includes("NONCE_INVALID") ? EXIT_NONCE : EXIT_INCOMPLETE;
+}
+
+async function revertCommand(options: Options, locale: Locale): Promise<number> {
+  const t = createTranslator(locale);
+  if (options.change === null) {
+    process.stderr.write(t("cli.revert.usage") + "\n");
+    return EXIT_USAGE;
+  }
+  const store = PatchStore.open(stateDirOf(options));
+  const result = await revertChange({ store, changeId: options.change, now: new Date() });
+  const lines: string[] = [];
+  if (result.state === "REVERTED") lines.push(t("cli.revert.done", { change: options.change }));
+  else lines.push(t("cli.revert.refused", { state: result.state, reason: result.reason ?? "" }));
+  reportText(JSON.stringify(result, null, 2) + "\n", options, lines);
+  return result.state === "REVERTED" ? EXIT_OK : EXIT_USAGE;
+}
+
+function showChanged(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  const store = PatchStore.open(stateDirOf(options));
+  const changes = store.listChanges();
+  const lines: string[] = [];
+  if (changes.length === 0) {
+    lines.push(t("cli.list.empty"));
+  } else {
+    for (const change of changes) {
+      lines.push(t("cli.list.item", {
+        change: change.changeId,
+        state: change.state,
+        workflow: change.workflowPath,
+        at: change.updatedAt,
+      }));
+    }
+  }
+  reportText(JSON.stringify(changes, null, 2) + "\n", options, lines);
+  return EXIT_OK;
+}
+
+function plansList(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  const store = PatchStore.open(stateDirOf(options));
+  const plans = store.listPlans().map((entry) => ({
+    planId: entry.plan.planId,
+    state: entry.plan.status.state,
+    workflowPath: entry.plan.payload.workflowPath,
+    ruleIds: entry.plan.payload.ruleIds,
+    createdAt: entry.plan.payload.createdAt,
+    expiresAt: entry.plan.payload.expiresAt,
+  }));
+  const lines: string[] = [];
+  if (plans.length === 0) lines.push(t("cli.list.empty"));
+  else {
+    for (const plan of plans) {
+      lines.push(t("cli.list.plan", { plan: plan.planId, state: plan.state, workflow: plan.workflowPath, at: plan.createdAt }));
+    }
+  }
+  reportText(JSON.stringify(plans, null, 2) + "\n", options, lines);
+  return EXIT_OK;
+}
+
+const HELP_KEYS: Record<string, MessageKey> = {
+  scan: "cli.usage",
+  sync: "cli.sync.help",
+  plan: "cli.plan.help",
+  approve: "cli.approve.help",
+  apply: "cli.apply.help",
+  revert: "cli.revert.help",
+  changes: "cli.list.help",
+  plans: "cli.list.help",
+};
+
 function usageMessage(error: UsageError, argv: readonly string[]): string {
   const [code = "", suffix = ""] = error.message.split(":", 2);
   const flagIndex = argv.indexOf("--lang");
@@ -313,6 +705,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
     process.stderr.write(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
     return EXIT_USAGE;
   }
+  if (error instanceof Error && error.message.startsWith("NONCE_INVALID")) {
+    process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");
+    return EXIT_NONCE;
+  }
   const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(t("cli.error.prefix") + " " + message + "\n");
   return EXIT_USAGE;
@@ -338,13 +734,20 @@ export async function main(argv: readonly string[]): Promise<number> {
     return EXIT_OK;
   }
   if (options.help || options.command === "") {
-    process.stdout.write(t(options.command === "sync" ? "cli.sync.help" : "cli.usage") + "\n");
+    const key = HELP_KEYS[options.command] ?? "cli.usage";
+    process.stdout.write(t(key) + "\n");
     return options.help ? EXIT_OK : EXIT_USAGE;
   }
 
   try {
     if (options.command === "scan") return scan(options, locale);
     if (options.command === "sync") return await sync(options, locale);
+    if (options.command === "plan") return await planCommand(options, locale);
+    if (options.command === "approve") return approveCommand(options, locale);
+    if (options.command === "apply") return await applyCommand(options, locale);
+    if (options.command === "revert") return await revertCommand(options, locale);
+    if (options.command === "changes") return showChanged(options, locale);
+    if (options.command === "plans") return plansList(options, locale);
   } catch (error) {
     return mapError(error, t);
   }
