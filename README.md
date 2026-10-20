@@ -29,7 +29,8 @@ safe to turn into a small YAML edit. Every finding carries an evidence level
 
 The rule set is deliberately small. A rule ships only after it passes a
 quality gate measured on real repositories, because a noisy rule is worse than
-a missing one.
+a missing one. CD003 and CD005 are implemented but disabled by default until
+that gate passes (see ADR-13).
 
 ## What it will never do
 
