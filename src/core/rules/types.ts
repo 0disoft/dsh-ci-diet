@@ -1,5 +1,6 @@
-import type { AnalysisReport, Config, Coverage, Finding, Removal, RuleResult, SecondsMetric } from "../contracts/schema.ts";
+import type { Config, Coverage, Dimension, Finding, Removal, RuleResult, SecondsMetric } from "../contracts/schema.ts";
 import type { RuleId } from "../model/domain.ts";
+import type { HistoryBundle } from "../history/model.ts";
 import type { WorkflowDefinition } from "../workflow/index.ts";
 import { findingFingerprint, findingIdFromFingerprint } from "../analysis/fingerprint.ts";
 
@@ -11,8 +12,13 @@ export interface RuleIdentity {
 }
 
 /** Evidence collected from GitHub run history; absent during a static scan. */
-export interface HistoryEvidence {
-  readonly runs: readonly unknown[];
+export type HistoryEvidence = HistoryBundle;
+
+/** Dimensions of a coverage object keyed by axis name. */
+export type CoverageAxes = Pick<Coverage, "history" | "workflowDefinitions" | "changedFiles" | "protectionRules" | "retentionPolicy">;
+
+export function axisOf(coverage: Coverage, axis: keyof CoverageAxes): Dimension {
+  return coverage[axis];
 }
 
 export interface RuleContext {
@@ -102,5 +108,4 @@ export function ruleResult(input: {
   };
 }
 
-/** Placeholder so unused imports stay honest while history rules land next. */
-export type AnalysisFindings = AnalysisReport["findings"];
+

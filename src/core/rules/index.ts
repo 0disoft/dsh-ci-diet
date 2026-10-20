@@ -1,8 +1,11 @@
 import { RULE_IDS } from "../model/domain.ts";
 import type { RuleId } from "../model/domain.ts";
+import { cd001 } from "./cd001.ts";
+import { cd002 } from "./cd002.ts";
+import { cd003 } from "./cd003.ts";
 import { cd004 } from "./cd004.ts";
+import { cd005 } from "./cd005.ts";
 import { cd008 } from "./cd008.ts";
-import { evaluateHistoryRules } from "./skipped.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
 
 /**
@@ -14,19 +17,20 @@ import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
  */
 export const DEFAULT_ENABLED_RULES: readonly RuleId[] = ["CD001", "CD002", "CD004", "CD008"];
 
-/** Static rules implemented in this module. History rules come from sync. */
-export const STATIC_RULES: readonly DetectionRule[] = [cd004, cd008];
+/** Rules whose evidence is GitHub run history rather than workflow text. */
+export const HISTORY_RULES: readonly RuleId[] = ["CD001", "CD002", "CD003", "CD005"];
+
+/** Every implemented rule, keyed by its contract id. */
+export const RULES: readonly DetectionRule[] = [cd001, cd002, cd003, cd004, cd005, cd008];
 
 export function evaluateRules(context: RuleContext, enabledRules: readonly RuleId[] = DEFAULT_ENABLED_RULES): RuleEvaluation[] {
   const enabled = new Set(enabledRules);
-  const evaluations = [];
-  if (enabled.has("CD004")) evaluations.push(cd004.evaluate(context));
-  if (enabled.has("CD008")) evaluations.push(cd008.evaluate(context));
-  for (const evaluation of evaluateHistoryRules(context)) {
-    const ruleId = evaluation.results[0]?.ruleId;
-    if (ruleId === undefined || enabled.has(ruleId)) evaluations.push(evaluation);
-  }
   const order = new Map<RuleId, number>(RULE_IDS.map((ruleId, index) => [ruleId, index]));
+  const evaluations: RuleEvaluation[] = [];
+  for (const rule of RULES) {
+    if (!enabled.has(rule.id)) continue;
+    evaluations.push(rule.evaluate(context));
+  }
   evaluations.sort((a, b) => {
     const left = order.get(a.results[0]?.ruleId as RuleId) ?? Number.MAX_SAFE_INTEGER;
     const right = order.get(b.results[0]?.ruleId as RuleId) ?? Number.MAX_SAFE_INTEGER;
@@ -35,9 +39,11 @@ export function evaluateRules(context: RuleContext, enabledRules: readonly RuleI
   return evaluations;
 }
 
-export { cd004 } from "./cd004.ts";
+export { cd001, CD001_LAGS_SECONDS } from "./cd001.ts";
+export { cd002 } from "./cd002.ts";
+export { cd003, CD003_HEAVY_SECONDS } from "./cd003.ts";
+export { cd004, MATRIX_REVIEW_MIN_COMBINATIONS } from "./cd004.ts";
+export { cd005, CD005_CANDIDATE_COHORT, CD005_MIN_COHORT } from "./cd005.ts";
 export { cd008, PROPOSED_RETENTION_DAYS } from "./cd008.ts";
-export { MATRIX_REVIEW_MIN_COMBINATIONS } from "./cd004.ts";
-export { HISTORY_RULES } from "./skipped.ts";
 export { buildFinding, ruleResult } from "./types.ts";
 export type { DetectionRule, FindingSpec, RuleContext, RuleEvaluation, RuleIdentity, RuleRemoval } from "./types.ts";
