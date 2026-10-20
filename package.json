@@ -2,6 +2,21 @@
   "name": "dsh-ci-diet",
   "version": "0.1.0",
   "description": "Find wasted GitHub Actions runner time and propose small, reviewable local patches.",
+  "keywords": [
+    "dsh-plugin",
+    "github-actions",
+    "ci",
+    "cost-optimization",
+    "workflow"
+  ],
+  "homepage": "https://github.com/0disoft/dsh-ci-diet#readme",
+  "bugs": {
+    "url": "https://github.com/0disoft/dsh-ci-diet/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0disoft/dsh-ci-diet.git"
+  },
   "type": "module",
   "license": "MIT",
   "bin": {

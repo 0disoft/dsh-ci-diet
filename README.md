@@ -2,12 +2,12 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **alpha, not published**. The contracts, specification, analysis
-engine, patch engine, CLI, DSH plugin tools, and a self-contained HTML report
-are implemented and tested. The DSH Web client screens and the npm release are
-still open.
+Status: **alpha, published on npm** as `dsh-ci-diet@0.1.0`. The contracts,
+specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
+self-contained HTML report are implemented and tested. The DSH Web client
+screens are still open.
 
-## What it will do
+## What it does
 
 CI Diet reads two things and compares them:
 
@@ -32,7 +32,7 @@ quality gate measured on real repositories, because a noisy rule is worse than
 a missing one. CD003 and CD005 are implemented but disabled by default until
 that gate passes (see ADR-13).
 
-## What it will never do
+## What it never does
 
 - No commits, pushes, pull requests, or merges.
 - No workflow runs, no cancelling running jobs, no deleting artifacts or caches.
@@ -66,8 +66,9 @@ dsh plugin --profile web add dsh-ci-diet
 ```
 
 The plugin adds one disabled loader entry; enable `networkEnabled` only if you
-want history sync. Until the first npm release, install from a packed tarball:
-`bun pm pack` then `dsh plugin --profile web add ./dsh-ci-diet-0.1.0.tgz`.
+want history sync. Installing the package globally is optional: `npx dsh-ci-diet`
+runs the same CLI, and the DSH plugin only needs the package in the profile.
+Release tags are on GitHub; the matching npm version is `0.1.0`.
 
 ## Run it
 
