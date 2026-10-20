@@ -91,11 +91,17 @@ export interface HistoryBundle {
 export function skuForLabels(labels: readonly string[]): string | null {
   const joined = labels.map((label) => label.toLowerCase()).join(" ");
   if (joined === "") return null;
+  // A self-hosted runner is not billed per GitHub-hosted minute. Pricing it as
+  // GitHub-hosted Linux would invent a cost, so the SKU stays unknown.
+  if (joined.includes("self-hosted")) return null;
   if (joined.includes("windows")) return "actions_windows";
   if (joined.includes("macos") || joined.includes("mac-os")) return "actions_macos";
   if (joined.includes("-arm") || joined.includes("arm64")) return "actions_linux_arm";
   if (joined.includes("ubuntu-slim") || joined.includes("slim")) return "actions_linux_slim";
-  return "actions_linux";
+  // Only labels that unambiguously identify a GitHub-hosted Ubuntu runner keep
+  // the standard Linux SKU; anything else is left for a human to classify.
+  if (/(^|\s)ubuntu(-[0-9][0-9.]*|-latest)?(\s|$)/.test(joined)) return "actions_linux";
+  return null;
 }
 
 /** Convert an RFC 3339 timestamp pair into a non-negative duration. */

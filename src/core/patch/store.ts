@@ -148,6 +148,20 @@ export class PatchStore {
     this.writeJson(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
   }
 
+  /** Find the binding recorded for a workspace root, regardless of how its remote was named at scan time. */
+  findBindingByRoot(workspaceRoot: string): RepositoryBinding | null {
+    const directory = this.path("bindings");
+    const wanted = process.platform === "win32" ? workspaceRoot.toLowerCase() : workspaceRoot;
+    for (const file of readdirSync(directory)) {
+      if (!file.endsWith(".json")) continue;
+      const binding = this.readJson<RepositoryBinding>(join(directory, file));
+      if (binding === null) continue;
+      const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
+      if (candidate === wanted) return binding;
+    }
+    return null;
+  }
+
   readReport(reportId: string): AnalysisReport | null {
     return this.readJson<AnalysisReport>(this.path("reports", requireId(reportId, "reportId") + ".json"));
   }
@@ -160,6 +174,23 @@ export class PatchStore {
     for (const file of files) {
       const report = this.readJson<AnalysisReport>(join(directory, file));
       if (report === null) continue;
+      if (report.generatedAt > latestAt) {
+        latestAt = report.generatedAt;
+        latest = report;
+      }
+    }
+    return latest;
+  }
+
+  /** Latest report produced for one binding, never another repository's report. */
+  latestReportForBinding(bindingId: string): AnalysisReport | null {
+    const directory = this.path("reports");
+    const files = readdirSync(directory).filter((name) => name.endsWith(".json"));
+    let latest: AnalysisReport | null = null;
+    let latestAt = "";
+    for (const file of files) {
+      const report = this.readJson<AnalysisReport>(join(directory, file));
+      if (report === null || report.bindingId !== bindingId) continue;
       if (report.generatedAt > latestAt) {
         latestAt = report.generatedAt;
         latest = report;
@@ -200,7 +231,7 @@ export class PatchStore {
     const directory = this.path("plans");
     const plans: StoredPlan[] = [];
     for (const file of readdirSync(directory)) {
-      if (!file.endsWith(".json") || file.endsWith(".meta.json")) continue;
+      if (!file.endsWith(".json") || file.endsWith(".meta.json") || file.endsWith(".nonce.json")) continue;
       const stored = this.readPlan(file.slice(0, -".json".length));
       if (stored !== null) plans.push(stored);
     }

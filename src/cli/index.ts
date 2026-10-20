@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { RULE_IDS } from "../core/model/domain.ts";
 import type { RuleId } from "../core/model/domain.ts";
@@ -10,7 +10,8 @@ import { parseWorkflow } from "../core/workflow/parse.ts";
 import { syncRepositoryHistory } from "../core/history/sync.ts";
 import { defaultStateDir } from "../core/state/paths.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
-import { composeCoverage } from "../core/analysis/coverage.ts";
+import { PROPOSED_RETENTION_DAYS } from "../core/rules/cd008.ts";
+import { claimsFromTokens, evaluatePatchEligibility } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import type { Config } from "../core/contracts/schema.ts";
 import type { Coverage } from "../core/contracts/schema.ts";
@@ -26,7 +27,7 @@ import type { EditResult } from "../core/patch/edits.ts";
 import type { ByteEdit } from "../core/contracts/schema.ts";
 import { createAttestation } from "../core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../core/patch/approval.ts";
-import { applyPlan, revertChange, resolveWorkflowFile } from "../core/patch/apply.ts";
+import { applyPlan, revertChange } from "../core/patch/apply.ts";
 import { renderHtmlReport } from "../core/report/html.ts";
 import { createTranslator, resolveLocale, resolveLocaleFromEnv } from "../shared/i18n/index.ts";
 import type { Locale, MessageKey } from "../shared/i18n/index.ts";
@@ -448,16 +449,20 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
   const store = existsSync(stateDir) ? PatchStore.open(stateDir) : null;
-  const report = store === null ? null : store.latestReport();
-  if (store === null || report === null) {
+  if (store === null) {
     process.stderr.write(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
-  const binding = store.readBinding(report.bindingId);
-  if (binding === null) {
+  const now = new Date();
+  const root = realpathSync(options.cwd);
+  const existing = store.findBindingByRoot(root);
+  const current = existing ?? createLocalBinding(root, now.toISOString()).binding;
+  const report = store.latestReportForBinding(current.bindingId);
+  if (report === null) {
     process.stderr.write(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
+  const binding = store.readBinding(report.bindingId) ?? current;
   const rule = options.rule;
   if (rule !== "CD001" && rule !== "CD005" && rule !== "CD008") {
     process.stderr.write(t("cli.plan.ruleRequired") + "\n");
@@ -478,16 +483,6 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   if (workflow.parseError !== null || workflow.unsupported.length > 0) {
     process.stderr.write(t("cli.plan.unsupported") + "\n");
     return EXIT_USAGE;
-  }
-
-  const coverage = composeCoverage(report.coverage, rule, {
-    currentDefinitionParsed: true,
-    editedJobEvidenceComplete: rule !== "CD005",
-  });
-  if (!coverage.writeAllowed) {
-    process.stderr.write(t("cli.plan.writeBlocked", { rule, level: coverage.level }) + "\n");
-    for (const reason of coverage.reasons) process.stderr.write("  - " + reason + "\n");
-    return EXIT_INCOMPLETE;
   }
 
   let edits: ByteEdit[] = [];
@@ -520,7 +515,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
       process.stderr.write(t("cli.plan.stepRequired") + "\n");
       return EXIT_USAGE;
     }
-    const days = 7;
+    const days = PROPOSED_RETENTION_DAYS;
     edits = [requireEdit(planRetentionEdit(file.text, job, step, days))];
     scope = "step";
     jobKey = job.key;
@@ -528,10 +523,6 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     expected = { days };
   }
 
-  const claims = new Set(options.claims);
-  const artifactPurpose = claims.has("artifact-purpose:release") ? "release" : claims.has("artifact-purpose:temporary") ? "temporary" : "unknown";
-  const consumerMinDays = Number((options.claims.find((entry) => entry.startsWith("consumer-min-days:")) ?? "consumer-min-days:0").split(":")[1]);
-  const now = new Date();
   const attestation = createAttestation({
     bindingId: binding.bindingId,
     workflowPath: file.path,
@@ -540,37 +531,52 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     scope,
     jobKey,
     stepKey,
-    claims: {
-      ciOnly: claims.has("ci-only"),
-      replaceSafe: claims.has("replace-safe"),
-      artifactPurpose,
-      consumerMinDays: Number.isSafeInteger(consumerMinDays) ? consumerMinDays : 0,
-      reviewedOpaqueNodes: claims.has("reviewed-opaque-nodes") ? ["workflow"] : [],
-    },
+    claims: claimsFromTokens(options.claims),
     evidenceRefs: ["cli:plan:" + rule],
     issuedBy: { channel: "human-cli", subjectId: options.subject },
     now,
   });
-  store.saveAttestation(attestation);
 
   const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
   if (historyJson === null) {
     process.stderr.write(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
+
+  const candidates = report.findings.filter((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
+  if (candidates.length === 0) {
+    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
+    process.stderr.write("  - FINDING_NOT_FOUND\n");
+    return EXIT_INCOMPLETE;
+  }
+  const evaluated = candidates.map((finding) => ({
+    finding,
+    eligibility: evaluatePatchEligibility({
+      rule,
+      finding,
+      coverage: report.coverage,
+      claims: attestation.claims,
+      history: historyJson,
+      currentDefinitionParsed: true,
+      editedJobEvidenceComplete: true,
+      now,
+    }),
+  }));
+  const chosen = evaluated.find((entry) => entry.eligibility.allowed) ?? evaluated[0];
+  if (chosen === undefined) return EXIT_INCOMPLETE;
+  if (!chosen.eligibility.allowed) {
+    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
+    for (const reason of chosen.eligibility.reasons) process.stderr.write("  - " + reason + "\n");
+    return EXIT_INCOMPLETE;
+  }
+  store.saveAttestation(attestation);
+
   const policies = buildPolicySnapshots({
     binding,
     protection: historyJson.protection,
     retention: historyJson.retention,
     now,
   });
-
-  const finding = report.findings.find((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
-  if (finding === undefined || finding.patchability === "blocked") {
-    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
-    for (const blocker of finding?.blockers ?? []) process.stderr.write("  - " + blocker + "\n");
-    return EXIT_INCOMPLETE;
-  }
 
   const built = buildPatchPlan({
     binding,
@@ -579,16 +585,18 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     edits,
     attestations: [attestation],
     policies,
-    blockers: [],
-    coverageWriteAllowed: coverage.writeAllowed,
+    blockers: chosen.eligibility.remainingBlockers,
+    coverageWriteAllowed: true,
     now,
+    expected,
   });
   const plan = built.plan;
-  const meta: PlanMeta = { coverageWriteAllowed: coverage.writeAllowed, reportId: report.reportId };
+  const meta: PlanMeta = { coverageWriteAllowed: true, reportId: report.reportId };
   store.savePlan(plan, meta);
 
   const lines: string[] = [];
   lines.push(t("cli.plan.created", { plan: plan.planId, workflow: file.path, rule }));
+  lines.push(t("cli.plan.target", { path: join(binding.workspaceRoot, file.path) }));
   lines.push(t("cli.plan.digest", { digest: plan.planDigest }));
   lines.push(t("cli.plan.confirm", { confirmation: approvalConfirmation(plan) }));
   lines.push(t("cli.plan.next", { plan: plan.planId }));

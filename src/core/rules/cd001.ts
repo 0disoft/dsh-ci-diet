@@ -6,20 +6,13 @@ import { knownSeconds } from "../savings/metrics.ts";
 import type { RuleRemoval } from "./types.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
-import { analyzableRuns, historyInputHash, jobLooksRisky, jobSeconds, millis } from "./history-utils.ts";
+import { analyzableRuns, historyInputHash, jobLooksRisky, millis } from "./history-utils.ts";
 import { RULE_VERSION } from "../version.ts";
 
 const RULE_ID = "CD001";
 
 /** Cancellation-lag scenarios used to present CD001 as a range. */
 export const CD001_LAGS_SECONDS = [0, 30] as const;
-
-interface SupersededRun {
-  readonly run: HistoryRun;
-  readonly replacement: HistoryRun;
-  readonly definition: WorkflowDefinition;
-  readonly pullRequest: number;
-}
 
 interface RemovalAt {
   readonly jobId: string;

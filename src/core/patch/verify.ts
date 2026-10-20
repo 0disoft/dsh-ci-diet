@@ -1,13 +1,19 @@
 import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
-import type { Attestation, PatchPlan } from "../contracts/schema.ts";
+import type { Attestation, PatchPlan, PolicySnapshot } from "../contracts/schema.ts";
+import { attestationSatisfiesRule, isPatchRule } from "./eligibility.ts";
+import type { PatchRule } from "./eligibility.ts";
 
 export type ApplyReasonCode =
+  | "PLAN_DIGEST_MISMATCH"
+  | "SYNTHETIC_PLAN"
   | "PLAN_EXPIRED"
   | "ATTESTATION_MISSING"
   | "ATTESTATION_EXPIRED"
   | "ATTESTATION_REVOKED"
   | "ATTESTATION_HASH_MISMATCH"
   | "ATTESTATION_SCOPE_INSUFFICIENT"
+  | "ATTESTATION_CLAIMS_INSUFFICIENT"
+  | "EDIT_OUT_OF_SCOPE"
   | "DEPENDENCY_HASH_MISMATCH"
   | "BLOCKERS_PRESENT"
   | "COVERAGE_INSUFFICIENT_FOR_WRITE"
@@ -26,6 +32,22 @@ export interface ApplyCheckInput {
   readonly coverageWriteAllowed: boolean;
   readonly nonceValid: boolean;
   readonly backupAvailable: boolean;
+  /** Attestations re-read from the store, so a revocation after approval is visible. */
+  readonly attestations?: readonly Attestation[];
+  /** Policy snapshots rebuilt from the current history cache. */
+  readonly currentPolicies?: readonly PolicySnapshot[];
+}
+
+type PolicyKind = PolicySnapshot["kind"];
+
+/** Policy kinds a plan must carry for the rules it edits. */
+export function requiredPolicyKinds(ruleIds: readonly string[]): PolicyKind[] {
+  const kinds = new Set<PolicyKind>();
+  for (const ruleId of ruleIds) {
+    if (ruleId === "CD001") kinds.add("protection");
+    if (ruleId === "CD008") kinds.add("retention");
+  }
+  return [...kinds].sort();
 }
 
 function isoMillis(value: string): number {
@@ -53,43 +75,62 @@ function scopeCovers(attestation: Attestation, plan: PatchPlan): boolean {
   return true;
 }
 
+function validAttestations(input: ApplyCheckInput): { readonly valid: Attestation[]; readonly reasons: ApplyReasonCode[] } {
+  const reasons: ApplyReasonCode[] = [];
+  const payload = input.plan.payload;
+  const now = input.now.getTime();
+  const attestations = input.attestations ?? payload.attestations;
+  if (attestations.length === 0) return { valid: [], reasons: ["ATTESTATION_MISSING"] };
+  const valid: Attestation[] = [];
+  let sawExpired = false;
+  let sawRevoked = false;
+  let sawMismatch = false;
+  for (const attestation of attestations) {
+    if (attestation.revokedAt !== null) {
+      sawRevoked = true;
+      continue;
+    }
+    if (now > isoMillis(attestation.expiresAt)) {
+      sawExpired = true;
+      continue;
+    }
+    if (attestation.workflowHash !== payload.sourceHash || attestation.dependencyHash !== payload.dependencyHash) {
+      sawMismatch = true;
+      continue;
+    }
+    if (!scopeCovers(attestation, input.plan)) continue;
+    valid.push(attestation);
+  }
+  if (valid.length === 0) {
+    if (sawMismatch) reasons.push("ATTESTATION_HASH_MISMATCH");
+    else if (sawRevoked) reasons.push("ATTESTATION_REVOKED");
+    else if (sawExpired) reasons.push("ATTESTATION_EXPIRED");
+    else if (attestations.some((attestation) => attestation.bindingId === payload.bindingId)) reasons.push("ATTESTATION_SCOPE_INSUFFICIENT");
+    else reasons.push("ATTESTATION_MISSING");
+  }
+  return { valid, reasons };
+}
+
 /** Return the closed list of failed apply invariants, in contract order. */
 export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
   const reasons: ApplyReasonCode[] = [];
   const now = input.now.getTime();
   const payload = input.plan.payload;
+
+  if (digestOf(payload) !== input.plan.planDigest) reasons.push("PLAN_DIGEST_MISMATCH");
+  if (input.plan.provenance !== "observed") reasons.push("SYNTHETIC_PLAN");
   if (now > isoMillis(payload.expiresAt)) reasons.push("PLAN_EXPIRED");
 
-  const attestations = payload.attestations;
-  if (attestations.length === 0) {
-    reasons.push("ATTESTATION_MISSING");
-  } else {
-    let covered = 0;
-    let sawExpired = false;
-    let sawRevoked = false;
-    let sawMismatch = false;
-    for (const attestation of attestations) {
-      if (attestation.revokedAt !== null) {
-        sawRevoked = true;
-        continue;
+  const attestationCheck = validAttestations(input);
+  reasons.push(...attestationCheck.reasons);
+  if (attestationCheck.valid.length > 0) {
+    for (const edit of payload.edits) {
+      if (!isPatchRule(edit.ruleId)) continue;
+      const rule: PatchRule = edit.ruleId;
+      if (!attestationCheck.valid.some((attestation) => attestationSatisfiesRule(rule, attestation.claims))) {
+        reasons.push("ATTESTATION_CLAIMS_INSUFFICIENT");
+        break;
       }
-      if (now > isoMillis(attestation.expiresAt)) {
-        sawExpired = true;
-        continue;
-      }
-      if (attestation.workflowHash !== payload.sourceHash || attestation.dependencyHash !== payload.dependencyHash) {
-        sawMismatch = true;
-        continue;
-      }
-      if (!scopeCovers(attestation, input.plan)) continue;
-      covered += 1;
-    }
-    if (covered === 0) {
-      if (sawMismatch) reasons.push("ATTESTATION_HASH_MISMATCH");
-      else if (sawRevoked) reasons.push("ATTESTATION_REVOKED");
-      else if (sawExpired) reasons.push("ATTESTATION_EXPIRED");
-      else if (attestations.some((attestation) => attestation.bindingId === payload.bindingId)) reasons.push("ATTESTATION_SCOPE_INSUFFICIENT");
-      else reasons.push("ATTESTATION_MISSING");
     }
   }
 
@@ -99,7 +140,19 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
   const currentHash = "sha256:" + sha256Hex(input.currentText);
   if (currentHash !== payload.sourceHash) reasons.push("SOURCE_HASH_MISMATCH");
   if (!input.nonceValid) reasons.push("NONCE_INVALID");
-  if (now > Math.max(...payload.policies.map((policy) => isoMillis(policy.observedAt))) + POLICY_MAX_AGE_MS) reasons.push("POLICY_STALE");
+
+  for (const kind of requiredPolicyKinds(payload.ruleIds)) {
+    const planPolicy = payload.policies.find((policy) => policy.kind === kind);
+    if (planPolicy === undefined || planPolicy.status !== "known" || now > isoMillis(planPolicy.observedAt) + POLICY_MAX_AGE_MS) {
+      reasons.push("POLICY_STALE");
+      continue;
+    }
+    if (input.currentPolicies !== undefined) {
+      const current = input.currentPolicies.find((policy) => policy.kind === kind);
+      if (current === undefined || current.policyHash !== planPolicy.policyHash) reasons.push("POLICY_STALE");
+    }
+  }
+
   if (!input.backupAvailable) reasons.push("BACKUP_UNAVAILABLE");
-  return reasons;
+  return [...new Set(reasons)];
 }

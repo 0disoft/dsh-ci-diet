@@ -58,7 +58,14 @@ function setup(text = WORKFLOW, rule: "CD001" | "CD005" = "CD001") {
   });
   const store = PatchStore.open(join(space.root, ".ci-diet"));
   store.saveBinding(binding);
-  const policies = buildPolicySnapshots({ binding, protection: null, retention: null, now });
+  store.saveAttestation(attestation);
+  const fetchedAt = now.toISOString();
+  const policies = buildPolicySnapshots({
+    binding,
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt },
+    retention: { days: 90, maximumAllowedDays: 90, fetchedAt },
+    now,
+  });
   const built = buildPatchPlan({
     binding,
     workflow,

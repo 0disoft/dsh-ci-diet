@@ -57,6 +57,8 @@ export interface WorkflowStep {
   readonly run: string | null;
   readonly withPresent: boolean;
   readonly withEntries: readonly StepWithEntry[];
+  /** Step-level keys the rules never edit (env, if, id, shell, ...), kept so the semantic guard sees them. */
+  readonly otherEntries: readonly StepWithEntry[];
   readonly withRange: ByteRange | null;
   /** True when `with:` is a flow mapping, which v0.1 never edits. */
   readonly withFlow: boolean;

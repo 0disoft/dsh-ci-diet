@@ -184,6 +184,22 @@ function readStringList(node: Node | null | undefined): string[] {
   return out;
 }
 
+function readEntry(text: string, key: string, keyNode: Node, valueNode: Node | null): StepWithEntry {
+  const keyRange = byteRangeOf(text, keyNode) ?? { startByte: 0, endByte: 0 };
+  const valueRange = byteRangeOf(text, valueNode);
+  if (valueNode !== null && isScalar(valueNode)) {
+    const raw = (valueNode as { value?: unknown }).value;
+    if (typeof raw === "string") {
+      if (MATRIX_EXPRESSION.test(raw)) return { key, keyRange, kind: "expression", literal: null, valueRange };
+      return { key, keyRange, kind: "literal", literal: raw, valueRange };
+    }
+    if (typeof raw === "number" || typeof raw === "boolean") {
+      return { key, keyRange, kind: "literal", literal: String(raw), valueRange };
+    }
+  }
+  return { key, keyRange, kind: "non-scalar", literal: null, valueRange };
+}
+
 function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowStep[] {
   if (!stepsNode || !isSeq(stepsNode)) return [];
   const steps: WorkflowStep[] = [];
@@ -198,6 +214,7 @@ function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowSt
         run: null,
         withPresent: false,
         withEntries: [],
+        otherEntries: [],
         withRange: null,
         withFlow: false,
         flow: false,
@@ -208,6 +225,12 @@ function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowSt
     const usesNode = stepNode.get("uses", true) as Node | null;
     const usesText = scalarText(usesNode);
     const withNode = stepNode.get("with", true) as Node | null;
+    const otherEntries: StepWithEntry[] = [];
+    for (const pair of stepNode.items) {
+      const key = scalarText(pair.key as Node);
+      if (key === null || key === "uses" || key === "run" || key === "name" || key === "with") continue;
+      otherEntries.push(readEntry(text, key, pair.key as Node, pair.value as Node | null));
+    }
     const withEntries: StepWithEntry[] = [];
     let withPresent = false;
     let withFlow = false;
@@ -218,25 +241,7 @@ function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowSt
         for (const pair of withNode.items) {
           const key = scalarText(pair.key as Node);
           if (key === null) continue;
-          const keyRange = byteRangeOf(text, pair.key as Node) ?? { startByte: 0, endByte: 0 };
-          const valueNode = pair.value as Node | null;
-          const valueRange = byteRangeOf(text, valueNode);
-          if (valueNode && isScalar(valueNode)) {
-            const raw = (valueNode as { value?: unknown }).value;
-            if (typeof raw === "string") {
-              if (MATRIX_EXPRESSION.test(raw)) {
-                withEntries.push({ key, keyRange, kind: "expression", literal: null, valueRange });
-              } else {
-                withEntries.push({ key, keyRange, kind: "literal", literal: raw, valueRange });
-              }
-            } else if (typeof raw === "number" || typeof raw === "boolean") {
-              withEntries.push({ key, keyRange, kind: "literal", literal: String(raw), valueRange });
-            } else {
-              withEntries.push({ key, keyRange, kind: "non-scalar", literal: null, valueRange });
-            }
-          } else {
-            withEntries.push({ key, keyRange, kind: "non-scalar", literal: null, valueRange });
-          }
+          withEntries.push(readEntry(text, key, pair.key as Node, pair.value as Node | null));
         }
       }
     }
@@ -248,6 +253,7 @@ function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowSt
       run: scalarText(stepNode.get("run", true) as Node | null),
       withPresent,
       withEntries,
+      otherEntries,
       withRange: byteRangeOf(text, withNode),
       withFlow,
       flow: (stepNode as { flow?: boolean }).flow === true,

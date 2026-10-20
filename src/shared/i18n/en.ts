@@ -65,6 +65,7 @@ export const en = {
   "cli.plan.writeBlocked": "{rule} cannot write at coverage level {level}.",
   "cli.plan.notEligible": "{rule} has no eligible finding for this workflow in the latest report.",
   "cli.plan.created": "Plan {plan} created for {workflow} ({rule}).",
+  "cli.plan.target": "Target file: {path}",
   "cli.plan.digest": "Plan digest: {digest}",
   "cli.plan.confirm": "To approve, run: ci-diet approve --plan <id> --confirm {confirmation}",
   "cli.plan.next": "Next: ci-diet approve --plan {plan} --confirm <digest tail>",

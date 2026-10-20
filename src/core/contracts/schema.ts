@@ -33,7 +33,7 @@ export type Config = {
 };
   "apply": {
   "maxFilesPerPlan": 1;
-  "allowedRules": "CD001" | "CD005" | "CD008"[];
+  "allowedRules": ("CD001" | "CD005" | "CD008")[];
   "approvalTtlSeconds": 600;
   "policyMaxAgeSeconds": 600;
   "attestationMaxAgeDays": 30;
@@ -212,12 +212,12 @@ export type PricingSnapshot = {
   "observedAt": string;
   "sourceUrl": string;
   "sourceRefs": string[];
-  "rows": {
+  "rows": ({
   "sku": "actions_linux_slim" | "actions_linux" | "actions_linux_arm" | "actions_windows" | "actions_windows_arm" | "actions_macos";
   "target": string;
   "usdPerMinuteMicro": number;
   "evidenceRef": string;
-}[];
+})[];
   "contentHash": string;
 };
 export type AnalysisReport = {
@@ -273,7 +273,7 @@ export type PatchPayload = {
   "rootIdentityHash": string;
   "workflowPath": string;
   "engineVersion": string;
-  "ruleIds": "CD001" | "CD005" | "CD008"[];
+  "ruleIds": ("CD001" | "CD005" | "CD008")[];
   "sourceHash": string;
   "resultHash": string;
   "dependencyHash": string;
@@ -370,8 +370,8 @@ export type ReleaseScope = {
   "provenance": "synthetic" | "observed";
   "releaseVersion": string;
   "a0Status": "not_run" | "passed" | "partial" | "failed";
-  "enabledRules": "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008"[];
-  "patchVerifiedRules": "CD001" | "CD005" | "CD008"[];
+  "enabledRules": ("CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008")[];
+  "patchVerifiedRules": ("CD001" | "CD005" | "CD008")[];
   "evidenceRefs": string[];
 };
 export type LocalEvent = {

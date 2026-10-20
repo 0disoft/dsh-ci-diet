@@ -48,6 +48,7 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
     };
   }
 
+  const maximumAllowedDays = context.history?.retention?.maximumAllowedDays ?? null;
   const findings: Finding[] = [];
   for (const workflow of context.workflows) {
     if (!isAnalyzable(workflow)) continue;
@@ -65,9 +66,11 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
               ? "an expression"
               : "the repository default (no retention-days input)";
 
-        const blockers = ["EFFECTIVE_RETENTION_MAX_UNKNOWN", "ARTIFACT_PURPOSE_UNATTESTED"];
+        const blockers = ["ARTIFACT_PURPOSE_UNATTESTED"];
+        if (maximumAllowedDays === null) blockers.push("EFFECTIVE_RETENTION_MAX_UNKNOWN");
+        else if (maximumAllowedDays < PROPOSED_RETENTION_DAYS) blockers.push("RETENTION_MAX_BELOW_PROPOSAL");
         if (state.kind === "expression") blockers.push("EXPRESSION_RETENTION_REPORT_ONLY");
-        if (state.kind === "absent") blockers.push("WITH_MAPPING_REQUIRED");
+        const patchable = state.kind !== "expression" && (maximumAllowedDays === null || maximumAllowedDays >= PROPOSED_RETENTION_DAYS);
 
         findings.push(
           buildFinding({
@@ -85,7 +88,7 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
               current +
               ". A 7-day retention is a proposal, not a default; it applies only below the confirmed repository maximum and above the consumer minimum. Current artifacts are never deleted.",
             evidenceLevel: "static",
-            patchability: "review-only",
+            patchability: patchable ? "review-only" : "blocked",
             evidenceRefs: [
               "workflow:" + workflow.path,
               "workflow:" + workflow.path + "#jobs." + job.key + ".steps[" + step.index + "]",

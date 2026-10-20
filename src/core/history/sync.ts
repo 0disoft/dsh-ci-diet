@@ -1,4 +1,4 @@
-import type { Config, Dimension, MissingScope, RepositoryBinding } from "../contracts/schema.ts";
+import type { Config, Dimension, MissingScope } from "../contracts/schema.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { GitHubError } from "../../adapters/github/errors.ts";
@@ -114,7 +114,6 @@ export async function syncRepositoryHistory(options: {
     for (const number of pullRequestNumbers) pullNumbers.add(number);
     const jobs: HistoryJob[] = [];
     const attempts = Math.max(1, run.run_attempt);
-    let jobsComplete = true;
     for (let attempt = attempts; attempt >= 1; attempt -= 1) {
       jobsExpected += 1;
       try {
@@ -142,7 +141,6 @@ export async function syncRepositoryHistory(options: {
         }
       } catch (error) {
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        jobsComplete = false;
         missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: error instanceof Error ? error.message : "JOBS_UNAVAILABLE", resumable: true }));
       }
     }
@@ -262,9 +260,10 @@ export async function syncRepositoryHistory(options: {
 
   const unresolvedDefinitions = historyRuns.filter((run) => run.definitionResolution === "unresolved").length;
   const pullsWithoutFiles = [...pulls.values()].filter((pull) => pull.files === null).length;
+  const pullsMissing = pullNumbers.size - pulls.size;
   const historyStatus: Dimension["status"] = historyError !== null ? "unavailable" : truncatedByLimit || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0 ? "partial" : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";
-  const changedFilesStatus: Dimension["status"] = pullNumbers.size === 0 ? "unavailable" : pullsWithoutFiles > 0 ? "partial" : "complete";
+  const changedFilesStatus: Dimension["status"] = pullNumbers.size === 0 ? "unavailable" : pullsMissing > 0 || pullsWithoutFiles > 0 ? "partial" : "complete";
 
   const coverageReasons = (status: Dimension["status"], reasons: readonly string[]): string[] =>
     status === "complete" ? [] : reasons.length === 0 ? [status === "partial" ? "PARTIAL_COLLECTION" : "UNAVAILABLE"] : [...reasons];
@@ -305,7 +304,10 @@ export async function syncRepositoryHistory(options: {
         scope: "pull request files for pull_request runs",
         fetched: pulls.size - pullsWithoutFiles,
         expected: pullNumbers.size,
-        reasons: coverageReasons(changedFilesStatus, pullsWithoutFiles > 0 ? ["PULL_FILES_UNAVAILABLE"] : ["NO_PULL_REQUESTS"]),
+        reasons: coverageReasons(
+          changedFilesStatus,
+          pullsMissing > 0 ? ["PULL_UNAVAILABLE"] : pullsWithoutFiles > 0 ? ["PULL_FILES_UNAVAILABLE"] : ["NO_PULL_REQUESTS"],
+        ),
         missingScopes: missingScopes.filter((scope) => scope.family === "policyAndFiles" && scope.pullRequest !== null),
       },
       protectionRules: {

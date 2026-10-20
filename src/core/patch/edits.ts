@@ -23,7 +23,7 @@ export interface EditResult {
 
 export function concurrencyGroup(repositoryId: string, workflowPath: string): string {
   const unique = sha256Hex(repositoryId + "\n" + workflowPath).slice(0, 16);
-  return "ci-diet-" + unique + "-pr-\${{ github.event.pull_request.number || github.run_id }}";
+  return "ci-diet-" + unique + "-pr-${{ github.event.pull_request.number || github.run_id }}";
 }
 
 function bufferOf(text: string): Buffer {
@@ -141,6 +141,30 @@ export function planRetentionEdit(text: string, job: WorkflowJob, step: Workflow
   const buffer = bufferOf(text);
   const newline = newlineStyle(text);
   const semanticPath = "jobs." + job.key + ".steps[" + step.index + "].with.retention-days";
+  const existing = step.withEntries.find((entry) => entry.key === "retention-days");
+  if (existing !== undefined) {
+    if (existing.kind !== "literal" || existing.valueRange === null) {
+      return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "existing retention-days is an expression and stays report-only" } };
+    }
+    const current = Number(existing.literal);
+    if (!Number.isSafeInteger(current) || current < 0) {
+      return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "existing retention-days is not an integer" } };
+    }
+    if (current <= days) {
+      return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "existing retention-days is already at or below the proposal" } };
+    }
+    return {
+      edit: {
+        kind: "replaceScalar",
+        startByte: existing.valueRange.startByte,
+        endByte: existing.valueRange.endByte,
+        replacementUtf8: String(days),
+        semanticPath,
+        ruleId: "CD008",
+      },
+      error: null,
+    };
+  }
   if (step.withPresent) {
     if (step.withFlow === true) {
       return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "flow-style with mapping is report-only" } };
@@ -246,7 +270,10 @@ export function semanticCheck(
   const step = job.steps.find((candidate) => candidate.index === stepIndex);
   if (step === undefined) return "EDIT_RESULT_INVALID: edited step disappeared";
   const retention = step.withEntries.find((entry) => entry.key === "retention-days");
-  if (retention === undefined || retention.kind !== "literal" || retention.literal !== String(expected.days)) {
+  if (retention === undefined || retention.kind !== "literal") {
+    return "EDIT_RESULT_INVALID: retention-days missing";
+  }
+  if (expected.days !== undefined && retention.literal !== String(expected.days)) {
     return "EDIT_RESULT_INVALID: retention-days mismatch";
   }
   return null;

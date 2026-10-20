@@ -1,0 +1,136 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
+import { syncRepositoryHistory } from "../../src/core/history/sync.ts";
+import { GitHubError } from "../../src/adapters/github/errors.ts";
+import type { GhResponse, GhTransport } from "../../src/adapters/github/transport.ts";
+
+const WORKFLOW = [
+  "name: CI",
+  "on:",
+  "  pull_request:",
+  "  push:",
+  "    branches: [main]",
+  "jobs:",
+  "  build:",
+  "    runs-on: ubuntu-latest",
+  "    steps:",
+  "      - uses: actions/checkout@v7",
+  "      - run: bun test",
+  "",
+].join("\n");
+
+const NOW = new Date("2026-10-20T00:00:00.000Z");
+
+function response(body: unknown, headers: Readonly<Record<string, string>> = {}): GhResponse {
+  return { status: 200, headers, body, etag: null, notified304: false };
+}
+
+interface Route {
+  readonly match: RegExp;
+  readonly handle: () => GhResponse;
+}
+
+function routes(): Route[] {
+  return [
+    { match: /\/actions\/workflows$/, handle: () => response({ total_count: 1, workflows: [{ id: 7, name: "CI", path: ".github/workflows/ci.yml", state: "active" }] }) },
+    {
+      match: /\/actions\/runs$/,
+      handle: () => response({
+        total_count: 1,
+        workflow_runs: [{
+          id: 100,
+          name: "CI",
+          path: ".github/workflows/ci.yml",
+          head_sha: "abc123",
+          head_branch: "feature",
+          event: "pull_request",
+          created_at: "2026-10-19T10:00:00Z",
+          run_attempt: 1,
+          conclusion: "success",
+          pull_requests: [{ number: 5 }],
+        }],
+      }),
+    },
+    {
+      match: /\/attempts\/\d+\/jobs$/,
+      handle: () => response({
+        total_count: 1,
+        jobs: [{
+          id: 11,
+          name: "build",
+          conclusion: "success",
+          started_at: "2026-10-19T10:00:10Z",
+          completed_at: "2026-10-19T10:01:10Z",
+          labels: ["ubuntu-latest"],
+          runner_name: "GitHub Actions 1",
+        }],
+      }),
+    },
+    { match: /\/contents\//, handle: () => response({ path: ".github/workflows/ci.yml", sha: "blob", size: WORKFLOW.length, encoding: "base64", content: Buffer.from(WORKFLOW, "utf8").toString("base64") }) },
+    { match: /\/pulls\/5$/, handle: () => response({ number: 5, base: { ref: "main" }, head: { ref: "feature" } }) },
+    { match: /\/permissions\/artifact-and-log-retention$/, handle: () => response({ days: 90, maximum_allowed_days: 90 }) },
+    { match: /\/rules\/branches\//, handle: () => response([]) },
+    { match: /\/actions\/artifacts$/, handle: () => response({ total_count: 0, artifacts: [] }) },
+    { match: /\/repos\/o\/r$/, handle: () => response({ id: 1, full_name: "o/r", default_branch: "main" }) },
+  ];
+}
+
+function fakeTransport(overrides: { readonly files?: () => never } = {}): GhTransport {
+  const table = routes();
+  const transport = {
+    async get(request: { readonly path: string }): Promise<GhResponse> {
+      if (overrides.files !== undefined && request.path.endsWith("/pulls/5/files")) overrides.files();
+      const route = table.find((candidate) => candidate.match.test(request.path));
+      if (route === undefined) throw new Error("unexpected request: " + request.path);
+      return route.handle();
+    },
+  };
+  return transport as unknown as GhTransport;
+}
+
+function config() {
+  return { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: 7, maxRuns: 100 } };
+}
+
+test("marks changed files partial when pull request files are denied", async () => {
+  const result = await syncRepositoryHistory({
+    owner: "o",
+    repo: "r",
+    config: config(),
+    now: NOW,
+    transport: fakeTransport({ files: () => { throw new GitHubError("PERMISSION_DENIED", "Resource not accessible by integration", 403); } }),
+  });
+  assert.equal(result.history.coverage.changedFiles.status, "partial");
+  assert.deepEqual(result.history.coverage.changedFiles.reasons, ["PULL_FILES_UNAVAILABLE"]);
+  assert.equal(result.history.pulls.get(5)?.files, null);
+  assert.ok(result.history.missingScopes.some((scope) => scope.resource === "pulls.files"));
+  assert.equal(result.history.coverage.history.status, "complete");
+  assert.equal(result.history.coverage.workflowDefinitions.status, "complete");
+});
+
+test("collects changed files when the pull request is readable", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/pulls/5/files")) {
+      return response([{ filename: "src/app.ts", previous_filename: "src/old.ts" }]);
+    }
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.coverage.changedFiles.status, "complete");
+  assert.deepEqual(result.history.pulls.get(5)?.files, ["src/app.ts", "src/old.ts"]);
+});
+
+test("propagates authentication failures instead of recording them", async () => {
+  const transport = {
+    async get(): Promise<GhResponse> {
+      throw new GitHubError("AUTH_REQUIRED", "gh auth login is required", 401);
+    },
+  } as unknown as GhTransport;
+  await assert.rejects(
+    syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport }),
+    /AUTH_REQUIRED|gh auth login/,
+  );
+});

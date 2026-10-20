@@ -3,6 +3,7 @@ import type { Attestation, ByteEdit, PatchPlan, PatchPayload, PolicySnapshot, Re
 import type { ProtectionSnapshot, RetentionSnapshot } from "../history/model.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { applyEdits, semanticCheck } from "./edits.ts";
+import { semanticProblems } from "./semantic.ts";
 
 export const PLAN_TTL_SECONDS = 7 * 24 * 60 * 60;
 export const POLICY_MAX_AGE_SECONDS = 600;
@@ -20,6 +21,8 @@ export interface PlanInput {
   readonly now: Date;
   readonly provenance?: "synthetic" | "observed";
   readonly dependencies?: readonly { readonly ref: string; readonly sha256: string }[];
+  /** Expected values for the edit kinds, overriding what the edits themselves imply. */
+  readonly expected?: { readonly group?: string; readonly minutes?: number; readonly days?: number };
 }
 
 export interface BuiltPlan {
@@ -54,6 +57,8 @@ export function previewEdits(
   }
   const applied = applyEdits(text, edits);
   if (applied.hash === sourceHash) throw new Error("NO_OP_PLAN: edits do not change the bytes");
+  const problems = semanticProblems(workflow, applied.text, edits);
+  if (problems.length > 0) throw new Error("EDIT_OUT_OF_SCOPE: " + problems.join("; "));
   for (const edit of edits) {
     const problem = semanticCheck(workflow, applied.text, edit, expected);
     if (problem !== null) throw new Error(problem);
@@ -69,12 +74,17 @@ export function buildPatchPlan(input: PlanInput): BuiltPlan {
   const dependencies = [...(input.dependencies ?? [])].sort((a, b) => (a.ref < b.ref ? -1 : a.ref > b.ref ? 1 : 0));
   const concurrencyReplacement = input.edits.find((edit) => edit.ruleId === "CD001")?.replacementUtf8;
   const group = concurrencyReplacement === undefined ? undefined : /group: (.*)/.exec(concurrencyReplacement)?.[1];
-  const expected: { group?: string; minutes?: number } = {};
+  const expected: { group?: string; minutes?: number; days?: number } = { ...input.expected };
   if (group !== undefined) expected.group = group;
   const timeoutEdit = input.edits.find((edit) => edit.ruleId === "CD005");
   if (timeoutEdit !== undefined) {
     const parsed = /timeout-minutes:\s*(\d+)/.exec(timeoutEdit.replacementUtf8);
     if (parsed?.[1] !== undefined) expected.minutes = Number(parsed[1]);
+  }
+  const retentionEdit = input.edits.find((edit) => edit.ruleId === "CD008");
+  if (retentionEdit !== undefined && expected.days === undefined) {
+    const parsed = /retention-days:\s*(\d+)/.exec(retentionEdit.replacementUtf8) ?? /^(\d+)$/.exec(retentionEdit.replacementUtf8.trim());
+    if (parsed?.[1] !== undefined) expected.days = Number(parsed[1]);
   }
   const preview = previewEdits(input.workflow, input.text, input.edits, expected);
   const createdAt = iso(input.now);

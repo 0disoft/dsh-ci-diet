@@ -70,7 +70,7 @@ function seed(root: string, stateDir: string): void {
     workflows: [],
     artifacts: [],
     retention: null,
-    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: NOW },
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: new Date().toISOString() },
     coverage,
     missingScopes: [],
   };
@@ -91,7 +91,7 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   const stateDir = join(root, ".state");
   seed(root, stateDir);
 
-  const planned = cli(["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--json"], root);
+  const planned = cli(["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root);
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string; status: { state: string } };
   assert.equal(plan.status.state, "draft");
@@ -128,9 +128,31 @@ test("CLI approve rejects a wrong confirmation", () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--json"], root);
+  const planned = cli(["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root);
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string };
   const result = cli(["approve", "--plan", plan.planId, "--confirm", "000000000000", "--state-dir", stateDir], root);
   assert.equal(result.status, 5, result.stderr);
+});
+test("CLI plan scopes reports to the repository at the current root", () => {
+  const first = makeRepo();
+  const second = makeRepo();
+  const stateDir = join(first.root, ".state");
+  seed(first.root, stateDir);
+  seed(second.root, stateDir);
+
+  const planned = cli(["plan", "--rule", "CD001", "--cwd", first.root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe"], first.root);
+  assert.equal(planned.status, 0, planned.stderr);
+  assert.ok(planned.stdout.includes(join(first.root, ".github", "workflows", "pr.yml")), planned.stdout);
+});
+
+test("CLI plan refuses to reuse another repository's report", () => {
+  const first = makeRepo();
+  const second = makeRepo();
+  const stateDir = join(first.root, ".state");
+  seed(second.root, stateDir);
+
+  const planned = cli(["plan", "--rule", "CD001", "--cwd", first.root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe"], first.root);
+  assert.equal(planned.status, 1);
+  assert.match(planned.stderr, /sync/i);
 });

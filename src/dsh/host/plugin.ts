@@ -1,16 +1,19 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
 import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { DEFAULT_CONFIG } from "../../core/data/default-config.ts";
 import { buildHistoryReport } from "../../core/analysis/report.ts";
-import { composeCoverage } from "../../core/analysis/coverage.ts";
 import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
 import type { RuleId } from "../../core/model/domain.ts";
 import type { Coverage } from "../../core/contracts/schema.ts";
 import { PatchStore } from "../../core/patch/store.ts";
-import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../../core/patch/edits.ts";
+import { PROPOSED_RETENTION_DAYS, planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../../core/patch/edits.ts";
+import type { ByteEdit } from "../../core/contracts/schema.ts";
+import { claimsFromTokens, evaluatePatchEligibility } from "../../core/patch/eligibility.ts";
+import type { PatchRule } from "../../core/patch/eligibility.ts";
+import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../../core/patch/plan.ts";
+import { createAttestation } from "../../core/patch/attestation.ts";
 import { createLocalBinding, readGithubRemote } from "../../core/scan/binding.ts";
 import { discoverWorkflows } from "../../core/scan/discover.ts";
 import { runStaticScan } from "../../core/scan/scan.ts";
@@ -18,8 +21,6 @@ import { defaultStateDir } from "../../core/state/paths.ts";
 import { syncRepositoryHistory } from "../../core/history/sync.ts";
 import { parseWorkflow } from "../../core/workflow/parse.ts";
 import type { WorkflowJob } from "../../core/workflow/model.ts";
-import { resolveLocale, t } from "../../shared/i18n/index.ts";
-
 export const name = "ci-diet";
 export const inject = ["tools"];
 
@@ -37,11 +38,6 @@ export const Config: Schema<Config> = Schema.object({
 
 function stateDirOf(config: Config): string {
   return config.stateDir === "" ? defaultStateDir() : config.stateDir;
-}
-
-function locale() {
-  const configured = process.env.DSH_LOCALE ?? process.env.LANG ?? "";
-  return resolveLocale(configured) ?? resolveLocale("en")!;
 }
 
 function text(value: string) {
@@ -166,7 +162,7 @@ export function apply(ctx: Context, config: Config) {
       render: (_args, value) =>
         text("Synced " + value.repository + ": " + (value.findings ?? []).length + " finding(s). Report " + value.reportId + "."),
     },
-    async execute(args, exec) {
+    async execute(args, _exec) {
       if (!config.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
       const root = args.cwd ?? process.cwd();
       const discovery = discoverWorkflows(root, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
@@ -260,6 +256,13 @@ export function apply(ctx: Context, config: Config) {
       step: { type: "number", description: "Step index, required for CD008." },
       minutes: { type: "number", description: "Timeout in minutes, required for CD005." },
       cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
+      claims: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Human attestation claims for this preview only: ci-only, replace-safe, artifact-purpose:temporary|release, " +
+          "consumer-min-days:N, reviewed-opaque-nodes. The tool never approves anything.",
+      },
     },
     output: {
       schema: {
@@ -267,6 +270,7 @@ export function apply(ctx: Context, config: Config) {
         properties: {
           workflowPath: { type: "string" },
           edits: { type: "array", items: { type: "object", additionalProperties: true } },
+          planDigest: { type: "string", description: "Empty when no plan could be built." },
           writeAllowed: { type: "boolean" },
           coverageLevel: { type: "string" },
           blockers: { type: "array", items: { type: "string" } },
@@ -281,17 +285,21 @@ export function apply(ctx: Context, config: Config) {
     async execute(args, exec) {
       exec.signal.throwIfAborted();
       const store = PatchStore.open(stateDirOf(config));
-      const report = store.latestReport();
-      if (report === null) throw new Error("no report stored yet; run ci_diet_scan or ci_diet_sync first");
-      const binding = store.readBinding(report.bindingId);
-      if (binding === null) throw new Error("report has no binding; re-run ci_diet_scan");
-      const rule = args.rule as RuleId;
+      const now = new Date();
+      const root = realpathSync(args.cwd ?? process.cwd());
+      const existing = store.findBindingByRoot(root);
+      const current = existing ?? createLocalBinding(root, now.toISOString()).binding;
+      const report = store.latestReportForBinding(current.bindingId);
+      if (report === null) throw new Error("no report stored for this workspace; run ci_diet_scan or ci_diet_sync in it first");
+      const binding = store.readBinding(report.bindingId) ?? current;
+      const history = store.readLatestHistory(binding.bindingId);
+      const rule = args.rule as PatchRule;
       const discovery = discoverWorkflows(binding.workspaceRoot, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
-      const candidates = report.findings.filter((finding) => finding.ruleId === rule).map((finding) => finding.workflowPath);
+      const candidates = [...new Set(report.findings.filter((finding) => finding.ruleId === rule).map((finding) => finding.workflowPath))];
       const workflowPath = args.workflow !== undefined
         ? args.workflow.replace(/\\/g, "/")
-        : [...new Set(candidates)].length === 1
-          ? [...new Set(candidates)][0]!
+        : candidates.length === 1
+          ? candidates[0]!
           : discovery.workflows.length === 1
             ? discovery.workflows[0]!.path
             : null;
@@ -300,26 +308,35 @@ export function apply(ctx: Context, config: Config) {
       if (file === undefined) throw new Error("workflow not found: " + workflowPath);
       const workflow = parseWorkflow(file.path, file.text);
       if (workflow.parseError !== null || workflow.unsupported.length > 0) throw new Error("workflow cannot be edited safely: " + file.path);
-      const coverage = composeCoverage(report.coverage, rule, { currentDefinitionParsed: true, editedJobEvidenceComplete: rule !== "CD005" });
+
       const blockers: string[] = [];
-      const edits = [] as { kind: string; startByte: number; endByte: number; replacementUtf8: string; semanticPath: string }[];
-      const findings = report.findings.filter((finding) => finding.ruleId === rule && finding.workflowPath === workflowPath);
-      if (!findings.some((finding) => finding.patchability !== "blocked")) blockers.push("NO_ELIGIBLE_FINDING");
-      if (!coverage.writeAllowed) blockers.push("COVERAGE_" + coverage.level.toUpperCase());
+      const edits: ByteEdit[] = [];
+      let scope: "workflow" | "job" | "step" = "workflow";
+      let jobKey: string | null = null;
+      let stepKey: string | null = null;
+      let expected: { group?: string; minutes?: number; days?: number } = {};
       const job: WorkflowJob | undefined = args.job === undefined ? undefined : workflow.jobs.find((entry) => entry.key === args.job);
       if (rule === "CD001") {
         if (workflow.concurrency !== null) blockers.push("EXISTING_CONCURRENCY");
         else {
           const result = planConcurrencyEdit(file.text, workflow, binding.repositoryId);
           if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-          else edits.push(result.edit);
+          else {
+            edits.push(result.edit);
+            expected = { group: result.edit.replacementUtf8.split("group: ")[1]?.trim() ?? "" };
+          }
         }
       } else if (rule === "CD005") {
         if (job === undefined || args.minutes === undefined) blockers.push("JOB_AND_MINUTES_REQUIRED");
         else {
           const result = planTimeoutEdit(file.text, workflow, job, args.minutes);
           if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-          else edits.push(result.edit);
+          else {
+            edits.push(result.edit);
+            scope = "job";
+            jobKey = job.key;
+            expected = { minutes: args.minutes };
+          }
         }
       } else {
         if (job === undefined || args.step === undefined) blockers.push("JOB_AND_STEP_REQUIRED");
@@ -327,21 +344,84 @@ export function apply(ctx: Context, config: Config) {
           const step = job.steps[args.step];
           if (step === undefined) blockers.push("STEP_NOT_FOUND");
           else {
-            const result = planRetentionEdit(file.text, job, step, 7);
+            const result = planRetentionEdit(file.text, job, step, PROPOSED_RETENTION_DAYS);
             if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-            else edits.push(result.edit);
+            else {
+              edits.push(result.edit);
+              scope = "step";
+              jobKey = job.key;
+              stepKey = "steps[" + args.step + "]";
+              expected = { days: PROPOSED_RETENTION_DAYS };
+            }
           }
         }
       }
+
+      const claims = claimsFromTokens((args.claims ?? []) as string[]);
+      const findings = report.findings.filter((finding) => finding.ruleId === rule && finding.workflowPath === workflowPath);
+      const evaluated = findings.map((finding) => ({
+        finding,
+        eligibility: evaluatePatchEligibility({
+          rule,
+          finding,
+          coverage: report.coverage,
+          claims,
+          history,
+          currentDefinitionParsed: true,
+          editedJobEvidenceComplete: true,
+          now,
+        }),
+      }));
+      const chosen = evaluated.find((entry) => entry.eligibility.allowed) ?? evaluated[0];
+      if (chosen === undefined) blockers.push("FINDING_NOT_FOUND");
+      else if (!chosen.eligibility.allowed) blockers.push(...chosen.eligibility.reasons);
+
+      let planDigest: string | null = null;
+      if (blockers.length === 0 && history !== null) {
+        const attestation = createAttestation({
+          bindingId: binding.bindingId,
+          workflowPath: file.path,
+          workflowHash: workflow.sha256,
+          dependencyHash: dependencyHashOf([]),
+          scope,
+          jobKey,
+          stepKey,
+          claims,
+          evidenceRefs: ["dsh:plan:" + rule],
+          issuedBy: { channel: "human-cli", subjectId: "dsh-session" },
+          now,
+        });
+        const policies = buildPolicySnapshots({ binding, protection: history.protection, retention: history.retention, now });
+        try {
+          const built = buildPatchPlan({
+            binding,
+            workflow,
+            text: file.text,
+            edits,
+            attestations: [attestation],
+            policies,
+            blockers: chosen === undefined ? [] : chosen.eligibility.remainingBlockers,
+            coverageWriteAllowed: true,
+            now,
+            expected,
+          });
+          planDigest = built.plan.planDigest;
+        } catch (error) {
+          blockers.push(error instanceof Error ? error.message : "PLAN_REJECTED");
+        }
+      }
+
       const nextCommand = "ci-diet plan --rule " + rule + " --workflow " + workflowPath +
         (args.job === undefined ? "" : " --job " + args.job) +
         (args.step === undefined ? "" : " --step " + args.step) +
-        (args.minutes === undefined ? "" : " --minutes " + args.minutes);
+        (args.minutes === undefined ? "" : " --minutes " + args.minutes) +
+        ((args.claims ?? []).length === 0 ? "" : " --claims " + (args.claims as string[]).join(","));
       return {
         workflowPath,
         edits,
-        writeAllowed: coverage.writeAllowed && blockers.length === 0,
-        coverageLevel: coverage.level,
+        planDigest: planDigest ?? "",
+        writeAllowed: blockers.length === 0,
+        coverageLevel: chosen === undefined ? "skip" : chosen.eligibility.coverageLevel,
         blockers,
         nextCommand,
       };

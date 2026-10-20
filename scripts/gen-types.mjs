@@ -59,7 +59,9 @@ function typeOf(node) {
         const rest = node.items && typeof node.items === "object" ? typeOf(node.items) : null;
         return "[" + tuple.join(", ") + (rest ? ", ..." + rest + "[]" : "") + "]";
       }
-      return node.items ? typeOf(node.items) + "[]" : "unknown[]";
+      if (node.items === undefined) return "unknown[]";
+      const element = typeOf(node.items);
+      return (element.includes("|") ? "(" + element + ")" : element) + "[]";
     case "string":
       return "string";
     case "integer":

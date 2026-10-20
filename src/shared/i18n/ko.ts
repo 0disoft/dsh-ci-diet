@@ -66,6 +66,7 @@ export const ko: Record<MessageKey, string> = {
   "cli.plan.writeBlocked": "{rule}은(는) 수집 범위 {level}에서 파일을 쓸 수 없습니다.",
   "cli.plan.notEligible": "최근 보고서에 이 워크플로에 대한 {rule}의 쓸 수 있는 발견이 없습니다.",
   "cli.plan.created": "{workflow}에 대한 계획 {plan}을(를) 만들었습니다 ({rule}).",
+  "cli.plan.target": "대상 파일: {path}",
   "cli.plan.digest": "계획 다이제스트: {digest}",
   "cli.plan.confirm": "승인하려면 실행하세요: ci-diet approve --plan <id> --confirm {confirmation}",
   "cli.plan.next": "다음: ci-diet approve --plan {plan} --confirm <digest 끝자리>",

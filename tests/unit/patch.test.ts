@@ -244,7 +244,8 @@ describe("patch plan", () => {
       nonceValid: false,
       backupAvailable: false,
     });
-    for (const expected of ["PLAN_EXPIRED", "DEPENDENCY_HASH_MISMATCH", "COVERAGE_INSUFFICIENT_FOR_WRITE", "SOURCE_HASH_MISMATCH", "NONCE_INVALID", "POLICY_STALE", "BACKUP_UNAVAILABLE"] as const) {
+    // CD005 edits carry no policy requirement; freshness is enforced per rule.
+    for (const expected of ["PLAN_EXPIRED", "DEPENDENCY_HASH_MISMATCH", "COVERAGE_INSUFFICIENT_FOR_WRITE", "SOURCE_HASH_MISMATCH", "NONCE_INVALID", "BACKUP_UNAVAILABLE"] as const) {
       assert.ok(reasons.includes(expected), expected);
     }
   });
