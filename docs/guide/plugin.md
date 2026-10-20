@@ -93,8 +93,14 @@ retrying against a changed workflow.
 - Apply requires an approved plan, a matching approval nonce, unchanged source
   hashes, unchanged dependency hashes, and a durable backup.
 - The semantic guard compares every step field, including `env`, `if`, and each
-  `with` entry. An edit that drifts outside its rule is refused even if the plan
-  digest is recomputed.
+  `with` entry, and reports empty mappings/sequences and parent type changes.
+  An edit that drifts outside its rule is refused even if the plan digest is
+  recomputed.
+- Dependency hashes cover interpreter scripts such as `node build.js` relative
+  to the step `working-directory`, and all files inside a local action
+  directory. A reference the scan cannot hash becomes an
+  `UNRESOLVED_DEPENDENCY:<path>` blocker, so apply refuses instead of trusting
+  an incomplete fingerprint.
 - The working tree is authoritative: uncommitted changes are preserved, and a
   file that changed after the plan was built is refused.
 - Backups are never deleted automatically. If the store cannot hold another

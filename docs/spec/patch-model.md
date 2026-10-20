@@ -113,7 +113,15 @@ inherits an earlier state.
 
 `dependencies` is the sorted list `{ref, sha256}` of local files that the
 edited bytes depend on (local actions, scripts, reusable workflows,
-configuration). `dependencyHash` is the sha256 of the CDJ1 encoding of
+configuration). The scan resolves a local action to every file in its directory
+(except `.git` and `node_modules`), and resolves scripts named by common
+interpreters (`node build.js`, `bash scripts/check.sh`), `./` and `../`
+executables, and slash-containing arguments relative to the step
+`working-directory` or the job/top-level `defaults.run.working-directory`.
+Local `uses: ./...` references resolve from the repository root. A reference
+that names a file but cannot be hashed inside the repository becomes an
+`UNRESOLVED_DEPENDENCY:<path>` blocker instead of being dropped silently.
+`dependencyHash` is the sha256 of the CDJ1 encoding of
 `{dependencies}`; an empty list has a defined hash too. If any dependency hash
 changes, both the premise and the plan are void. Any non-empty `blockers` list
 blocks apply even from `approved`.

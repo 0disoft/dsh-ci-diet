@@ -48,7 +48,13 @@ Keep a Changelog, and the project uses semantic versioning.
   `actions/upload-artifact` step. The CLI and `ci_diet_plan` share this check.
 - Dependency hashes are filled from the local scripts, composite actions, and
   files the edited workflow references, so changing one after approval fails
-  apply with `DEPENDENCY_HASH_MISMATCH`.
+  apply with `DEPENDENCY_HASH_MISMATCH`. The scan resolves interpreter
+  arguments such as `node build.js`, honors step and job
+  `working-directory`, hashes a local action directory as a whole, and reports
+  references it cannot resolve as `UNRESOLVED_DEPENDENCY:<path>` blockers.
+- The semantic guard now reports added or removed empty mappings and sequences
+  plus parent node type changes, so deleting `permissions: {}` or replacing
+  `steps` with `null` can no longer ride along with a plan.
 - CI now builds and runs the packaged entry point (`smoke:node`) in addition to
   typecheck, lint, and the test suites.
 - The semantic guard also compares every step key, including `env`, `if`, and

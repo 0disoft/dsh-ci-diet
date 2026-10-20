@@ -145,8 +145,12 @@ new record, not an edit to the rationale.
   job; CD008 must point at an `actions/upload-artifact` step with the proposed
   retention. The CLI and `ci_diet_plan` call the same `targetReasons` function.
 - Dependencies are collected at plan time from the workflow's local scripts,
-  composite actions, and reusable references, and the resulting
-  `dependencyHash` is stored on both the premise and the plan.
+  composite actions, and reusable references, resolved against the step
+  `working-directory` (or job/top-level `defaults.run.working-directory`);
+  local action directories are hashed as a whole. The resulting
+  `dependencyHash` is stored on both the premise and the plan, and a reference
+  the scan cannot hash becomes an `UNRESOLVED_DEPENDENCY:<path>` blocker rather
+  than disappearing from the list.
 - Rationale: rule plus workflow path is not enough identity. Before this
   change, a 20-sample `build` cohort could justify a one-minute timeout on an
   untested `deploy` job, and a report made against older bytes could be planned
@@ -155,4 +159,6 @@ new record, not an edit to the rationale.
   sync, and a request for another job is refused with `FINDING_NOT_FOUND`
   rather than silently retargeted.
 - Reversal: widening a rule's target model is a finding-format change and needs
-  a new evidence reference shape, not a bypass in the planner.
+  a new evidence reference shape, not a bypass in the planner. Dependency
+  coverage can be widened by adding a resolver, but never by weakening the
+  unresolved-reference blocker.
