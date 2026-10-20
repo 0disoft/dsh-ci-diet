@@ -41,25 +41,30 @@ const INTERPRETERS = new Set([
   "php",
 ]);
 
-/** Interpreter flags that consume the following token instead of naming a script. */
+/** Interpreter flags that take a separate value token (a module, loader, or file). */
 const FLAGS_WITH_VALUE = new Set([
   "-r",
   "--require",
   "--loader",
+  "--experimental-loader",
   "--import",
-  "-p",
-  "--print",
-  "--enable-source-maps",
-  "-i",
-  "--inspect",
-  "--inspect-brk",
-  "-w",
-  "--watch",
   "--env-file",
+  "-I",
+  "-W",
+  "-X",
 ]);
 
 const MODULE_FLAGS = new Set(["-m", "--module"]);
-const INLINE_FLAGS = new Set(["-e", "--eval", "-c"]);
+const INLINE_FLAGS = new Set(["-e", "--eval", "-c", "-p", "--print"]);
+
+/** Whether a flag value names a repository file rather than a package or literal. */
+function flagValuePath(value: string): string | null {
+  if (value === "" || value.includes("://")) return null;
+  if (value.startsWith("./") || value.startsWith("../") || value.startsWith("/")) return value;
+  if (value.startsWith("@")) return null;
+  if (value.includes("/") || /\.[A-Za-z0-9]{1,6}$/.test(value)) return value;
+  return null;
+}
 const SHELL_SOURCE_COMMANDS = new Set([".", "source"]);
 
 function toPosix(value: string): string {
@@ -208,20 +213,30 @@ export function collectDependencies(
       miss(base, candidate);
       return;
     }
+    const dirDisplay = toPosix(relative(realRoot, dir)) || ".";
     const stack: string[] = [dir];
     let collected = 0;
     let visited = 0;
-    while (stack.length > 0 && visited < MAX_ACTION_FILES) {
+    let truncated = false;
+    while (stack.length > 0) {
+      if (visited >= MAX_ACTION_FILES) {
+        truncated = true;
+        break;
+      }
       const current = stack.pop() as string;
       let entries;
       try {
         entries = readdirSync(current, { withFileTypes: true });
       } catch {
+        unresolved.add(toPosix(relative(realRoot, current)) + " (unreadable directory)");
         continue;
       }
       for (const entry of entries) {
+        if (visited >= MAX_ACTION_FILES) {
+          truncated = true;
+          break;
+        }
         visited += 1;
-        if (visited > MAX_ACTION_FILES) break;
         if (entry.isDirectory()) {
           if (!ACTION_SKIP_DIRS.has(entry.name)) stack.push(join(current, entry.name));
           continue;
@@ -231,12 +246,16 @@ export function collectDependencies(
         const relativePath = toPosix(relative(realRoot, real));
         if (found.has(relativePath)) continue;
         const hash = hashFile(real);
-        if (hash === null) continue;
+        if (hash === null) {
+          unresolved.add(relativePath + " (unreadable file)");
+          continue;
+        }
         found.set(relativePath, hash);
         collected += 1;
       }
     }
-    if (collected === 0) unresolved.add(toPosix(relative(realRoot, dir)));
+    if (truncated || stack.length > 0) unresolved.add(dirDisplay + " (file limit reached)");
+    if (collected === 0) unresolved.add(dirDisplay);
   };
 
   for (const job of workflow.jobs) {
@@ -285,6 +304,17 @@ export function collectDependencies(
           }
           continue;
         }
+        const flagValue = (value: string): void => {
+          const target = flagValuePath(value);
+          if (target === null) return;
+          add(working, target);
+          if (
+            (target.startsWith("./") || target.startsWith("../") || target.startsWith("/")) &&
+            resolveFile(realRoot, working, target) === null
+          ) {
+            miss(working, target);
+          }
+        };
         let index = 1;
         let moduleMode = false;
         let inline = false;
@@ -299,7 +329,16 @@ export function collectDependencies(
             index += 1;
             break;
           }
+          const equals = token.startsWith("--") ? token.indexOf("=") : -1;
+          if (equals > 2) {
+            const name = token.slice(0, equals);
+            if (FLAGS_WITH_VALUE.has(name)) flagValue(token.slice(equals + 1));
+            index += 1;
+            continue;
+          }
           if (FLAGS_WITH_VALUE.has(token)) {
+            const value = segment[index + 1];
+            if (value !== undefined) flagValue(value);
             index += 2;
             continue;
           }

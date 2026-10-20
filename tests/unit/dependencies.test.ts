@@ -189,3 +189,131 @@ test("reports dynamic working directories and dynamic run scripts instead of ski
     "jobs.build.steps[1] (dynamic run script)",
   ]);
 });
+
+test("treats boolean node flags as flags and follows value-taking ones", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-deps-"));
+  const dir = join(root, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(root, "build.js"), "console.log('build')\n", "utf8");
+  writeFileSync(join(root, "setup.cjs"), "module.exports = {}\n", "utf8");
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: node --enable-source-maps build.js",
+    "      - run: node --require ./setup.cjs build.js",
+  ].join("\n");
+  writeFileSync(join(dir, "ci.yml"), text, "utf8");
+  const workflow = parseWorkflow(".github/workflows/ci.yml", text);
+  const collection = collectDependencies(root, workflow);
+  assert.deepEqual(collection.dependencies.map((entry) => entry.ref), [
+    "build.js",
+    "setup.cjs",
+  ]);
+  assert.deepEqual(collection.unresolved, []);
+});
+
+test("marks a local action as unresolved when the file limit hides files", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-deps-"));
+  const dir = join(root, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  const action = join(root, ".github", "actions", "big");
+  mkdirSync(action, { recursive: true });
+  writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: zzz.js\n", "utf8");
+  for (let index = 0; index < 505; index += 1) {
+    writeFileSync(join(action, "f" + String(index).padStart(3, "0") + ".js"), "export {}\n", "utf8");
+  }
+  writeFileSync(join(action, "zzz.js"), "console.log('main')\n", "utf8");
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: ./.github/actions/big",
+  ].join("\n");
+  writeFileSync(join(dir, "ci.yml"), text, "utf8");
+  const workflow = parseWorkflow(".github/workflows/ci.yml", text);
+  const collection = collectDependencies(root, workflow);
+  assert.ok(
+    collection.unresolved.some((entry) => entry.includes("(file limit reached)")),
+    collection.unresolved.join(","),
+  );
+  assert.ok(
+    collection.dependencies.length < 507,
+    "expected the limit to stop collection before every file",
+  );
+});
+
+test("apply refuses a changed script even when the command starts with a boolean node flag", async () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-deps-"));
+  const dir = join(root, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: node --enable-source-maps build.js",
+  ].join("\n");
+  writeFileSync(join(dir, "ci.yml"), text, "utf8");
+  writeFileSync(join(root, "build.js"), "console.log('build')\n", "utf8");
+  const now = new Date("2026-10-21T00:00:00Z");
+  const binding = createLocalBinding(root, now.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+  const workflow = parseWorkflow(".github/workflows/ci.yml", text);
+  const deps = collectDependencies(root, workflow).dependencies;
+  assert.deepEqual(deps.map((entry) => entry.ref), ["build.js"]);
+  const edit = planTimeoutEdit(text, workflow, workflow.jobs[0] as never, 15);
+  if (edit.edit == null) throw new Error("fixture edit failed");
+  const attestation = createAttestation({
+    bindingId: binding.bindingId,
+    workflowPath: ".github/workflows/ci.yml",
+    workflowHash: workflow.sha256,
+    dependencyHash: dependencyHashOf(deps),
+    scope: "job",
+    jobKey: "build",
+    stepKey: null,
+    claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+    evidenceRefs: ["test:deps-flags"],
+    issuedBy: { channel: "human-cli", subjectId: "tester" },
+    now,
+  });
+  const store = PatchStore.open(join(root, ".ci-diet"));
+  store.saveBinding(binding);
+  store.saveAttestation(attestation);
+  const fetchedAt = now.toISOString();
+  const policies = buildPolicySnapshots({
+    binding,
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt },
+    retention: { days: 90, maximumAllowedDays: 90, fetchedAt },
+    now,
+  });
+  const built = buildPatchPlan({
+    binding,
+    workflow,
+    text,
+    edits: [edit.edit],
+    attestations: [attestation],
+    policies,
+    blockers: [],
+    coverageWriteAllowed: true,
+    dependencies: deps,
+    now,
+  });
+  store.savePlan(built.plan, { coverageWriteAllowed: true, reportId: null });
+  approvePlan({
+    store,
+    planId: built.plan.planId,
+    confirmation: approvalConfirmation(built.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now,
+  });
+  writeFileSync(join(root, "build.js"), "console.log('changed')\n", "utf8");
+  const result = await applyPlan({ store, planId: built.plan.planId, now, subjectId: "tester" });
+  assert.equal(result.state, "not_applied");
+  assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"), result.reasons.join(","));
+});
