@@ -111,6 +111,31 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(approved.plan.status.state, "approved");
 });
 
+for (const failingWrite of ["saveNonce", "savePlan"] as const) {
+  test("approval can retry after " + failingWrite + " fails without permitting an unapproved apply", async (t) => {
+    const f = setup();
+    const approve = () => approvePlan({
+      store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now,
+    });
+    const failure = t.mock.method(f.store, failingWrite, () => { throw new Error("injected write failure"); });
+    assert.throws(approve, /injected write failure/);
+    failure.mock.restore();
+    const stateAfterFailure = f.store.readPlan(f.plan.planId)?.plan.status.state;
+    const refused = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+    assert.equal(refused.state, "not_applied");
+    assert.ok(refused.reasons.includes("NONCE_INVALID"));
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+
+    const approved = approve();
+    assert.equal(stateAfterFailure, f.plan.status.state);
+    assert.equal(approved.plan.status.state, "approved");
+    assert.equal(f.store.readNonce(f.plan.planId)?.nonceId, approved.plan.status.approvalNonceId);
+    const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+    assert.equal(applied.state, "applied");
+  });
+}
+
 for (const defect of ["coverage-string", "nonce-channel", "nonce-subject", "nonce-time"] as const) {
   test("apply refuses malformed sidecar fields: " + defect, async () => {
     const f = setup();
