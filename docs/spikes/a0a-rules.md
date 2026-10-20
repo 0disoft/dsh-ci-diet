@@ -23,7 +23,8 @@ vitejs/vite, withastro/astro, tailwindlabs/tailwindcss, microsoft/TypeScript-Web
 - Raw collection output stays out of the repository. The scripts are
   `scripts/spikes/a0a-collect.mjs`, `a0a-analyze.mjs`, and `a0a-pr-probe.mjs`;
   committed summaries are `evidence/a0a/collect-summary.json`,
-  `evidence/a0a/metrics.json`, and `evidence/a0a/pr-probe.json`.
+  `evidence/a0a/metrics.json`, `evidence/a0a/pr-probe.json`, and
+  `evidence/a0a/jobkey.json`.
 
 Limitations: one snapshot, no historical definitions, no protection rules, no
 cache inventory, no attempt-level separation beyond the latest attempt, and no
@@ -85,6 +86,33 @@ At the 20-sample write threshold no workflow is eligible. The 12 workflows that
 reach five samples are large, long-running workflows whose job keys are usually
 hidden behind display names. Lowering the threshold would not fix the mapping
 problem and would weaken the p95 basis.
+
+### Job key recovery
+
+The mapping prototype refetched the 159 resolved definitions, parsed job `name:`
+templates and literal matrix values, and tried four rules against the 1,298 jobs
+with job detail:
+
+| Rule | Jobs |
+| --- | --- |
+| Single-job workflow | 122 |
+| Display name equals key | 78 |
+| Display name equals `name:` literal | 213 |
+| Matrix-expanded `name:` match | 115 |
+| Unmatched | 770 |
+| Match rate | 40.7% (53.5% excluding rust-lang/rust) |
+
+rust-lang/rust accounts for 325 of the 770 unmatched jobs: its matrix values
+arrive through `fromJSON`, so no static expansion can predict the display name.
+vscode and next.js build names from expressions for the same effect. tailwindcss,
+whose names are literal matrix templates, reached 84%.
+
+Collapsing matrix variants into one key yields 162 cohorts: 14 reach at least 5
+samples and one reaches at least 20 (tailwindcss integration tests, which already
+carry a timeout). CD005 cohorts are per matrix value, so those 84 samples are
+roughly four per variant. **At the default 100-run budget the 20-sample write gate
+is effectively unreachable for matrix workflows, and no cohort both reached 20
+samples and lacked a timeout.**
 
 ## Gate decisions
 

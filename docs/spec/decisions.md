@@ -30,3 +30,6 @@ new record, not an edit to the rationale.
 - ADR-13 does not lower CD005's 20-sample write requirement and does not remove
   CD005 from the contract's writable rule set. It changes defaults, not write
   safety. Enabling rules is a runtime setting; `allowedRules` still bounds writes.
+- ADR-13 also rests on `evidence/a0a/jobkey.json`: best-effort key recovery
+  matched 40.7% of sampled jobs, and the only key-level cohort with 20 samples
+  already carried a timeout. Per-matrix cohorting makes the gate rarer still.

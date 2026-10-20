@@ -1,0 +1,153 @@
+{
+  "generatedAt": "2026-10-20T12:57:01.918Z",
+  "requests": 0,
+  "totals": {
+    "jobs": 1298,
+    "single": 122,
+    "keyEqualsName": 78,
+    "nameLiteral": 213,
+    "matrix": 115,
+    "unmapped": 770,
+    "matched": 528,
+    "matchRate": 0.4068
+  },
+  "cohorts": {
+    "count": 162,
+    "withAtLeast5": 14,
+    "withAtLeast20": 1,
+    "top": [
+      {
+        "key": "tailwindlabs/tailwindcss|.github/workflows/integration-tests.yml|tests",
+        "samples": 84,
+        "timeoutMissing": 0
+      },
+      {
+        "key": "rust-lang/rust|.github/workflows/ci.yml|calculate_matrix",
+        "samples": 16,
+        "timeoutMissing": 16
+      },
+      {
+        "key": "vitejs/vite|.github/workflows/ci.yml|test",
+        "samples": 16,
+        "timeoutMissing": 0
+      },
+      {
+        "key": "tailwindlabs/tailwindcss|.github/workflows/ci.yml|tests",
+        "samples": 15,
+        "timeoutMissing": 0
+      },
+      {
+        "key": "facebook/react|.github/workflows/runtime_eslint_plugin_e2e.yml|test",
+        "samples": 10,
+        "timeoutMissing": 10
+      },
+      {
+        "key": "vitejs/vite|.github/workflows/semantic-pull-request.yml|main",
+        "samples": 10,
+        "timeoutMissing": 10
+      },
+      {
+        "key": "tailwindlabs/tailwindcss|.github/workflows/ci.yml|notify",
+        "samples": 9,
+        "timeoutMissing": 9
+      },
+      {
+        "key": "vercel/next.js|.github/workflows/pull_request_auto_label.yml|label",
+        "samples": 9,
+        "timeoutMissing": 9
+      },
+      {
+        "key": "microsoft/vscode|.github/workflows/codeql.yml|analyze",
+        "samples": 8,
+        "timeoutMissing": 8
+      },
+      {
+        "key": "tailwindlabs/tailwindcss|.github/workflows/integration-tests.yml|notify",
+        "samples": 8,
+        "timeoutMissing": 8
+      }
+    ]
+  },
+  "perRepo": {
+    "denoland/deno": {
+      "jobs": 59,
+      "single": 1,
+      "keyEqualsName": 7,
+      "nameLiteral": 0,
+      "matrix": 0,
+      "unmapped": 51
+    },
+    "facebook/react": {
+      "jobs": 140,
+      "single": 17,
+      "keyEqualsName": 15,
+      "nameLiteral": 24,
+      "matrix": 0,
+      "unmapped": 84
+    },
+    "microsoft/TypeScript-Website": {
+      "jobs": 34,
+      "single": 17,
+      "keyEqualsName": 8,
+      "nameLiteral": 0,
+      "matrix": 0,
+      "unmapped": 9
+    },
+    "microsoft/vscode": {
+      "jobs": 175,
+      "single": 15,
+      "keyEqualsName": 1,
+      "nameLiteral": 55,
+      "matrix": 0,
+      "unmapped": 104
+    },
+    "oven-sh/bun": {
+      "jobs": 29,
+      "single": 17,
+      "keyEqualsName": 3,
+      "nameLiteral": 9,
+      "matrix": 0,
+      "unmapped": 0
+    },
+    "rust-lang/rust": {
+      "jobs": 342,
+      "single": 0,
+      "keyEqualsName": 0,
+      "nameLiteral": 17,
+      "matrix": 0,
+      "unmapped": 325
+    },
+    "tailwindlabs/tailwindcss": {
+      "jobs": 145,
+      "single": 0,
+      "keyEqualsName": 19,
+      "nameLiteral": 4,
+      "matrix": 99,
+      "unmapped": 23
+    },
+    "vercel/next.js": {
+      "jobs": 251,
+      "single": 16,
+      "keyEqualsName": 19,
+      "nameLiteral": 80,
+      "matrix": 0,
+      "unmapped": 136
+    },
+    "vitejs/vite": {
+      "jobs": 61,
+      "single": 18,
+      "keyEqualsName": 0,
+      "nameLiteral": 19,
+      "matrix": 16,
+      "unmapped": 8
+    },
+    "withastro/astro": {
+      "jobs": 62,
+      "single": 21,
+      "keyEqualsName": 6,
+      "nameLiteral": 5,
+      "matrix": 0,
+      "unmapped": 30
+    }
+  }
+}

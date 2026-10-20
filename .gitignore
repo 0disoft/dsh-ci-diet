@@ -5,3 +5,4 @@ dist/
 .review-bundles/
 coverage/
 evidence/a0a/raw/
+evidence/a0a/workflow-yaml.json
