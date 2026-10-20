@@ -1,0 +1,9 @@
+name: Duplicate
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps: []
+  test:
+    runs-on: ubuntu-latest
+    steps: []

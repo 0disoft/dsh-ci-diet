@@ -47,7 +47,23 @@ export const en = {
   "error.UNSUPPORTED_YAML": "This YAML shape cannot be patched safely.",
   "error.BACKUP_UNAVAILABLE": "A durable backup could not be written; nothing was changed.",
   "error.WRITE_CONFLICT": "The file changed during verification; review it manually.",
-  "error.COMMAND_FAILED": "The command failed."
+  "error.COMMAND_FAILED": "The command failed.",
+  "cli.usage": "Usage: ci-diet <command> [options]\n\n  scan    Analyze workflow files without network access\n  --help  Show this help",
+  "cli.scan.help": "Usage: ci-diet scan [--cwd <path>] [--json] [--out <file>] [--rules <ids>] [--require-complete]",
+  "cli.scan.root": "Repository: {name} at {root}",
+  "cli.scan.workflows": "Workflows: {parsed} of {total} parsed",
+  "cli.scan.coverage": "Workflow definitions: {status} ({fetched}/{expected})",
+  "cli.scan.noWorkflows": "No workflow files found under .github/workflows.",
+  "cli.scan.noFindings": "No findings.",
+  "cli.scan.finding": "- [{rule}] {title}",
+  "cli.scan.summary": "Findings: {findings}",
+  "cli.scan.written": "Report written to {path}",
+  "cli.scan.staticNote": "Static scan: workflow text only. Run history is not collected.",
+  "cli.scan.incomplete": "Collection is incomplete; pass --json for the full reason list.",
+  "cli.unknownCommand": "Unknown command: {command}",
+  "cli.missingValue": "Missing value for {flag}",
+  "cli.unknownRule": "Unknown rule: {rule}",
+  "cli.unknownFlag": "Unknown flag: {flag}",
 } as const;
 
 export type MessageKey = keyof typeof en;

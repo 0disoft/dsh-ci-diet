@@ -1,0 +1,10 @@
+name: Lint
+on: pull_request
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - run: npm test
