@@ -2,7 +2,7 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **alpha, published on npm** as `dsh-ci-diet@0.1.0`. The contracts,
+Status: **alpha, published on npm** as `dsh-ci-diet@0.1.1`. The contracts,
 specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
 self-contained HTML report are implemented and tested. The DSH Web client
 screens are still open.
@@ -68,7 +68,7 @@ dsh plugin --profile web add dsh-ci-diet
 The plugin adds one disabled loader entry; enable `networkEnabled` only if you
 want history sync. Installing the package globally is optional: `npx dsh-ci-diet`
 runs the same CLI, and the DSH plugin only needs the package in the profile.
-Release tags are on GitHub; the matching npm version is `0.1.0`.
+Release tags are on GitHub; the matching npm version is `0.1.1`.
 
 ## Run it
 

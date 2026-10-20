@@ -3,6 +3,21 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
+## 0.1.1 (2026-10-21)
+
+### Added
+
+- Release workflow: pushing a `v*` tag runs the CI checks in
+  `.github/workflows/publish.yml`, verifies the tag against `package.json`,
+  refuses to overwrite an already published version, and publishes with npm
+  trusted publishing (GitHub OIDC) and provenance. No npm token is used.
+
+### Changed
+
+- The README, Korean mirror, and specification describe the published package
+  and the tag-driven release process.
+- `ci-diet --version` and report `engineVersion` now track the package version.
+
 ## 0.1.0 (2026-10-21)
 
 ### Added

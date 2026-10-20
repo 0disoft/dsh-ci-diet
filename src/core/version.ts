@@ -1,5 +1,8 @@
-/** Engine and rule versions are part of finding fingerprints and plan digests. */
-export const ENGINE_VERSION = "0.1.0";
+/**
+ * Engine version printed by the CLI and stored in reports. It must match the
+ * package version; tests/unit/release-process.test.ts enforces that.
+ */
+export const ENGINE_VERSION = "0.1.1";
 
 export const RULE_VERSION = "0.1.0";
 

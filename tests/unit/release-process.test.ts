@@ -6,9 +6,13 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { parse } from "yaml";
+import { ENGINE_VERSION } from "../../src/core/version.ts";
 
 const tagScript = fileURLToPath(new URL("../../scripts/check-release-tag.mjs", import.meta.url));
 const publishWorkflow = fileURLToPath(new URL("../../.github/workflows/publish.yml", import.meta.url));
+const packageJson = JSON.parse(
+  readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
+) as { version: string };
 
 function runTag(tag: string, version: string) {
   const dir = mkdtempSync(join(tmpdir(), "ci-diet-release-"));
@@ -20,6 +24,10 @@ function runTag(tag: string, version: string) {
     rmSync(dir, { recursive: true, force: true });
   }
 }
+
+test("package version matches the engine version", () => {
+  assert.equal(ENGINE_VERSION, packageJson.version);
+});
 
 test("release tag accepts a matching vX.Y.Z tag", () => {
   const result = runTag("v0.1.0", "0.1.0");
