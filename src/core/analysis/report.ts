@@ -68,8 +68,8 @@ function jobsFrom(history: HistoryBundle, removals: readonly RuleRemoval[]): Job
 export function buildHistoryReport(input: HistoryReportInput): HistoryReportResult {
   const coverage = buildCoverage(
     {
-      apiVersion: "2022-11-28",
-      ghVersion: "unknown",
+      apiVersion: input.history.apiVersion ?? "unknown",
+      ghVersion: input.history.ghVersion ?? "unknown",
       requestedFrom: input.history.requestedFrom,
       requestedTo: input.history.requestedTo,
     },

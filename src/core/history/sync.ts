@@ -3,7 +3,7 @@ import { parseWorkflow } from "../workflow/parse.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { GitHubError } from "../../adapters/github/errors.ts";
 import { RequestBudget } from "../../adapters/github/budget.ts";
-import { GhTransport } from "../../adapters/github/transport.ts";
+import { API_VERSION, GhTransport, readGhVersion } from "../../adapters/github/transport.ts";
 import { GitHubClient } from "../../adapters/github/client.ts";
 import type { GitHubRun } from "../../adapters/github/client.ts";
 import { durationMillisBetween, skuForLabels } from "./model.ts";
@@ -47,10 +47,14 @@ export async function syncRepositoryHistory(options: {
   readonly now: Date;
   readonly transport?: GhTransport;
   readonly runner?: import("../../adapters/github/transport.ts").GhRunner;
+  /** Called after each run is collected, for interactive progress only. */
+  readonly onProgress?: (snapshot: { readonly runsProcessed: number; readonly runsTotal: number; readonly jobsFetched: number }) => void;
 }): Promise<SyncResult> {
   const { config, now } = options;
   const historyConfig = config.history;
   const budget = new RequestBudget(historyConfig.quotas);
+  const ghVersion = options.transport === undefined ? await readGhVersion(options.runner) : null;
+  const versionLabel = ghVersion ?? "unknown";
   const transport = options.transport ?? new GhTransport({
     budget,
     timeoutMs: historyConfig.requestTimeoutMs,
@@ -172,6 +176,7 @@ export async function syncRepositoryHistory(options: {
       definition,
       definitionResolution: definition === null ? "unresolved" : "resolved",
     });
+    options.onProgress?.({ runsProcessed: historyRuns.length, runsTotal: runs.length, jobsFetched });
 
   }
 
@@ -265,6 +270,8 @@ export async function syncRepositoryHistory(options: {
     status === "complete" ? [] : reasons.length === 0 ? [status === "partial" ? "PARTIAL_COLLECTION" : "UNAVAILABLE"] : [...reasons];
 
   const history: HistoryBundle = {
+    apiVersion: API_VERSION,
+    ghVersion: versionLabel,
     repositoryId: String(repository.id),
     repositoryFullName: repository.full_name,
     defaultBranch,
@@ -321,5 +328,5 @@ export async function syncRepositoryHistory(options: {
     missingScopes,
   };
 
-  return { history, budget, ghVersion: "unknown" };
+  return { history, budget, ghVersion: versionLabel };
 }

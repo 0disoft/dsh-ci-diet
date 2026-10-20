@@ -22,6 +22,9 @@ Keep a Changelog, and the project uses semantic versioning.
   references; text and JSON formats share the same stored record.
 - DSH bundle plugin with `ci_diet_scan`, `ci_diet_sync`, `ci_diet_report`,
   and `ci_diet_plan`.
+- Sync progress line on interactive terminals, and coverage that records the
+  negotiated GitHub API version and the `gh --version` used for an observed
+  report.
 - English and Korean message catalogs; Simplified Chinese is a slot.
 
 ### Known gaps

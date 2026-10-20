@@ -353,7 +353,27 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     ? DEFAULT_CONFIG
     : { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: options.days } };
 
-  const syncResult = await syncRepositoryHistory({ owner, repo: repository, config, now: new Date() });
+  const showProgress = process.stderr.isTTY === true && !options.json;
+  let progressPrinted = false;
+  const syncResult = await syncRepositoryHistory({
+    owner,
+    repo: repository,
+    config,
+    now: new Date(),
+    ...(showProgress
+      ? {
+          onProgress: (progress: { runsProcessed: number; runsTotal: number; jobsFetched: number }) => {
+            progressPrinted = true;
+            process.stderr.write("\r" + t("cli.sync.progress", {
+              runs: progress.runsProcessed,
+              total: progress.runsTotal,
+              jobs: progress.jobsFetched,
+            }));
+          },
+        }
+      : {}),
+  });
+  if (progressPrinted) process.stderr.write("\r" + " ".repeat(72) + "\r");
   const history = syncResult.history;
   const upgraded = createLocalBinding(discovery.root, generatedAt, { repositoryFullName: history.repositoryFullName });
   const built = buildHistoryReport({

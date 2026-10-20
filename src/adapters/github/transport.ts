@@ -60,6 +60,18 @@ export const ghCliRunner: GhRunner = (args) =>
     });
   });
 
+/** Read the installed gh version for provenance. Returns null when gh is missing. */
+export async function readGhVersion(runner: GhRunner = ghCliRunner): Promise<string | null> {
+  try {
+    const result = await runner(["--version"]);
+    if (result.exitCode !== 0) return null;
+    const match = /^gh version ([^\s]+)/m.exec(result.stdout);
+    return match === null ? null : match[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function parseResponse(stdout: string): { status: number; headers: Record<string, string>; text: string } {
   const normalized = stdout.replace(/\r\n/g, "\n");
   const separator = normalized.indexOf("\n\n");

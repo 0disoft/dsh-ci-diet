@@ -62,6 +62,10 @@ export interface ProtectionSnapshot {
 }
 
 export interface HistoryBundle {
+  /** GitHub REST API version the sync negotiated, or "unknown" for bundles saved before 0.1.0. */
+  readonly apiVersion?: string;
+  /** `gh --version` string recorded during sync, or "unknown" when it could not be read. */
+  readonly ghVersion?: string;
   readonly repositoryId: string;
   readonly repositoryFullName: string;
   readonly defaultBranch: string;

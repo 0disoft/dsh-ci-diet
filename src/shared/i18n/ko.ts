@@ -87,6 +87,7 @@ export const ko: Record<MessageKey, string> = {
   "cli.sync.window": "이력: {from}부터 {to}까지 실행 {runs}건, job {jobs}건",
   "cli.sync.coverage": "수집 범위: 이력 {history}, 워크플로 정의 {definitions}, 변경 파일 {changedFiles}",
   "cli.sync.note": "관측 이력: 읽기 전용 GitHub API. 워크플로를 실행하지 않았고 파일도 바꾸지 않았습니다.",
+  "cli.sync.progress": "이력 동기화 중: {runs}/{total}회 실행, {jobs}개 작업 페이지",
   "cli.sync.written": "보고서를 {path}에 기록했습니다",
   "cli.invalidValue": "{flag}의 값이 올바르지 않습니다.",
   "cli.scan.root": "저장소: {root}의 {name}",

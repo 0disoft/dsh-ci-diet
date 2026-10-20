@@ -86,6 +86,7 @@ export const en = {
   "cli.sync.window": "History: {runs} runs and {jobs} jobs from {from} to {to}",
   "cli.sync.coverage": "Coverage: history {history}, workflow definitions {definitions}, changed files {changedFiles}",
   "cli.sync.note": "Observed history: read-only GitHub API. No workflow was run and no file was changed.",
+  "cli.sync.progress": "Syncing history: {runs}/{total} runs, {jobs} job pages",
   "cli.sync.written": "Report written to {path}",
   "cli.invalidValue": "Invalid value for {flag}.",
   "cli.scan.root": "Repository: {name} at {root}",
