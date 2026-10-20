@@ -1,0 +1,8 @@
+# Inserted by the dsh-ci-diet bundle. Users may override this row by id in
+# their profile cordis.patch.yml; restate every key when overriding.
+- insert:
+    - id: ciDiet.bootstrap
+      name: dsh-ci-diet
+      config:
+        networkEnabled: false
+        localApplyEnabled: false

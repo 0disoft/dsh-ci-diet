@@ -103,6 +103,7 @@ tests/unit      네트워크가 필요 없는 빠른 검사
 - 패치 모델: [docs/spec/patch-model.md](docs/spec/patch-model.md)
 - 저장·오류: [docs/spec/storage.md](docs/spec/storage.md)
 - 결정 기록: [docs/spec/decisions.md](docs/spec/decisions.md)
+- 플러그인·CLI 안내: [docs/guide/plugin.md](docs/guide/plugin.md)
 - 계약 출처: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - English: [README.md](README.md)
 

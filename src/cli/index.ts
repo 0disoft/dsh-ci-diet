@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { RULE_IDS } from "../core/model/domain.ts";
 import type { RuleId } from "../core/model/domain.ts";
@@ -9,6 +8,7 @@ import { createLocalBinding, readGithubRemote } from "../core/scan/binding.ts";
 import { discoverWorkflows } from "../core/scan/discover.ts";
 import { parseWorkflow } from "../core/workflow/parse.ts";
 import { syncRepositoryHistory } from "../core/history/sync.ts";
+import { defaultStateDir } from "../core/state/paths.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
 import { composeCoverage } from "../core/analysis/coverage.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
@@ -218,12 +218,6 @@ function parseArgs(argv: readonly string[]): Options {
     subject,
     claims,
   };
-}
-
-function defaultStateDir(): string {
-  const local = process.env.LOCALAPPDATA;
-  if (local !== undefined && local !== "") return join(local, "CI-Diet", "profiles", "default");
-  return join(homedir(), ".local", "state", "ci-diet", "profiles", "default");
 }
 
 function stateDirOf(options: Options): string {
@@ -534,7 +528,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   });
 
   const finding = report.findings.find((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
-  if (finding === undefined || finding.patchability !== "eligible") {
+  if (finding === undefined || finding.patchability === "blocked") {
     process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
     for (const blocker of finding?.blockers ?? []) process.stderr.write("  - " + blocker + "\n");
     return EXIT_INCOMPLETE;

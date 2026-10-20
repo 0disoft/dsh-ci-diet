@@ -58,3 +58,26 @@ new record, not an edit to the rationale.
   `sha256:d8984479...`). `src/core/contracts/schema.ts` is a structural mirror;
   pattern, length, range, format, and if/then/else constraints are enforced by
   Ajv, not by the types.
+
+## ADR-15: Packaging is one bundle with a single loader entry
+
+- Scope: how the DSH plugin is installed and what it registers.
+- Decision: one npm package named `dsh-ci-diet`. `dsh.bundle.patch` points at
+  `cordis.patch.yml`, which inserts exactly one entry, `ciDiet.bootstrap`,
+  with `networkEnabled` and `localApplyEnabled` both false. The plugin
+  registers four tools and no client bundle yet.
+- Config is a Schemastery schema. `@deepseek-ai/cordis`,
+  `@deepseek-ai/dsh-tools`, and `@deepseek-ai/schemastery` stay peers plus
+  dev dependencies, so the host owns their instances; `ajv`, `ajv-formats`,
+  and `yaml` are regular dependencies.
+- Tool output schemas use the value DSL that `defineTool` accepts. Coverage
+  and metric rows are flattened to arrays of strings instead of nested
+  contract objects, because the model reads them, not the contract validator;
+  the full report stays on disk where Ajv validates it.
+- The package ships `dist/` only. There is no install-time build and no
+  postinstall script.
+- Rationale: a single insert entry keeps `dsh --dump-config` honest and makes
+  removal a one-line patch revert. Keeping the host packages as peers avoids
+  two Cordis or DSH runtime copies in one process.
+- Consequence: a peer resolution failure is a host installation problem, not a
+  silent fallback. The documentation names the required DSH range.

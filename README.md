@@ -2,9 +2,9 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **design stage**. The contracts and the specification are in this
-repository; the analysis engine, patch engine, CLI, and DSH Web plugin are not
-implemented yet, so there is nothing to install.
+Status: **alpha, not published**. The contracts, specification, analysis
+engine, patch engine, CLI, and DSH plugin tools are implemented and tested.
+The Web UI screens and the npm release are still open.
 
 ## What it will do
 
@@ -56,11 +56,22 @@ Every report embeds the pricing snapshot it used (with a content hash), so a
 number can be reproduced later. If the snapshot cannot be verified, the report
 is not shipped.
 
+## Install
+
+```
+npm install --global dsh-ci-diet
+dsh plugin --profile web add dsh-ci-diet
+```
+
+The plugin adds one disabled loader entry; enable `networkEnabled` only if you
+want history sync. Until the first npm release, install from a packed tarball:
+`bun pm pack` then `dsh plugin --profile web add ./dsh-ci-diet-0.1.0.tgz`.
+
 ## Requirements
 
 - Node `^22.19.0 || >=24.0.0`
 - `gh` CLI, optional, only for execution history
-- DeepSeek Harness Web, optional, only for the plugin UI
+- DSH `>=0.2.1-rc.2 <0.3.0`, optional, only for the plugin tools
 
 ## Development
 
@@ -108,6 +119,7 @@ Korean README mirror.
 - Storage and errors: [docs/spec/storage.md](docs/spec/storage.md)
 - Decisions: [docs/spec/decisions.md](docs/spec/decisions.md)
 - Measurement: [docs/spikes/a0a-rules.md](docs/spikes/a0a-rules.md)
+- Plugin and CLI guide: [docs/guide/plugin.md](docs/guide/plugin.md)
 - Contract provenance: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - Korean: [README.ko.md](README.ko.md)
 
