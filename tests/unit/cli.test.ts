@@ -99,3 +99,29 @@ describe("ci-diet scan", () => {
     assert.ok(existsSync(scanRoot));
   });
 });
+
+describe("ci-diet sync guards", () => {
+  it("refuses the network without --network", () => {
+    const result = runCli(["sync", "--cwd", scanRoot, "--lang", "en"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Pass --network/);
+  });
+
+  it("rejects a malformed --repo before calling the API", () => {
+    const result = runCli(["sync", "--network", "--repo", "no-slash", "--cwd", scanRoot, "--lang", "en"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Invalid value for --repo/);
+  });
+
+  it("rejects --days outside the supported window", () => {
+    const result = runCli(["sync", "--network", "--days", "0", "--cwd", scanRoot, "--lang", "en"]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Invalid value for --days/);
+  });
+
+  it("prints sync-specific usage", () => {
+    const result = runCli(["sync", "--help", "--lang", "en"]);
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /Usage: ci-diet sync --network/);
+  });
+});

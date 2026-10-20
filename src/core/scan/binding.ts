@@ -61,15 +61,23 @@ export interface LocalBindingResult {
  * `local:<hash of the workspace>` otherwise. Sync upgrades the binding after
  * the API confirms the repository.
  */
-export function createLocalBinding(workspaceRoot: string, generatedAt: string): LocalBindingResult {
+export function createLocalBinding(
+  workspaceRoot: string,
+  generatedAt: string,
+  options: { readonly repositoryFullName?: string } = {},
+): LocalBindingResult {
   const root = realpathSync.native(workspaceRoot);
-  const remote = readGithubRemote(root);
+  const override = options.repositoryFullName === undefined ? null : parseGithubRemote("https://github.com/" + options.repositoryFullName);
+  const remote = override ?? readGithubRemote(root);
   const warnings: string[] = [];
   const identity = rootIdentityHash(root);
 
   let repositoryId: string;
   let repositoryFullName: string;
-  if (remote !== null) {
+  if (override !== null && options.repositoryFullName !== undefined) {
+    repositoryId = "git:" + sha256Hex(options.repositoryFullName.toLowerCase()).slice(0, 32);
+    repositoryFullName = options.repositoryFullName;
+  } else if (remote !== null) {
     repositoryId = "git:" + sha256Hex(remote.fullName.toLowerCase()).slice(0, 32);
     repositoryFullName = remote.fullName;
   } else {
