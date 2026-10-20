@@ -62,6 +62,7 @@ test("CDJ1 rejects values that are not safe JSON", () => {
     ["$.d", { d: new Date(0) }],
     ["$.m", { m: new Map() }],
     ["$[\"키\"]", { "키": 1 }],
+    // eslint-disable-next-line no-sparse-arrays -- a sparse array must be rejected by CDJ1
     ["$.a[1]", { a: [1, , 3] }]
   ];
   for (const [path, value] of cases) {

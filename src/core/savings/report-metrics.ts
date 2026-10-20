@@ -46,7 +46,6 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
   let removedMillis = 0;
   let baselineMinutes = 0;
   let scenarioMinutes = 0;
-  let savedMicroUsd = 0;
   let knownSkuJobs = 0;
   let unknownSku = false;
   let knownRateMinutes = 0;

@@ -105,18 +105,18 @@ export class GitHubClient {
     this.base = ownerRepoPath(owner, repo);
   }
 
-  private async get<T>(request: EndpointRequest, family: Family): Promise<GhResponse> {
+  private async get(request: EndpointRequest, family: Family): Promise<GhResponse> {
     const response = await this.transport.get(request, family);
     return response;
   }
 
   async repository(): Promise<GitHubRepository> {
-    const response = await this.get<GitHubRepository>({ path: this.base }, "discovery");
+    const response = await this.get({ path: this.base }, "discovery");
     return response.body as GitHubRepository;
   }
 
   async workflows(page: number, perPage: number): Promise<Page<GitHubWorkflow>> {
-    const response = await this.get<{ workflows?: GitHubWorkflow[]; total_count?: number }>(
+    const response = await this.get(
       { path: this.base + "/actions/workflows", query: { page: String(page), per_page: String(perPage) } },
       "discovery",
     );
@@ -132,7 +132,7 @@ export class GitHubClient {
     if (options.branch !== undefined) query.branch = options.branch;
     if (options.event !== undefined) query.event = options.event;
     if (options.status !== undefined) query.status = options.status;
-    const response = await this.get<{ workflow_runs?: GitHubRun[]; total_count?: number }>(
+    const response = await this.get(
       { path: this.base + "/actions/runs", query },
       "discovery",
     );
@@ -141,7 +141,7 @@ export class GitHubClient {
   }
 
   async attemptJobs(runId: number, attempt: number, page: number, perPage: number): Promise<Page<GitHubJob>> {
-    const response = await this.get<{ jobs?: GitHubJob[]; total_count?: number }>(
+    const response = await this.get(
       {
         path: this.base + "/actions/runs/" + runId + "/attempts/" + attempt + "/jobs",
         query: { page: String(page), per_page: String(perPage), filter: "all" },
@@ -153,7 +153,7 @@ export class GitHubClient {
   }
 
   async artifacts(page: number, perPage: number): Promise<Page<GitHubArtifact>> {
-    const response = await this.get<{ artifacts?: GitHubArtifact[]; total_count?: number }>(
+    const response = await this.get(
       { path: this.base + "/actions/artifacts", query: { page: String(page), per_page: String(perPage) } },
       "policyAndFiles",
     );
@@ -162,7 +162,7 @@ export class GitHubClient {
   }
 
   async retentionPolicy(): Promise<RetentionPolicy> {
-    const response = await this.get<RetentionPolicy>(
+    const response = await this.get(
       { path: this.base + "/actions/permissions/artifact-and-log-retention" },
       "policyAndFiles",
     );
@@ -170,7 +170,7 @@ export class GitHubClient {
   }
 
   async contents(path: string, ref: string): Promise<WorkflowContent | null> {
-    const response = await this.get<{ sha?: string; content?: string; encoding?: string }>(
+    const response = await this.get(
       { path: this.base + "/contents/" + contentsSegments(path), query: { ref } },
       "definitions",
     );
@@ -182,7 +182,7 @@ export class GitHubClient {
   }
 
   async pull(number: number): Promise<{ number: number; baseBranch: string; headBranch: string }> {
-    const response = await this.get<{ base?: { ref?: string }; head?: { ref?: string } }>(
+    const response = await this.get(
       { path: this.base + "/pulls/" + number },
       "policyAndFiles",
     );
@@ -191,7 +191,7 @@ export class GitHubClient {
   }
 
   async pullFiles(number: number, page: number, perPage: number): Promise<Page<GitHubPullFile>> {
-    const response = await this.get<GitHubPullFile[]>(
+    const response = await this.get(
       { path: this.base + "/pulls/" + number + "/files", query: { page: String(page), per_page: String(perPage) } },
       "policyAndFiles",
     );
@@ -201,7 +201,7 @@ export class GitHubClient {
 
   async branchRules(branch: string): Promise<unknown[]> {
     try {
-      const response = await this.get<unknown[]>({ path: this.base + "/rules/branches/" + branchSegment(branch) }, "policyAndFiles");
+      const response = await this.get({ path: this.base + "/rules/branches/" + branchSegment(branch) }, "policyAndFiles");
       return Array.isArray(response.body) ? response.body : [];
     } catch (error) {
       if (error instanceof GitHubError && error.code === "NOT_FOUND") return [];
@@ -211,7 +211,7 @@ export class GitHubClient {
 
   async branchProtection(branch: string): Promise<unknown | null> {
     try {
-      const response = await this.get<unknown>({ path: this.base + "/branches/" + branchSegment(branch) + "/protection" }, "policyAndFiles");
+      const response = await this.get({ path: this.base + "/branches/" + branchSegment(branch) + "/protection" }, "policyAndFiles");
       return response.body;
     } catch (error) {
       if (error instanceof GitHubError && error.code === "NOT_FOUND") return null;

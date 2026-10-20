@@ -5,7 +5,7 @@ import { isAnalyzable } from "../workflow/index.ts";
 import { RULE_VERSION } from "../version.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
-import { historyInputHash, jobSeconds, millis } from "./history-utils.ts";
+import { historyInputHash, jobSeconds } from "./history-utils.ts";
 
 const RULE_ID = "CD003";
 
