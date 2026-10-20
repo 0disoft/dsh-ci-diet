@@ -3,13 +3,14 @@
 // design pack. Localized prose is compared structurally; everything else
 // must match exactly.
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const argv = process.argv.slice(2);
 const packArg = argv.find((value) => value.startsWith("--pack="));
+const lockFile = join(repoRoot, "contracts", "contracts.lock.json");
 const packRoot = resolve(
   packArg
     ? packArg.slice("--pack=".length)
@@ -28,7 +29,7 @@ const LOCALIZED = new Map([
 const PROSE_ONLY = new Set(["examples/README.md"]);
 
 // Files that exist only in this repository.
-const REPO_ONLY = new Set(["contracts/UPSTREAM.md"]);
+const REPO_ONLY = new Set(["contracts/UPSTREAM.md", "contracts/contracts.lock.json"]);
 
 const errors = [];
 const listFiles = (dir, prefix) => {
@@ -40,6 +41,43 @@ const listFiles = (dir, prefix) => {
     else out.push(rel);
   }
   return out.sort();
+};
+
+const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+const listRepoArea = (area) => listFiles(join(repoRoot, area), area).filter((rel) => !REPO_ONLY.has(rel));
+
+const verifyAgainstLock = () => {
+  const lock = JSON.parse(readFileSync(lockFile, "utf8"));
+  const files = lock.files;
+  const actual = [...listRepoArea("contracts"), ...listRepoArea("examples")];
+  let compared = 0;
+  for (const [rel, hash] of Object.entries(files)) {
+    if (!actual.includes(rel)) {
+      errors.push(rel + ": missing in this repository");
+      continue;
+    }
+    compared += 1;
+    if (sha256(readFileSync(join(repoRoot, ...rel.split("/")))) !== hash) {
+      errors.push(rel + ": changed since contracts.lock.json was written");
+    }
+  }
+  for (const rel of actual) {
+    if (!(rel in files)) errors.push(rel + ": not recorded in contracts.lock.json");
+  }
+  return compared;
+};
+
+const writeLock = () => {
+  const files = {};
+  for (const area of ["contracts", "examples"]) {
+    for (const rel of listRepoArea(area)) {
+      files[rel] = sha256(readFileSync(join(repoRoot, ...rel.split("/"))));
+    }
+  }
+  writeFileSync(lockFile, JSON.stringify({ pack: "ci-diet-design-v0.2.1", files }, null, 2) + "\n");
+  console.log("wrote contracts/contracts.lock.json (" + Object.keys(files).length + " files)");
+  process.exit(0);
 };
 
 const dig = (rel, side) => {
@@ -123,11 +161,25 @@ const compareTree = (area) => {
   return compared;
 };
 
-const count = compareTree("contracts") + compareTree("examples");
+if (argv.includes("--update-lock")) writeLock();
+
+const packAvailable = (() => {
+  try {
+    return statSync(packRoot).isDirectory();
+  } catch {
+    return false;
+  }
+})();
+
+const count = packAvailable ? compareTree("contracts") + compareTree("examples") : verifyAgainstLock();
 if (errors.length > 0) {
   console.error("contract drift: " + errors.length + " problem(s)");
   for (const line of errors) console.error("  " + line);
   process.exitCode = 1;
 } else {
-  console.log("contracts match the frozen pack (" + count + " files, " + LOCALIZED.size + " localized files)");
+  console.log(
+    packAvailable
+      ? "contracts match the frozen pack (" + count + " files, " + LOCALIZED.size + " localized files)"
+      : "contracts match contracts.lock.json (" + count + " files; design pack not present)",
+  );
 }

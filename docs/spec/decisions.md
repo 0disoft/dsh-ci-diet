@@ -27,6 +27,9 @@ new record, not an edit to the rationale.
   release scope record freezes what measurement actually validated.
 - ADR-11 permits rewording of the four coverage-level descriptions and two sample
   reasons. It does not permit changing enums, required fields, or any hash input.
+  Where the private pack is unavailable, `--check` falls back to
+  `contracts/contracts.lock.json`; the lock is regenerated only with an
+  intentional, reviewed contract change.
 - ADR-13 does not lower CD005's 20-sample write requirement and does not remove
   CD005 from the contract's writable rule set. It changes defaults, not write
   safety. Enabling rules is a runtime setting; `allowedRules` still bounds writes.

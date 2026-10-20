@@ -38,3 +38,7 @@ The unpacked pack is reference material only. It is not edited and not shipped.
    structure, enums, required fields, hashes, and digests are not.
 4. Review chapters, evidence records, agent prompts, and internal estimates stay
    in the private pack. They are never copied here.
+5. The design pack is not published. When it is absent, `--check` verifies the
+   copies against `contracts/contracts.lock.json` (18 files, sha256). After an
+   intentional and reviewed change, regenerate the lock with
+   `node scripts/sync-contracts.mjs --update-lock` and commit it with the change.

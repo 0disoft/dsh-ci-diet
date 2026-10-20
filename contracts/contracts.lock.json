@@ -1,0 +1,23 @@
+{
+  "pack": "ci-diet-design-v0.2.1",
+  "files": {
+    "contracts/ci-diet.schema.json": "74f388db45acb83599a9f49f393531160ee348d83321f01da24b576c39d8bdd6",
+    "contracts/coverage-policy.json": "2b7aa50f81c7760dcba64c913332cb44ec5f1bf433290324fcf866c73614bdac",
+    "contracts/example-validation-map.json": "1c1a7b086e6fd5105e14820e3bc6571f6a159e0fd142d664d28f742153718146",
+    "contracts/pricing-2026-10-20.json": "7192ea47d918cf2b9718a75b3a193d4e62b21b79f9f842898d89fc7b9504db09",
+    "examples/README.md": "659f890daf000c8cfa97c124ae52e49a58b1a29f76b014f860df77cc1548f65e",
+    "examples/a0-measurement-template.json": "c172ac3846c7c260fbf436ba0dc4754bc0c668bd4cce7736f9093fc465dd8097",
+    "examples/analysis-report.json": "dfd5a036da1a329416135551c285598d56ad86492919ac2cc2bf3844826e4970",
+    "examples/attestation.json": "648a7a0983bd1734bd40604b24dfb241effbe42ae0c748b06e354265506c823e",
+    "examples/binding.json": "6047e7aafd39181488d2c592a85423f57f5a1294b1c6feb8049b98deb2a8ed78",
+    "examples/coverage-vectors.json": "37f01418ffeb808dcb28dcaeff97f6fec4437ee830b84b99c5c77af0427568fd",
+    "examples/default-config.json": "47e536dc04d9353262ed8c669901322f1e7957c9bab52ef72aa86df2871f3c2b",
+    "examples/finding-evaluation.json": "43ee6a3072cc671880a5afcf9aab5a712f5c3f2b80c97e75d7261cfaa299a366",
+    "examples/partial-progress.json": "23bb0759ddfdd67402897cd0d069e437c9c062d135b809ed0bcb3731dd4dc94d",
+    "examples/patch-plan.json": "7d55082540d65ef854047576503582160054a8f336270cd658b7ba6e0fde8ac2",
+    "examples/prepared-change.json": "ee9c68665c92c4225532cfb55890ecc3f14c056cb5a57ed01861405b9c7e561b",
+    "examples/savings-vectors.json": "d57c8905725cc37977c84c6e20085d543795490bd1c03332698316dced390f90",
+    "examples/workflow-after.yml": "b5a4c8e20cc97e074291f5f1077302f50b9bac34a97e2fa38019cfea5fde7013",
+    "examples/workflow-before.yml": "7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e"
+  }
+}
