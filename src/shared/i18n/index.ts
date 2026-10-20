@@ -1,9 +1,12 @@
 import { en, type MessageKey } from "./en.ts";
 import { ko } from "./ko.ts";
 import { zhHans } from "./zh-Hans.ts";
+import { hi } from "./hi.ts";
+import { es } from "./es.ts";
+import { fr } from "./fr.ts";
 
 /** Locales we ship. Order matters only for documentation. */
-export const LOCALES = ["en", "ko", "zh-Hans"] as const;
+export const LOCALES = ["en", "ko", "zh-Hans", "hi", "es", "fr"] as const;
 export type Locale = (typeof LOCALES)[number];
 export type { MessageKey };
 export type MessageParams = Readonly<Record<string, string | number>>;
@@ -14,11 +17,19 @@ export const DEFAULT_LOCALE: Locale = "en";
 const dictionaries: Record<Locale, Partial<Record<MessageKey, string>>> = {
   en,
   ko,
-  "zh-Hans": zhHans
+  "zh-Hans": zhHans,
+  hi,
+  es,
+  fr
 };
 
 export function isLocale(value: unknown): value is Locale {
   return typeof value === "string" && (LOCALES as readonly string[]).includes(value);
+}
+
+/** True when a string names a key in the English source dictionary. */
+export function isMessageKey(value: string): value is MessageKey {
+  return Object.hasOwn(en, value);
 }
 
 function normalizeTag(tag: string): string {
@@ -28,23 +39,38 @@ function normalizeTag(tag: string): string {
 
 /**
  * Map one locale tag to a supported locale, or null when the tag is not one we ship.
- * Chinese tags we cannot serve (for example zh-TW) return null so the next
- * candidate wins, and a lone zh-TW ends up on the default locale.
+ * A region only narrows the language: hi-IN, es-MX, and fr-CA resolve to hi, es,
+ * and fr. Chinese tags we cannot serve (for example zh-TW or zh-Hant) return null
+ * so the next candidate wins, and a lone zh-TW ends up on the default locale.
  */
 function matchLocale(tag: string): Locale | null {
   const normalized = normalizeTag(tag);
   if (normalized === "") return null;
-  if (normalized === "en" || normalized.startsWith("en-")) return "en";
-  if (normalized === "ko" || normalized.startsWith("ko-")) return "ko";
-  if (
-    normalized === "zh" ||
-    normalized.startsWith("zh-hans") ||
-    normalized.startsWith("zh-cn") ||
-    normalized.startsWith("zh-sg")
-  ) {
-    return "zh-Hans";
+  const primary = normalized.split("-")[0] ?? "";
+  switch (primary) {
+    case "en":
+      return "en";
+    case "ko":
+      return "ko";
+    case "hi":
+      return "hi";
+    case "es":
+      return "es";
+    case "fr":
+      return "fr";
+    case "zh":
+      if (
+        normalized === "zh" ||
+        normalized.startsWith("zh-hans") ||
+        normalized.startsWith("zh-cn") ||
+        normalized.startsWith("zh-sg")
+      ) {
+        return "zh-Hans";
+      }
+      return null;
+    default:
+      return null;
   }
-  return null;
 }
 
 /**
