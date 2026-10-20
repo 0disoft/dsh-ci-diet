@@ -32,6 +32,11 @@ function evaluateCd002(context: RuleContext): RuleEvaluation {
           "Workflow " + workflow.path + " is triggered by both push and pull_request. That is not waste by itself: " +
           "runs are equivalent only when the event, verified tree, permissions, inputs, job definitions, and checkout ref match. " +
           "CI Diet shows the two trigger clusters on a time axis and does not offer a trigger removal or a combined savings scenario in v0.1.",
+        message: {
+          titleKey: "finding.CD002.title",
+          textKey: "finding.CD002.text",
+          params: { workflow: workflow.path },
+        },
         evidenceLevel: "inferred",
         patchability: "review-only",
         evidenceRefs: ["workflow:" + workflow.path],

@@ -173,6 +173,20 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
           "Job " + cohort.jobKey + " on " + cohort.workflowPath + " ran successfully " + n + " times with a nearest-rank p95 of " +
           p95.toFixed(1) + " s. A timeout of " + recommendation + " minutes is the proposal from ceil(max(2 * p95, p95 + 300) / 60). " +
           "The cohort is definition " + cohort.workflowHash.slice(0, 19) + ", runner labels " + (cohort.runnerKey === "" ? "(none)" : cohort.runnerKey) + ", event " + cohort.event + ".",
+        message: {
+          titleKey: "finding.CD005.title",
+          textKey: "finding.CD005.text",
+          params: {
+            job: cohort.jobKey,
+            p95: p95.toFixed(1),
+            workflow: cohort.workflowPath,
+            samples: n,
+            minutes: recommendation,
+            hash: cohort.workflowHash.slice(0, 19),
+            runner: cohort.runnerKey === "" ? "(none)" : cohort.runnerKey,
+            event: cohort.event,
+          },
+        },
         evidenceLevel: cohortReady ? "observed" : "inferred",
         patchability: eligible ? "eligible" : "review-only",
         evidenceRefs: ["workflow:" + cohort.workflowPath + "#jobs." + cohort.jobKey + ".timeout-minutes", ...sampleIds],

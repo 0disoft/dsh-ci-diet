@@ -1095,6 +1095,33 @@
           "type": "string",
           "minLength": 1
         },
+        "message": {
+          "type": "object",
+          "properties": {
+            "titleKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "textKey": {
+              "type": "string",
+              "minLength": 1
+            },
+            "params": {
+              "type": "object",
+              "additionalProperties": {
+                "type": [
+                  "string",
+                  "number"
+                ]
+              }
+            }
+          },
+          "required": [
+            "titleKey",
+            "textKey"
+          ],
+          "additionalProperties": false
+        },
         "workflowPath": {
           "type": "string",
           "pattern": "^\\.github/workflows/[^/\\\\\\u0000]+\\.ya?ml$"

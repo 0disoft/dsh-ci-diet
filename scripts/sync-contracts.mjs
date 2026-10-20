@@ -25,6 +25,12 @@ const LOCALIZED = new Map([
   ["examples/partial-progress.json", ["/budget/wireRequestCount/reason"]]
 ]);
 
+// Pointers added by this repository on purpose. The repository must have the
+// pointer and the pack must not, so the extension shows up in review.
+const EXTENDED = new Map([
+  ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message"]]
+]);
+
 // Translated markdown: compare existence and parseability only.
 const PROSE_ONLY = new Set(["examples/README.md"]);
 
@@ -142,6 +148,18 @@ const compareTree = (area) => {
     if (PROSE_ONLY.has(rel)) continue;
     const repoBytes = dig(rel, "repo");
     const packBytes = dig(rel, "pack");
+    if (rel.endsWith(".json") && EXTENDED.has(rel)) {
+      const repoCopy = JSON.parse(repoBytes.toString("utf8"));
+      const packCopy = JSON.parse(packBytes.toString("utf8"));
+      for (const pointer of EXTENDED.get(rel)) {
+        if (!dropPointer(repoCopy, pointer)) errors.push(rel + pointer + ": extended pointer missing in this repository");
+        if (dropPointer(packCopy, pointer)) errors.push(rel + pointer + ": unexpectedly present in the design pack");
+      }
+      const drift = [];
+      diff(repoCopy, packCopy, rel, drift);
+      errors.push(...drift);
+      continue;
+    }
     if (rel.endsWith(".json") && LOCALIZED.has(rel)) {
       const repoCopy = JSON.parse(repoBytes.toString("utf8"));
       const packCopy = JSON.parse(packBytes.toString("utf8"));

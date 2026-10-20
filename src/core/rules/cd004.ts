@@ -73,6 +73,20 @@ function evaluateCd004(context: RuleContext): RuleEvaluation {
             " combinations" +
             (shape === "" ? "" : " (" + shape + ")") +
             ". Review whether every combination is needed. A large combination count is not an error by itself, and CI Diet does not edit matrices.",
+          message: {
+            titleKey: combinationCount === null ? "finding.CD004.title.unknown" : "finding.CD004.title.known",
+            textKey:
+              combinationCount === null
+                ? "finding.CD004.text.unknown"
+                : shape === ""
+                  ? "finding.CD004.text.knownNoShape"
+                  : "finding.CD004.text.known",
+            params: {
+              job: job.key,
+              ...(combinationCount === null ? {} : { count: combinationCount }),
+              ...(combinationCount === null || shape === "" ? {} : { shape }),
+            },
+          },
           evidenceLevel: "static",
           patchability: "review-only",
           evidenceRefs: ["workflow:" + workflow.path, "workflow:" + workflow.path + "#jobs." + job.key + ".strategy.matrix"],

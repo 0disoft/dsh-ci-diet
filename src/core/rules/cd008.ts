@@ -87,6 +87,25 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
               "\" uploads an artifact and keeps it for " +
               current +
               ". A 7-day retention is a proposal, not a default; it applies only below the confirmed repository maximum and above the consumer minimum. Current artifacts are never deleted.",
+            message: {
+              titleKey:
+                state.kind === "literal"
+                  ? "finding.CD008.title.literal"
+                  : state.kind === "expression"
+                    ? "finding.CD008.title.expression"
+                    : "finding.CD008.title.default",
+              textKey:
+                state.kind === "literal"
+                  ? "finding.CD008.text.literal"
+                  : state.kind === "expression"
+                    ? "finding.CD008.text.expression"
+                    : "finding.CD008.text.default",
+              params: {
+                job: job.key,
+                step: step.name ?? "step " + (step.index + 1),
+                ...(state.kind === "literal" ? { days: state.days } : {}),
+              },
+            },
             evidenceLevel: "static",
             patchability: patchable ? "review-only" : "blocked",
             evidenceRefs: [

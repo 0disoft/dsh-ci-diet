@@ -178,6 +178,13 @@ export type Finding = {
   "ruleVersion": string;
   "title": string;
   "renderedText": string;
+  "message"?: {
+  "titleKey": string;
+  "textKey": string;
+  "params"?: {
+  [key: string]: string | number;
+};
+};
   "workflowPath": string;
   "workflowHash": string;
   "evidenceLevel": "observed" | "inferred" | "static";

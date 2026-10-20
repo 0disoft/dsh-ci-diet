@@ -129,6 +129,17 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
           "Run " + run.runId + " for pull request #" + pullRequest + " started before a newer run on a different head commit. " +
           "Cancelling it when the replacement was created would have saved about " + removedZero.toFixed(1) + " runner seconds at a 0 s lag, or " +
           removedThirty.toFixed(1) + " runner seconds at a 30 s lag. The lag is a scenario, not a measured cancellation time.",
+        message: {
+          titleKey: "finding.CD001.title",
+          textKey: "finding.CD001.text",
+          params: {
+            pullRequest,
+            workflow: run.workflowPath,
+            runId: run.runId,
+            removedZero: removedZero.toFixed(1),
+            removedThirty: removedThirty.toFixed(1),
+          },
+        },
         evidenceLevel: "observed",
         patchability: eligible ? "eligible" : "review-only",
         evidenceRefs: [

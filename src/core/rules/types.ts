@@ -55,6 +55,12 @@ export interface FindingSpec {
   readonly workflowHash: string;
   readonly title: string;
   readonly renderedText: string;
+  /** Display message keys; the stored English text stays canonical. */
+  readonly message?: {
+    readonly titleKey: string;
+    readonly textKey: string;
+    readonly params?: Readonly<Record<string, string | number>>;
+  };
   readonly evidenceLevel: Finding["evidenceLevel"];
   readonly patchability: Finding["patchability"];
   readonly evidenceRefs: readonly string[];
@@ -79,6 +85,15 @@ export function buildFinding(spec: FindingSpec): Finding {
     ruleVersion: spec.ruleVersion,
     title: spec.title,
     renderedText: spec.renderedText,
+    ...(spec.message
+      ? {
+          message: {
+            titleKey: spec.message.titleKey,
+            textKey: spec.message.textKey,
+            ...(spec.message.params ? { params: { ...spec.message.params } } : {}),
+          },
+        }
+      : {}),
     workflowPath: spec.workflowPath,
     workflowHash: spec.workflowHash,
     evidenceLevel: spec.evidenceLevel,

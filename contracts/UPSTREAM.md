@@ -16,7 +16,7 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 
 | File | Original sha256 | Copy sha256 | Change |
 | --- | --- | --- | --- |
-| `contracts/ci-diet.schema.json` | `74f388db…` | same | none |
+| `contracts/ci-diet.schema.json` | `74f388db…` | differs | added optional `/$defs/Finding/properties/message` |
 | `contracts/pricing-2026-10-20.json` | `7192ea47…` | same | none |
 | `contracts/example-validation-map.json` | `1c1a7b08…` | same | none |
 | `contracts/coverage-policy.json` | `11748554…` | differs | localized `/levels/{full,subset,degrade,skip}` prose |
@@ -36,9 +36,16 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 3. Adding another localized pointer means editing `LOCALIZED` in the script and
    recording the reason in `docs/spec/decisions.md`. Wording is allowed to differ;
    structure, enums, required fields, hashes, and digests are not.
-4. Review chapters, evidence records, agent prompts, and internal estimates stay
+4. A schema field that this repository adds on purpose belongs in `EXTENDED`.
+   `--check` fails when the repository copy lacks the pointer or when the frozen
+   pack already has it, so every extension is visible in review. The current
+   extension is Finding.message, which carries i18n keys and parameters; the
+   English `title` and `renderedText` stay canonical.
+5. Deep-copying a file to hide drift is not an extension. Prefer a narrow optional
+   field, keep it out of digest inputs, and record the reason in an ADR.
+6. Review chapters, evidence records, agent prompts, and internal estimates stay
    in the private pack. They are never copied here.
-5. The design pack is not published. When it is absent, `--check` verifies the
+7. The design pack is not published. When it is absent, `--check` verifies the
    copies against `contracts/contracts.lock.json` (18 files, sha256). After an
    intentional and reviewed change, regenerate the lock with
    `node scripts/sync-contracts.mjs --update-lock` and commit it with the change.

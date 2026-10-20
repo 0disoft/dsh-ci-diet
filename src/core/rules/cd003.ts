@@ -57,6 +57,17 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
             "Pull request #" + number + " changed only non-product documentation (" + pull.files.join(", ") + "), yet " +
             heavy.length + " job(s) ran for at least " + CD003_HEAVY_SECONDS + " seconds each (" + heavySeconds.toFixed(1) + " runner seconds total). " +
             "CI Diet does not generate path filters in v0.1: a workflow-level paths skip can leave a required check Pending.",
+          message: {
+            titleKey: "finding.CD003.title",
+            textKey: "finding.CD003.text",
+            params: {
+              pullRequest: number,
+              files: pull.files.join(", "),
+              heavy: heavy.length,
+              seconds: CD003_HEAVY_SECONDS,
+              total: heavySeconds.toFixed(1),
+            },
+          },
           evidenceLevel: observed ? "observed" : "inferred",
           patchability: "review-only",
           evidenceRefs: ["pull:" + number, ...heavy.map((job) => "job:" + job.jobId)],
