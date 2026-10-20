@@ -79,6 +79,13 @@ Claims are recorded on a durable Attestation, not in the plan digest. If a claim
 is withdrawn, the plan cannot apply. Policy freshness is checked per rule, so an
 unrelated stale snapshot never blocks a timeout edit.
 
+The request must also match the finding it is based on. The finding records the
+workflow hash, the job key, the step index, and the measured value; a request
+for another job, a value that no cohort produced, or a file that changed after
+the report is refused with exit `3` and a reason such as
+`WORKFLOW_HASH_MISMATCH` or `MINUTES_NOT_FROM_EVIDENCE`. Re-run `sync` before
+retrying against a changed workflow.
+
 ## Safety model
 
 - Patches are byte-range edits, one file per plan. The file is never

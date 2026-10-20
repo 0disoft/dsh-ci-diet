@@ -135,3 +135,24 @@ new record, not an edit to the rationale.
   a plan. That is the intended outcome, not a failure.
 - Reversal: widening the gate means adding an explicit claim or a new policy
   dependency to a rule, never bypassing the gate for one entry point.
+## ADR-18: A plan is bound to the finding's target and evidence, not just its rule
+
+- Scope: how a plan chooses the workflow, job, step, and value it edits.
+- Decision: plan creation reparses the current workflow, compares its hash to
+  the finding's `workflowHash`, reads the target job and step from the
+  finding's `evidenceRefs`, and checks the requested value against the
+  collected evidence. CD005 minutes must equal a cohort recommendation for that
+  job; CD008 must point at an `actions/upload-artifact` step with the proposed
+  retention. The CLI and `ci_diet_plan` call the same `targetReasons` function.
+- Dependencies are collected at plan time from the workflow's local scripts,
+  composite actions, and reusable references, and the resulting
+  `dependencyHash` is stored on both the premise and the plan.
+- Rationale: rule plus workflow path is not enough identity. Before this
+  change, a 20-sample `build` cohort could justify a one-minute timeout on an
+  untested `deploy` job, and a report made against older bytes could be planned
+  into a workflow that now had `environment: production`.
+- Consequence: changing a workflow invalidates its findings until the next
+  sync, and a request for another job is refused with `FINDING_NOT_FOUND`
+  rather than silently retargeted.
+- Reversal: widening a rule's target model is a finding-format change and needs
+  a new evidence reference shape, not a bypass in the planner.

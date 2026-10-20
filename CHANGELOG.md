@@ -35,7 +35,23 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
-- The semantic guard now compares every step key, including `env`, `if`, and
+- The semantic guard now parses the whole YAML tree and rejects any path outside
+  the declared edits, not only a hand-picked list of keys. Adding
+  `permissions.contents`, changing a step `env` value, or attaching
+  `environment` to a job fails the plan even when the digest still matches.
+- A plan refuses a finding whose `workflowHash` no longer matches the file.
+  Editing a workflow after a report now requires a fresh `sync` instead of
+  producing a plan from stale evidence.
+- A plan must target the job and step the finding measured, and the requested
+  value must come from the collected evidence: CD005 minutes must be one of the
+  cohort recommendations for that job, and CD008 must name an actual
+  `actions/upload-artifact` step. The CLI and `ci_diet_plan` share this check.
+- Dependency hashes are filled from the local scripts, composite actions, and
+  files the edited workflow references, so changing one after approval fails
+  apply with `DEPENDENCY_HASH_MISMATCH`.
+- CI now builds and runs the packaged entry point (`smoke:node`) in addition to
+  typecheck, lint, and the test suites.
+- The semantic guard also compares every step key, including `env`, `if`, and
   each `with` entry. A digest-consistent payload that drifted outside its rule
   can no longer be applied.
 - A plan resolves the binding for the current workspace root before choosing a

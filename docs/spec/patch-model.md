@@ -75,6 +75,28 @@ outside the declared edits fails the plan even when the recomputed `planDigest`
 is consistent, because a digest proves what was signed, not that the edit stayed
 inside its rule.
 
+## Evidence binding
+
+A plan is built from one finding, and the finding must still describe the bytes
+in the checkout. Every finding stores `workflowHash`, the target job key, and,
+for step-scoped rules, the step index in `evidenceRefs`. Plan creation reparses
+the current file and refuses the request when any of these no longer match:
+
+| Mismatch | Code | Recovery |
+| --- | --- | --- |
+| Current file bytes differ from `workflowHash` | `WORKFLOW_HASH_MISMATCH` | Run `sync` again and make a new plan |
+| Finding measured another job or step | `FINDING_NOT_FOUND` | Choose the job the finding actually measured |
+| Finding did not record a target | `TARGET_NOT_RECORDED` | Reanalyze before planning |
+| CD005 minutes are absent or not a cohort recommendation | `MINUTES_REQUIRED` / `MINUTES_NOT_FROM_EVIDENCE` | Use a value the cohort produced |
+| CD008 step is missing or does not upload an artifact | `STEP_NOT_FOUND` / `STEP_NOT_UPLOAD_ARTIFACT` | Pick the upload step |
+| CD008 retention is not the proposed 7 days | `RETENTION_NOT_FROM_EVIDENCE` | Use the proposed value |
+| History needed for the evidence is absent | `HISTORY_NOT_SYNCED` | Sync, then plan |
+
+A CD005 recommendation belongs to one job. Reusing a 20-sample cohort from a
+`build` job to add a timeout to a `deploy` job is impossible because the target
+job is part of the finding identity; an untested job has no recommendation at
+all. The same selection runs in the CLI and in `ci_diet_plan`.
+
 ## Plan state and dependencies
 
 `PatchPlan.status` is a separate record with `state`, `revision`,
