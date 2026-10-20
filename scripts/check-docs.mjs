@@ -51,11 +51,14 @@ function rel(path) {
   return relative(root, path).split(sep).join("/");
 }
 
+const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".tmp", ".review-bundles"]);
+
 async function listMarkdown(dir) {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true });
   return entries
     .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
     .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
+    .filter((file) => !rel(file).split("/").some((segment) => SKIP_DIRS.has(segment)))
     .sort();
 }
 
