@@ -106,6 +106,7 @@ Korean README mirror.
 - Patch model: [docs/spec/patch-model.md](docs/spec/patch-model.md)
 - Storage and errors: [docs/spec/storage.md](docs/spec/storage.md)
 - Decisions: [docs/spec/decisions.md](docs/spec/decisions.md)
+- Measurement: [docs/spikes/a0a-rules.md](docs/spikes/a0a-rules.md)
 - Contract provenance: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - Korean: [README.ko.md](README.ko.md)
 

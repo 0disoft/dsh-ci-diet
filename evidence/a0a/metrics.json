@@ -1,0 +1,677 @@
+{
+  "generatedAt": "2026-10-20T12:34:21.149Z",
+  "sample": {
+    "repositories": 10,
+    "runsPerRepo": 100,
+    "jobDetailsPerRepo": 25,
+    "prFileLookupsPerRepo": 10,
+    "docsPathRule": "/^(docs?\\/|.*\\.mdx?$|.*\\.markdown$|license|contributing|changelog|code_of_conduct|\\.github\\/(issue_template|pull_request_template|funding)|readme|\\.[a-z]+\\.md$)/i"
+  },
+  "volume": {
+    "runs": 1000,
+    "runsWithJobs": 187,
+    "jobs": 1047,
+    "observedRunnerHours": 163.88,
+    "workflows": 284,
+    "workflowsUnavailableDynamic": 48,
+    "workflowsUnavailableOther": 77,
+    "workflowsUnavailableContent": 77,
+    "workflowsWithParseError": 0
+  },
+  "rules": {
+    "CD001": {
+      "prRuns": 253,
+      "supersededRuns": 83,
+      "supersededRunsWithObservedJobs": 18,
+      "supersededShareOfPrRuns": 0.328,
+      "examples": [
+        {
+          "repo": "vitejs/vite",
+          "run": 39418475851,
+          "seconds": 7
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39418951777,
+          "seconds": 8
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39419132614,
+          "seconds": 7
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39419212972,
+          "seconds": 15
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39421288632,
+          "seconds": 7
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39421761395,
+          "seconds": 6
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39421784446,
+          "seconds": 6
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39421815503,
+          "seconds": 11
+        },
+        {
+          "repo": "vitejs/vite",
+          "run": 39418475599,
+          "seconds": 1519
+        },
+        {
+          "repo": "withastro/astro",
+          "run": 39420282392,
+          "seconds": 70
+        }
+      ]
+    },
+    "CD002": {
+      "workflowsWithPushAndPullRequest": 28,
+      "examples": [
+        "denoland/deno .github/workflows/ci.generated.yml",
+        "facebook/react .github/workflows/compiler_typescript.yml",
+        "facebook/react .github/workflows/shared_lint.yml",
+        "facebook/react .github/workflows/compiler_rust.yml",
+        "facebook/react .github/workflows/compiler_playground.yml",
+        "facebook/react .github/workflows/runtime_build_and_test.yml",
+        "facebook/react .github/workflows/runtime_eslint_plugin_e2e.yml",
+        "microsoft/TypeScript-Website .github/workflows/codeql.yml",
+        "microsoft/vscode .github/workflows/codeql.yml",
+        "microsoft/vscode .github/workflows/copilot-setup-steps.yml"
+      ]
+    },
+    "CD003": {
+      "docsOnlyPrRuns": 3,
+      "heavyDocsOnlyRuns": 1,
+      "heavyShare": 0.333,
+      "examples": [
+        {
+          "repo": "vercel/next.js",
+          "run": 39414244356,
+          "pr": 100324,
+          "seconds": 415
+        }
+      ]
+    },
+    "CD004": {
+      "workflowsWithMatrix": 20,
+      "maxMatrixProduct": 21,
+      "top": [
+        {
+          "repo": "tailwindlabs/tailwindcss",
+          "path": ".github/workflows/integration-tests.yml",
+          "axes": 3,
+          "product": 21
+        },
+        {
+          "repo": "vercel/next.js",
+          "path": ".github/workflows/test_e2e_deploy_release.yml",
+          "axes": 1,
+          "product": 8
+        },
+        {
+          "repo": "facebook/react",
+          "path": ".github/workflows/devtools_regression_tests.yml",
+          "axes": 1,
+          "product": 6
+        },
+        {
+          "repo": "vercel/next.js",
+          "path": ".github/workflows/build_and_test.yml",
+          "axes": 2,
+          "product": 6
+        },
+        {
+          "repo": "facebook/react",
+          "path": ".github/workflows/runtime_eslint_plugin_e2e.yml",
+          "axes": 1,
+          "product": 5
+        },
+        {
+          "repo": "vitejs/vite",
+          "path": ".github/workflows/ci.yml",
+          "axes": 2,
+          "product": 4
+        },
+        {
+          "repo": "withastro/astro",
+          "path": ".github/workflows/continuous_benchmark.yml",
+          "axes": 1,
+          "product": 4
+        },
+        {
+          "repo": "denoland/deno",
+          "path": ".github/workflows/npm_publish.generated.yml",
+          "axes": 1,
+          "product": 3
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "path": ".github/workflows/CI.yml",
+          "axes": 1,
+          "product": 3
+        },
+        {
+          "repo": "microsoft/vscode",
+          "path": ".github/workflows/chat-lib-package.yml",
+          "axes": 1,
+          "product": 3
+        }
+      ]
+    },
+    "CD005": {
+      "mappedJobs": 267,
+      "unmappedJobs": 771,
+      "p95JobSeconds": 497,
+      "medianJobSeconds": 21,
+      "samples": 187,
+      "workflowsMeasured": 0,
+      "workflowsWith5Samples": 12,
+      "workflowsWith10Samples": 5,
+      "workflowsEligible": 0,
+      "workflowsEligibleAt5Samples": 12,
+      "eligibility": [
+        {
+          "workflow": "denoland/deno .github/workflows/pr.generated.yml",
+          "samples": 1,
+          "p95Seconds": 6,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "denoland/deno .github/workflows/node_compat_test.generated.yml",
+          "samples": 5,
+          "p95Seconds": 31,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "denoland/deno .github/workflows/ecosystem_compat_test.generated.yml",
+          "samples": 8,
+          "p95Seconds": 271,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "facebook/react .github/workflows/shared_label_core_team_prs.yml",
+          "samples": 4,
+          "p95Seconds": 4,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/compiler_discord_notify.yml",
+          "samples": 3,
+          "p95Seconds": 2,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/runtime_eslint_plugin_e2e.yml",
+          "samples": 10,
+          "p95Seconds": 108,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "facebook/react .github/workflows/runtime_discord_notify.yml",
+          "samples": 2,
+          "p95Seconds": 3,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/runtime_fuzz_tests.yml",
+          "samples": 2,
+          "p95Seconds": 84,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/shared_stale.yml",
+          "samples": 2,
+          "p95Seconds": 19,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/shared_cleanup_stale_branch_caches.yml",
+          "samples": 1,
+          "p95Seconds": 3,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "facebook/react .github/workflows/runtime_sizebot_comment.yml",
+          "samples": 2,
+          "p95Seconds": 23,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/close-preview.yml",
+          "samples": 4,
+          "p95Seconds": 23,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/deploy-preview.yml",
+          "samples": 4,
+          "p95Seconds": 24,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/codeql.yml",
+          "samples": 5,
+          "p95Seconds": 125,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/CI.yml",
+          "samples": 15,
+          "p95Seconds": 1064,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/keepalive.yml",
+          "samples": 4,
+          "p95Seconds": 6,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/TypeScript-Website .github/workflows/deploy-prod-static.yml",
+          "samples": 2,
+          "p95Seconds": 497,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/vscode .github/workflows/telemetry.yml",
+          "samples": 3,
+          "p95Seconds": 86,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/vscode .github/workflows/component-fixtures.yml",
+          "samples": 4,
+          "p95Seconds": 280,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "microsoft/vscode .github/workflows/codeql.yml",
+          "samples": 7,
+          "p95Seconds": 461,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "microsoft/vscode .github/workflows/pr-node-modules.yml",
+          "samples": 4,
+          "p95Seconds": 0,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "oven-sh/bun .github/workflows/lint.yml",
+          "samples": 3,
+          "p95Seconds": 48,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "oven-sh/bun .github/workflows/format.yml",
+          "samples": 3,
+          "p95Seconds": 62,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "oven-sh/bun .github/workflows/auto-label-claude-prs.yml",
+          "samples": 1,
+          "p95Seconds": 5,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "oven-sh/bun .github/workflows/rust-lints.yml",
+          "samples": 2,
+          "p95Seconds": 290,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "oven-sh/bun .github/workflows/auto-assign-types.yml",
+          "samples": 1,
+          "p95Seconds": 0,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "tailwindlabs/tailwindcss .github/workflows/ci.yml",
+          "samples": 5,
+          "p95Seconds": 0,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "tailwindlabs/tailwindcss .github/workflows/integration-tests.yml",
+          "samples": 2,
+          "p95Seconds": 43,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/pull_request_auto_label.yml",
+          "samples": 9,
+          "p95Seconds": 21,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/build_and_test.yml",
+          "samples": 10,
+          "p95Seconds": 25,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/build_and_deploy.yml",
+          "samples": 19,
+          "p95Seconds": 171,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/triage.yml",
+          "samples": 1,
+          "p95Seconds": 13,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/update_react_poller.yml",
+          "samples": 1,
+          "p95Seconds": 8,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/pr_ci_comment.yml",
+          "samples": 1,
+          "p95Seconds": 15,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vercel/next.js .github/workflows/issue_lock.yml",
+          "samples": 1,
+          "p95Seconds": 67,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vitejs/vite .github/workflows/semantic-pull-request.yml",
+          "samples": 10,
+          "p95Seconds": 15,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "vitejs/vite .github/workflows/zizmor.yml",
+          "samples": 2,
+          "p95Seconds": 22,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vitejs/vite .github/workflows/preview-release.yml",
+          "samples": 2,
+          "p95Seconds": 0,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "vitejs/vite .github/workflows/bot.yml",
+          "samples": 1,
+          "p95Seconds": 11,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/ci.yml",
+          "samples": 6,
+          "p95Seconds": 321,
+          "eligible": false,
+          "eligibleAt5": true
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/zizmor.yml",
+          "samples": 3,
+          "p95Seconds": 26,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/label.yml",
+          "samples": 2,
+          "p95Seconds": 9,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/check-merge.yml",
+          "samples": 3,
+          "p95Seconds": 7,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/diff-dependencies.yml",
+          "samples": 2,
+          "p95Seconds": 17,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/cleanup-cache.yml",
+          "samples": 2,
+          "p95Seconds": 7,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/semgrep.yml",
+          "samples": 1,
+          "p95Seconds": 70,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/congrats.yml",
+          "samples": 1,
+          "p95Seconds": 19,
+          "eligible": false,
+          "eligibleAt5": false
+        },
+        {
+          "workflow": "withastro/astro .github/workflows/sync-examples.yml",
+          "samples": 1,
+          "p95Seconds": 5,
+          "eligible": false,
+          "eligibleAt5": false
+        }
+      ],
+      "examples": [
+        {
+          "repo": "denoland/deno",
+          "workflow": ".github/workflows/pr.generated.yml",
+          "job": "main",
+          "seconds": 6
+        },
+        {
+          "repo": "denoland/deno",
+          "workflow": ".github/workflows/node_compat_test.generated.yml",
+          "job": "summary",
+          "seconds": 31
+        },
+        {
+          "repo": "denoland/deno",
+          "workflow": ".github/workflows/ecosystem_compat_test.generated.yml",
+          "job": "test",
+          "seconds": 213
+        },
+        {
+          "repo": "denoland/deno",
+          "workflow": ".github/workflows/ecosystem_compat_test.generated.yml",
+          "job": "test",
+          "seconds": 131
+        },
+        {
+          "repo": "denoland/deno",
+          "workflow": ".github/workflows/ecosystem_compat_test.generated.yml",
+          "job": "test",
+          "seconds": 271
+        }
+      ]
+    },
+    "CD008": {
+      "artifacts": 286,
+      "aboveLimit": 276,
+      "aboveLimitShare": 0.965,
+      "medianRetentionDays": 90,
+      "examples": [
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        },
+        {
+          "repo": "microsoft/TypeScript-Website",
+          "name": "site",
+          "days": 90
+        }
+      ]
+    }
+  },
+  "repositories": [
+    {
+      "repo": "denoland/deno",
+      "runs": 100,
+      "workflows": 19,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "facebook/react",
+      "runs": 100,
+      "workflows": 31,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "microsoft/TypeScript-Website",
+      "runs": 100,
+      "workflows": 13,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "microsoft/vscode",
+      "runs": 100,
+      "workflows": 53,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "oven-sh/bun",
+      "runs": 100,
+      "workflows": 44,
+      "runsWithJobs": 20
+    },
+    {
+      "repo": "rust-lang/rust",
+      "runs": 100,
+      "workflows": 7,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "tailwindlabs/tailwindcss",
+      "runs": 100,
+      "workflows": 8,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "vercel/next.js",
+      "runs": 100,
+      "workflows": 56,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "vitejs/vite",
+      "runs": 100,
+      "workflows": 22,
+      "runsWithJobs": 25
+    },
+    {
+      "repo": "withastro/astro",
+      "runs": 100,
+      "workflows": 31,
+      "runsWithJobs": 25
+    }
+  ]
+}

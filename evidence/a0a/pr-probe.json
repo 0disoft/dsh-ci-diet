@@ -1,0 +1,1856 @@
+{
+  "generatedAt": "2026-10-20T12:36:01.169Z",
+  "repos": [
+    {
+      "repo": "microsoft/vscode",
+      "prs": [
+        {
+          "number": 342863,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342859,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342858,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342855,
+          "files": 15,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342852,
+          "files": 32,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342850,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342849,
+          "files": 9,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342848,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342846,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342844,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342841,
+          "files": 18,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342840,
+          "files": 13,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342839,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342838,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342837,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342833,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342832,
+          "files": 13,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342831,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342828,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342827,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342822,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342818,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342816,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342815,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342812,
+          "files": 43,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342811,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342810,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342809,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342807,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 342806,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "facebook/react",
+      "prs": [
+        {
+          "number": 37913,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37912,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37910,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37909,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37908,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37906,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37903,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37901,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37900,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37898,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37896,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37895,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37894,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37893,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37892,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37890,
+          "files": 10,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37889,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37887,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37884,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37883,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37882,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37880,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37879,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37878,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37877,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37876,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37875,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37873,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37872,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37871,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "vercel/next.js",
+      "prs": [
+        {
+          "number": 100442,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100441,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100440,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100439,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100438,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100437,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100435,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100430,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100429,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100428,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100427,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100426,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100425,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100424,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100423,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100422,
+          "files": 27,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100421,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100420,
+          "files": 2,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 100419,
+          "files": 84,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100418,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 100417,
+          "files": 2,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 100416,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100414,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100413,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100412,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100409,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100408,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100407,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100406,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 100404,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "rust-lang/rust",
+      "prs": [
+        {
+          "number": 164632,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 164631,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 164630,
+          "files": 35,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164629,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164628,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164627,
+          "files": 39,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164626,
+          "files": 91,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164625,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164624,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164623,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164620,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164618,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164617,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164616,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164613,
+          "files": 20,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164612,
+          "files": 12,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164611,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164609,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 164608,
+          "files": 11,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164607,
+          "files": 29,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164606,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164605,
+          "files": 32,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164604,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164602,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164600,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164597,
+          "files": 14,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164596,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164595,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164594,
+          "files": 10,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 164593,
+          "files": 21,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "denoland/deno",
+      "prs": [
+        {
+          "number": 37043,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37039,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37038,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37037,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37036,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37033,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37032,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37028,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37026,
+          "files": 11,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37020,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37019,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37017,
+          "files": 59,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37016,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37014,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37013,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37012,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37011,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37010,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37005,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37002,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 37000,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 36999,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36991,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36990,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36989,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36986,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36985,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36979,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36977,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 36976,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "oven-sh/bun",
+      "prs": [
+        {
+          "number": 46194,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46193,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46192,
+          "files": 13,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46191,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46190,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46189,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46188,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46186,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46185,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46184,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46183,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46182,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46180,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46179,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46178,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46177,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46176,
+          "files": 10,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46175,
+          "files": 9,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46174,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46173,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46171,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46170,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46169,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46168,
+          "files": 21,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46167,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46165,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46163,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46162,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46161,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 46160,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "vitejs/vite",
+      "prs": [
+        {
+          "number": 23849,
+          "files": 9,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23846,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23845,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 23844,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23843,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23842,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23841,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23839,
+          "files": 11,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23838,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23837,
+          "files": 15,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23836,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23835,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23834,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23833,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23832,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23831,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23830,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23828,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23827,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23826,
+          "files": 32,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23824,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23823,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23822,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23820,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23816,
+          "files": 10,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23815,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23814,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23813,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23812,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 23811,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "withastro/astro",
+      "prs": [
+        {
+          "number": 18461,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18460,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18459,
+          "files": 41,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18455,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18452,
+          "files": 53,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18451,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18450,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18448,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 18445,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18444,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18441,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18440,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18439,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18438,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18435,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18434,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18433,
+          "files": 31,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18432,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18431,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18430,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18428,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18427,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18425,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18424,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18422,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18419,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18417,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18416,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18415,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 18414,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "tailwindlabs/tailwindcss",
+      "prs": [
+        {
+          "number": 20594,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 20593,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20592,
+          "files": 9,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20591,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20590,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20585,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20583,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20582,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20580,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20579,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20578,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20577,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20576,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20575,
+          "files": 6,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20574,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20573,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20572,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20569,
+          "files": 12,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20565,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20564,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20563,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20562,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20561,
+          "files": 7,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20558,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20555,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20554,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20553,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20552,
+          "files": 10,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20550,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 20547,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        }
+      ]
+    },
+    {
+      "repo": "microsoft/TypeScript-Website",
+      "prs": [
+        {
+          "number": 3668,
+          "files": 5,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3667,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3666,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3665,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3664,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3663,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3662,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3661,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3660,
+          "files": 12,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3659,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3658,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3657,
+          "files": 8,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3656,
+          "files": 13,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3655,
+          "files": 4,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3654,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3653,
+          "files": 100,
+          "docsOnly": false,
+          "truncated": true
+        },
+        {
+          "number": 3652,
+          "files": 3,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3651,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3649,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3648,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3647,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3646,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3644,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3643,
+          "files": 2,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3642,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3641,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3640,
+          "files": 1,
+          "docsOnly": true,
+          "truncated": false
+        },
+        {
+          "number": 3639,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3638,
+          "files": 1,
+          "docsOnly": false,
+          "truncated": false
+        },
+        {
+          "number": 3637,
+          "files": 3,
+          "docsOnly": true,
+          "truncated": false
+        }
+      ]
+    }
+  ],
+  "requests": 310
+}

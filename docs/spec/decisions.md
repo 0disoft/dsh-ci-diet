@@ -17,6 +17,7 @@ new record, not an edit to the rationale.
 | ADR-10 | Limit writes on untested prereleases and unknown policy. | A broad compatibility claim does not replace tested compatibility and safety. |
 | ADR-11 | The JSON contracts are mirrored into this repository; only prose fields are localized. | The public repo must build without the private Korean design pack, while structure, enums, hashes, and digests stay identical. Localized pointers are declared in `scripts/sync-contracts.mjs`. |
 | ADR-12 | Public documentation is English; Korean is a mirrored README. | Three-language UI validation and translation drift cost more than they return at this stage, and domain terms mistranslate easily. Simplified Chinese remains a translation slot. |
+| ADR-13 | Rule defaults follow the A0a spike: CD001, CD002, and CD008 are on by default; CD005 stays off until job keys resolve; CD003 stays off until its sample is widened. | Only CD001 and CD008 had enough observable targets, and job rows cannot be attributed to YAML job keys, so a timeout patch could otherwise target the wrong job. The measurement is recorded in `docs/spikes/a0a-rules.md`. |
 
 ## Notes
 
@@ -26,3 +27,6 @@ new record, not an edit to the rationale.
   release scope record freezes what measurement actually validated.
 - ADR-11 permits rewording of the four coverage-level descriptions and two sample
   reasons. It does not permit changing enums, required fields, or any hash input.
+- ADR-13 does not lower CD005's 20-sample write requirement and does not remove
+  CD005 from the contract's writable rule set. It changes defaults, not write
+  safety. Enabling rules is a runtime setting; `allowedRules` still bounds writes.

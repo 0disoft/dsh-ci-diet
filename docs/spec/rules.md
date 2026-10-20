@@ -149,6 +149,12 @@ identity, matrix, and event. Samples whose local scripts or actions changed are
 not the same cohort. If core behaviour identity cannot be established, do not
 emit a p95 recommendation.
 
+The jobs endpoint reports a display name, not the workflow job key. Resolve the
+key from the parsed definition first: a single-job workflow, a display name equal
+to a key, a literal job `name:` value, or a matrix expansion that matches the
+observed name. When the key cannot be resolved, the job may support a
+reviewer-facing candidate but must not seed a cohort, a p95, or a plan.
+
 With a complete cohort and at least 20 successful samples, compute nearest-rank
 p95. For partial history or definitions, compute a `subset` result and publish
 the cohort definition (workflow hash, job key, runner, matrix, event), included
