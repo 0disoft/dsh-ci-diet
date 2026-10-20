@@ -1,0 +1,51 @@
+{
+  "name": "dsh-ci-diet",
+  "version": "0.1.0",
+  "description": "Find wasted GitHub Actions runner time and propose small, reviewable local patches.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "ci-diet": "./dist/cli/index.js"
+  },
+  "exports": {
+    ".": "./dist/dsh/bootstrap.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "oxlint src tests",
+    "format": "oxfmt src tests",
+    "test:core": "node --test \"tests/unit/*.test.ts\"",
+    "build": "tsc -p tsconfig.build.json",
+    "smoke:node": "node dist/cli/index.js --version"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "yaml": "^2.8.1"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.0",
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}
