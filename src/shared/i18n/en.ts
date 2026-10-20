@@ -177,6 +177,16 @@ export const en = {
   "dsh.plan.description": "Preview the exact byte edits CI Diet would make for one eligible finding. This tool never writes a file and never approves anything; the human prints the plan with the ci-diet CLI and approves it there.",
   "dsh.plan.render": "{edits} edit(s) proposed for {workflow}. The human can approve this with: {command}",
   "dsh.plan.blocked": "{edits} edit(s) proposed for {workflow}. Blocked: {blockers}",
+  "dsh.param.cwd": "Absolute repository root; defaults to the current working directory.",
+  "dsh.param.rules": "Rules to evaluate; defaults to the configured set.",
+  "dsh.param.repo": "Repository as owner/name; defaults to the origin remote.",
+  "dsh.param.days": "Lookback window in days (1-90); defaults to the configured window.",
+  "dsh.param.rule": "Patch rule to preview.",
+  "dsh.param.workflow": "Workflow path relative to the repository root.",
+  "dsh.param.job": "Job key, required for CD005 and CD008.",
+  "dsh.param.step": "Step index, required for CD008.",
+  "dsh.param.minutes": "Timeout in minutes, required for CD005.",
+  "dsh.param.planDigest": "Empty when no plan could be built.",
 } as const;
 
 export type MessageKey = keyof typeof en;

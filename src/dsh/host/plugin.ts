@@ -97,8 +97,8 @@ export function apply(ctx: Context, config: Config) {
     name: "ci_diet_scan",
     description: t("dsh.scan.description"),
     parameters: {
-      cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
-      rules: { type: "array", items: { type: "string", enum: [...RULE_IDS] }, description: "Rules to evaluate; defaults to the configured set." },
+      cwd: { type: "string", description: t("dsh.param.cwd") },
+      rules: { type: "array", items: { type: "string", enum: [...RULE_IDS] }, description: t("dsh.param.rules") },
     },
     output: {
       schema: {
@@ -150,9 +150,9 @@ export function apply(ctx: Context, config: Config) {
     name: "ci_diet_sync",
     description: t("dsh.sync.description"),
     parameters: {
-      cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
-      repo: { type: "string", description: "owner/name; defaults to the origin remote." },
-      days: { type: "number", description: "Lookback window in days (1-90); defaults to the configured window." },
+      cwd: { type: "string", description: t("dsh.param.cwd") },
+      repo: { type: "string", description: t("dsh.param.repo") },
+      days: { type: "number", description: t("dsh.param.days") },
     },
     output: {
       schema: {
@@ -255,12 +255,12 @@ export function apply(ctx: Context, config: Config) {
     name: "ci_diet_plan",
     description: t("dsh.plan.description"),
     parameters: {
-      rule: { type: "string", enum: ["CD001", "CD005", "CD008"], required: true, description: "Patch rule to preview." },
-      workflow: { type: "string", description: "Workflow path relative to the repository root." },
-      job: { type: "string", description: "Job key, required for CD005 and CD008." },
-      step: { type: "number", description: "Step index, required for CD008." },
-      minutes: { type: "number", description: "Timeout in minutes, required for CD005." },
-      cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
+      rule: { type: "string", enum: ["CD001", "CD005", "CD008"], required: true, description: t("dsh.param.rule") },
+      workflow: { type: "string", description: t("dsh.param.workflow") },
+      job: { type: "string", description: t("dsh.param.job") },
+      step: { type: "number", description: t("dsh.param.step") },
+      minutes: { type: "number", description: t("dsh.param.minutes") },
+      cwd: { type: "string", description: t("dsh.param.cwd") },
       claims: {
         type: "array",
         items: { type: "string" },
@@ -275,7 +275,7 @@ export function apply(ctx: Context, config: Config) {
         properties: {
           workflowPath: { type: "string" },
           edits: { type: "array", items: { type: "object", additionalProperties: true } },
-          planDigest: { type: "string", description: "Empty when no plan could be built." },
+          planDigest: { type: "string", description: t("dsh.param.planDigest") },
           writeAllowed: { type: "boolean" },
           coverageLevel: { type: "string" },
           blockers: { type: "array", items: { type: "string" } },

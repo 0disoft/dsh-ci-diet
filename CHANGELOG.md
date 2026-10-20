@@ -18,9 +18,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
-- The HTML report, CLI finding lines, and DSH tool descriptions and render text
-  are localized; the HTML report sets its `lang` attribute. Rule ids, error
-  codes, enum values, paths, hashes, and numbers stay untranslated.
+- The HTML report, CLI finding lines, and DSH tool descriptions, parameter
+  descriptions, and render text are localized; the HTML report sets its `lang`
+  attribute. Rule ids, error codes, enum values, paths, hashes, and numbers stay
+  untranslated.
 
 ## 0.1.1 (2026-10-21)
 

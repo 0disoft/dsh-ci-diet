@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,6 +8,8 @@ import { apply } from "../../src/dsh/host/plugin.ts";
 
 interface Registered {
   readonly name: string;
+  readonly description: string;
+  readonly parameters: Record<string, { description?: string }>;
   execute(args: Record<string, unknown>, exec: { signal: AbortSignal }): Promise<unknown>;
 }
 
@@ -48,6 +51,30 @@ function workspace(): string {
 test("registers the four model-facing tools", () => {
   const { tools } = harness();
   assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
+});
+
+test("localizes tool and parameter descriptions from the DSH preference", () => {
+  const profile = mkdtempSync(join(tmpdir(), "ci-diet-plugin-locale-"));
+  writeFileSync(
+    joinPath(profile, "cordis.patch.yml"),
+    "- id: locale\n  name: \"@deepseek-ai/dsh-client-locale\"\n  config:\n    preference: ko\n",
+    "utf8",
+  );
+  const previous = process.env.DSH_PROFILE_DIR;
+  process.env.DSH_PROFILE_DIR = profile;
+  try {
+    const { tools } = harness();
+    const scan = tools.get("ci_diet_scan")!;
+    assert.match(scan.description, /체크아웃된 GitHub 저장소/);
+    const properties = (scan.parameters as unknown as { properties?: Record<string, { description?: string }> }).properties;
+    assert.match(properties?.cwd?.description ?? "", /현재 작업 폴더/);
+    for (const tool of tools.values()) {
+      assert.doesNotMatch(tool.description, /^Scan a checked-out|^Fetch read-only|^Read the most recent|^Preview the exact/);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.DSH_PROFILE_DIR;
+    else process.env.DSH_PROFILE_DIR = previous;
+  }
 });
 
 test("ci_diet_scan stores a report and lists findings", async () => {
