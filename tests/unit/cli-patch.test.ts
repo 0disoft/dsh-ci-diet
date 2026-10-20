@@ -273,6 +273,31 @@ test("CLI plan refuses to reuse another repository's report", () => {
   assert.equal(planned.status, 1);
   assert.match(planned.stderr, /sync/i);
 });
+
+test("CLI plan uses the newest binding when an older association remains at the same root", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const store = PatchStore.open(stateDir);
+  const current = createLocalBinding(root, NOW, { repositoryFullName: "owner/repo" }).binding;
+  // A valid older association sorts before the binding created by the latest sync.
+  store.saveBinding({
+    ...current,
+    bindingId: "b_" + "0".repeat(24),
+    stateScope: "b_" + "0".repeat(24),
+    repositoryFullName: "owner/previous",
+    createdAt: "2026-10-19T00:00:00Z",
+  });
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  assert.equal(store.findBindingByRoot(current.workspaceRoot)?.bindingId, current.bindingId);
+  const plan = JSON.parse(planned.stdout) as { payload: { bindingId: string } };
+  assert.equal(plan.payload.bindingId, current.bindingId);
+});
+
 test("CLI plan refuses findings for workflow bytes that changed", () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");

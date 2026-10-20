@@ -148,18 +148,24 @@ export class PatchStore {
     this.writeJson(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
   }
 
-  /** Find the binding recorded for a workspace root, regardless of how its remote was named at scan time. */
+  /** Find the most recently recorded binding for a root, including after a remote change. */
   findBindingByRoot(workspaceRoot: string): RepositoryBinding | null {
     const directory = this.path("bindings");
     const wanted = process.platform === "win32" ? workspaceRoot.toLowerCase() : workspaceRoot;
+    let latest: RepositoryBinding | null = null;
+    let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of readdirSync(directory)) {
       if (!file.endsWith(".json")) continue;
       const binding = this.readJson<RepositoryBinding>(join(directory, file));
       if (binding === null) continue;
       const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
-      if (candidate === wanted) return binding;
+      const at = Date.parse(binding.createdAt);
+      if (candidate === wanted && at > latestAt) {
+        latest = binding;
+        latestAt = at;
+      }
     }
-    return null;
+    return latest;
   }
 
   readReport(reportId: string): AnalysisReport | null {
