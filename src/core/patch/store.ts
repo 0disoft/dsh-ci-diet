@@ -365,6 +365,16 @@ export class PatchStore {
     writeFileSync(path, line, { encoding: "utf8", flag: "a" });
   }
 
+  /** Call after authoritative records are saved; a summary failure cannot undo them. */
+  appendSummaryEvent(event: Record<string, unknown>, now: Date): readonly string[] {
+    try {
+      this.appendEvent(event, now);
+      return [];
+    } catch {
+      return ["EVENT_LOG_UNAVAILABLE"];
+    }
+  }
+
   changeIdFor(planId: string, now: Date): string {
     const digest = digestOf({ planId, at: now.toISOString() }).slice("sha256:".length, "sha256:".length + 16);
     return "c_" + digest;

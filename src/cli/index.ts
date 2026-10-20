@@ -647,6 +647,7 @@ function approveCommand(options: Options, locale: Locale): number {
     channel: "human-cli",
     now: new Date(),
   });
+  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
   const lines: string[] = [];
   lines.push(t("cli.approve.done", { plan: result.plan.planId }));
   if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
@@ -662,6 +663,7 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
   }
   const store = PatchStore.open(stateDirOf(options));
   const result = await applyPlan({ store, planId: options.plan, now: new Date(), subjectId: options.subject });
+  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
   const lines: string[] = [];
   if (result.state === "applied") {
     lines.push(t("cli.apply.done", { change: result.change?.changeId ?? "", workflow: result.change?.workflowPath ?? "" }));
@@ -683,6 +685,7 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
   }
   const store = PatchStore.open(stateDirOf(options));
   const result = await revertChange({ store, changeId: options.change, now: new Date() });
+  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
   const lines: string[] = [];
   if (result.state === "REVERTED") lines.push(t("cli.revert.done", { change: options.change }));
   else lines.push(t("cli.revert.refused", { state: result.state, reason: result.reason ?? "" }));

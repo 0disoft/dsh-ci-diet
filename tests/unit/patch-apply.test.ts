@@ -136,6 +136,38 @@ for (const failingWrite of ["saveNonce", "savePlan"] as const) {
   });
 }
 
+for (const operation of ["approve", "apply", "revert"] as const) {
+  test(operation + " reports a committed action with a warning when the summary event fails", async (t) => {
+    const f = setup();
+    const approve = () => approvePlan({ store: f.store, planId: f.plan.planId,
+      confirmation: approvalConfirmation(f.plan), subjectId: "tester", channel: "human-cli", now: f.now });
+    if (operation !== "approve") approve();
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    t.mock.method(f.store, "appendEvent", () => { throw new Error("private log error details"); });
+    if (operation === "approve") {
+      const result = approve();
+      assert.deepEqual(result.warnings, ["EVENT_LOG_UNAVAILABLE"]);
+      assert.equal(f.store.readPlan(f.plan.planId)?.plan.status.state, "approved");
+      assert.equal(f.store.readNonce(f.plan.planId)?.nonceId, result.plan.status.approvalNonceId);
+      assert.equal(readFileSync(f.file, "utf8"), f.text);
+    } else if (operation === "apply") {
+      const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+      assert.equal(result.state, "applied");
+      assert.deepEqual(result.warnings, ["EVENT_LOG_UNAVAILABLE"]);
+      assert.equal(f.store.readChange(result.change!.changeId)?.state, "APPLIED");
+      assert.notEqual(readFileSync(f.file, "utf8"), f.text);
+    } else {
+      const result = await revertChange({ store: f.store, changeId: applied!.change!.changeId, now: f.now });
+      assert.equal(result.state, "REVERTED");
+      assert.deepEqual(result.warnings, ["EVENT_LOG_UNAVAILABLE"]);
+      assert.equal(f.store.readChange(applied!.change!.changeId)?.state, "REVERTED");
+      assert.equal(readFileSync(f.file, "utf8"), f.text);
+    }
+  });
+}
+
 for (const defect of ["coverage-string", "nonce-channel", "nonce-subject", "nonce-time"] as const) {
   test("apply refuses malformed sidecar fields: " + defect, async () => {
     const f = setup();

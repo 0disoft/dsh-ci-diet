@@ -223,6 +223,37 @@ test("CLI approve rejects a wrong confirmation", () => {
   assert.equal(result.status, 5, result.stderr);
 });
 
+test("CLI reports successful committed actions with a warning when the event log is unavailable", () => {
+  const { root, file } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
+  // A directory at the log filename causes a real append failure without blocking receipts.
+  mkdirSync(join(stateDir, "events", "events.jsonl"));
+  const approved = cli(
+    ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir, "--json"], root,
+  );
+  assert.equal(PatchStore.open(stateDir).readPlan(plan.planId)?.plan.status.state, "approved");
+  assert.equal(approved.status, 0, approved.stderr);
+  assert.match(approved.stderr, /EVENT_LOG_UNAVAILABLE/);
+  assert.equal((JSON.parse(approved.stdout) as { status: { state: string } }).status.state, "approved");
+  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  assert.equal(applied.status, 0, applied.stderr);
+  assert.match(applied.stderr, /EVENT_LOG_UNAVAILABLE/);
+  const change = JSON.parse(applied.stdout) as { state: string; change: { changeId: string } };
+  assert.equal(change.state, "applied");
+  assert.notEqual(readFileSync(file, "utf8"), WORKFLOW);
+  const reverted = cli(["revert", "--change", change.change.changeId, "--state-dir", stateDir, "--json"], root);
+  assert.equal(reverted.status, 0, reverted.stderr);
+  assert.match(reverted.stderr, /EVENT_LOG_UNAVAILABLE/);
+  assert.equal((JSON.parse(reverted.stdout) as { state: string }).state, "REVERTED");
+  assert.equal(readFileSync(file, "utf8"), WORKFLOW);
+});
+
 test("CLI apply rejects a corrupt approved plan without consuming approval or writing workflows", () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");

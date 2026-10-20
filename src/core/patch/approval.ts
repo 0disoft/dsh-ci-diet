@@ -14,6 +14,7 @@ export interface ApproveInput {
 export interface ApproveResult {
   readonly plan: PatchPlan;
   readonly nonce: ApprovalNonce;
+  readonly warnings?: readonly string[];
 }
 
 /** The human must type the last 12 hex characters of the plan digest. */
@@ -49,6 +50,6 @@ export function approvePlan(input: ApproveInput): ApproveResult {
   // A failed nonce write must leave the plan available for an explicit approval retry.
   input.store.saveNonce(plan.planId, nonce);
   input.store.savePlan(approved, stored.meta);
-  input.store.appendEvent({ type: "approved", planId: plan.planId, nonceId: nonce.nonceId, channel: input.channel }, input.now);
-  return { plan: approved, nonce };
+  const warnings = input.store.appendSummaryEvent({ type: "approved", planId: plan.planId, nonceId: nonce.nonceId, channel: input.channel }, input.now);
+  return { plan: approved, nonce, ...(warnings.length > 0 ? { warnings } : {}) };
 }

@@ -24,6 +24,7 @@ export interface ApplyResult {
   readonly reasons: readonly ApplyReasonCode[];
   readonly change: AppliedChange | null;
   readonly resultText: string | null;
+  readonly warnings?: readonly string[];
 }
 
 const WRITER_LEASE_STALE_MS = 10 * 60_000;
@@ -265,8 +266,8 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
 
     const change: AppliedChange = { ...prepared, state: "APPLIED", updatedAt: iso(options.now) };
     options.store.saveChange(change);
-    options.store.appendEvent({ type: "applied", planId: plan.planId, changeId, resultHash: afterHash }, options.now);
-    return { state: "applied", reasons: [], change, resultText: applied.text };
+    const warnings = options.store.appendSummaryEvent({ type: "applied", planId: plan.planId, changeId, resultHash: afterHash }, options.now);
+    return { state: "applied", reasons: [], change, resultText: applied.text, ...(warnings.length > 0 ? { warnings } : {}) };
   });
 }
 
@@ -274,7 +275,7 @@ export async function revertChange(options: {
   readonly store: PatchStore;
   readonly changeId: string;
   readonly now: Date;
-}): Promise<{ readonly state: string; readonly reason: string | null }> {
+}): Promise<{ readonly state: string; readonly reason: string | null; readonly warnings?: readonly string[] }> {
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
   if (change.state !== "APPLIED" && change.state !== "RECOVERY_REQUIRED") return { state: change.state, reason: "CHANGE_NOT_APPLIED" };
@@ -310,8 +311,8 @@ export async function revertChange(options: {
       return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };
     }
     options.store.saveChange({ ...change, state: "REVERTED", updatedAt: iso(options.now) });
-    options.store.appendEvent({ type: "reverted", changeId: change.changeId }, options.now);
-    return { state: "REVERTED", reason: null };
+    const warnings = options.store.appendSummaryEvent({ type: "reverted", changeId: change.changeId }, options.now);
+    return { state: "REVERTED", reason: null, ...(warnings.length > 0 ? { warnings } : {}) };
   });
 }
 
