@@ -2,9 +2,9 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **design stage**. The v0.2.1 design pack is complete, but this
-repository is still a scaffold. The analysis engine, patch engine, CLI, and
-the DSH Web plugin are not implemented yet, so there is nothing to install.
+Status: **design stage**. The contracts and the specification are in this
+repository; the analysis engine, patch engine, CLI, and DSH Web plugin are not
+implemented yet, so there is nothing to install.
 
 ## What it will do
 
@@ -27,8 +27,8 @@ safe to turn into a small YAML edit. Every finding carries an evidence level
 | CD008 | Long artifact retention | patch: `retention-days` |
 
 The rule set is deliberately small. A rule ships only after it passes a
-quality gate measured on real repositories, because a
-noisy rule is worse than a missing one.
+quality gate measured on real repositories, because a noisy rule is worse than
+a missing one.
 
 ## What it will never do
 
@@ -67,8 +67,10 @@ is not shipped.
 ```
 bun install
 node --test "tests/unit/*.test.ts"
+node scripts/sync-contracts.mjs --check
 bun run typecheck
 bun run lint
+bun run test:docs
 ```
 
 Run the tests with Node so the published entry points stay Node-compatible;
@@ -82,8 +84,10 @@ src/adapters    github, git, storage
 src/dsh         host and client plugin code
 src/cli         command line entry
 src/shared      i18n and small shared helpers
-contracts       JSON Schemas copied from the design pack
-docs/design     versioned design packs (do not edit in place)
+contracts       JSON Schemas, imported from the frozen design pack
+examples        sample records and evaluation vectors
+docs/spec       normative product specification
+scripts         contract and documentation checks
 tests/unit      fast checks that need no network
 ```
 
@@ -91,12 +95,19 @@ tests/unit      fast checks that need no network
 
 English is the default and the source of truth for message keys. Korean is
 fully translated. Simplified Chinese is a translation slot that falls back to
-English until someone maintains it.
+English until someone maintains it. Public documentation is English, with a
+Korean README mirror.
 
 ## Documentation
 
+- Specification: [docs/spec/README.md](docs/spec/README.md)
+- Rules: [docs/spec/rules.md](docs/spec/rules.md)
+- Cost model: [docs/spec/cost-model.md](docs/spec/cost-model.md)
+- Patch model: [docs/spec/patch-model.md](docs/spec/patch-model.md)
+- Storage and errors: [docs/spec/storage.md](docs/spec/storage.md)
+- Decisions: [docs/spec/decisions.md](docs/spec/decisions.md)
+- Contract provenance: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - Korean: [README.ko.md](README.ko.md)
-- Design pack v0.2.1: placed under `docs/design/v0.2.1` when imported.
 
 ## License
 

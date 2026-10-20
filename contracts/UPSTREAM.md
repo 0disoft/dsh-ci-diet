@@ -8,7 +8,7 @@ frozen design pack.
 | Pack | `ci-diet-design-v0.2.1` (Korean, dated 2026-10-20) |
 | Archive | `ci-diet-design-v0.2.1-20261020.zip` |
 | Archive sha256 | `3b9e301fe772b7225f1a7e2625151e8129dbc5988fbd316a8d90c3b3e28409ce` |
-| Unpacked location | `_design/ci-diet/v0.2.1/ci-diet-design-v0.2.1/` (outside this repository) |
+| Unpacked location | Private design archive, outside this repository |
 
 The unpacked pack is reference material only. It is not edited and not shipped.
 

@@ -2,9 +2,8 @@
 
 낭비된 GitHub Actions 러너 시간을 찾고, 작고 검토 가능한 패치를 제안합니다.
 
-상태: **설계 단계**. v0.2.1 설계 팩은 완성됐지만 이 저장소는 아직 골격입니다.
-분석 엔진, 패치 엔진, CLI, DSH Web 플러그인은 구현되지 않았으므로 설치할 것이
-없습니다.
+상태: **설계 단계**. 계약과 명세는 이 저장소에 있지만 분석 엔진, 패치 엔진,
+CLI, DSH Web 플러그인은 아직 구현되지 않았으므로 설치할 것이 없습니다.
 
 ## 앞으로 할 일
 
@@ -66,8 +65,10 @@ CI Diet는 두 가지를 읽고 비교합니다.
 ```
 bun install
 node --test "tests/unit/*.test.ts"
+node scripts/sync-contracts.mjs --check
 bun run typecheck
 bun run lint
+bun run test:docs
 ```
 
 테스트는 Node로 실행해 배포 진입점이 Node 호환으로 유지되는지 확인합니다. Bun은
@@ -81,8 +82,10 @@ src/adapters    github, git, storage
 src/dsh         호스트·클라이언트 플러그인 코드
 src/cli         명령줄 진입점
 src/shared      i18n과 작은 공용 도구
-contracts       설계 팩에서 복사한 JSON Schema
-docs/design     버전별 설계 팩(제자리 수정 금지)
+contracts       설계 팩에서 가져온 JSON Schema
+examples        합성 예제와 검산 벡터
+docs/spec       규범 제품 명세
+scripts         계약·문서 검사 스크립트
 tests/unit      네트워크가 필요 없는 빠른 검사
 ```
 
@@ -90,11 +93,18 @@ tests/unit      네트워크가 필요 없는 빠른 검사
 
 영어가 기본이며 메시지 키의 단일 소스입니다. 한국어는 전체 번역되어 있고,
 중국어 간체는 번역 슬롯으로만 두며 관리자가 생기기 전까지 영어로 대체됩니다.
+공개 문서는 영어이고 README만 한국어로 미러링합니다.
 
 ## 문서
 
+- 명세: [docs/spec/README.md](docs/spec/README.md)
+- 규칙: [docs/spec/rules.md](docs/spec/rules.md)
+- 비용 모델: [docs/spec/cost-model.md](docs/spec/cost-model.md)
+- 패치 모델: [docs/spec/patch-model.md](docs/spec/patch-model.md)
+- 저장·오류: [docs/spec/storage.md](docs/spec/storage.md)
+- 결정 기록: [docs/spec/decisions.md](docs/spec/decisions.md)
+- 계약 출처: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - English: [README.md](README.md)
-- 설계 팩 v0.2.1: 가져오면 `docs/design/v0.2.1`에 둡니다.
 
 ## 라이선스
 

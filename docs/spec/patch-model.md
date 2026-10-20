@@ -1,0 +1,187 @@
+# Patch model
+
+## Allowed edits
+
+One plan targets one existing `.github/workflows/*.yml` or `*.yaml` file. The
+original bytes and file mode are captured with the Binding, and every edit is
+anchored to the hash of the bytes the human reviewed. A stale offset is never
+applied to changed bytes.
+
+| Rule | Allowed edit | Additional preconditions |
+| --- | --- | --- |
+| CD001 | Add a top-level `concurrency` block | `on` is exactly `pull_request`, no side effects, complete protection data, no required check owned by this workflow |
+| CD005 | Insert or reduce a job's integer `timeout-minutes` | Sufficient identical cohort, protection for long successful samples, job Attestation |
+| CD008 | Reduce `retention-days` on a named upload step | Temporary purpose and consumer period attested, effective maximum confirmed |
+
+`on`, `if`, `needs`, `matrix`, `permissions`, `env`, `uses`, `run`,
+`secrets`, and `environment` are never edited. An existing concurrency block is
+neither replaced nor extended. CD001 blocks `pull_request_target`, `merge_group`,
+and mixed dispatch, schedule, push, or `workflow_call` triggers. A simple "it is
+fine" click never replaces an explicit equivalence check.
+
+## Concurrency namespace
+
+The unique part is the first 16 hex characters of the sha256 of the repository
+ID and the normalized workflow path. Compare against every current workflow's
+group case-insensitively. If an existing group expression cannot be evaluated
+and a collision cannot be excluded, the plan is `review-only`.
+
+```yaml
+concurrency:
+  group: ci-diet-a8f31d2c09b14ea7-pr-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+```
+
+The 16-character value is an example; the real value is computed when planning.
+The `${{ ... || github.run_id }}` fallback prevents unexpected events with an empty PR
+number from collapsing into one group, but it does not replace the event
+allowlist check. `queue: max` is never combined with
+`cancel-in-progress: true`, and an existing queue policy is not changed.
+
+## YAML support
+
+| Shape | Analysis | v0.1 write |
+| --- | --- | --- |
+| Single-document block mapping, UTF-8, LF or consistent CRLF | Supported | Supported |
+| UTF-8 BOM, missing final newline | Supported | Preserved as-is |
+| Mixed LF and CRLF in one file | Supported where possible | Report-only |
+| Duplicate keys, multiple documents, custom tags | Error location recorded | Blocked |
+| Anchors, aliases, merge key `<<` | Reference structure shown | Report-only |
+| Flow mapping or sequence inside the edited ancestor | Shown when analyzable | Report-only |
+| Generated workflow or template output | Origin and warning | Report-only |
+| Expression timeout or retention | Marked as expression | That field is report-only |
+| Upload step without `with` | Supported | `insertParentMapping` adds the parent and leaf together |
+| Several upload steps in one job | Each identified | Per-step digest, index, and id |
+| Existing timeout or retention at or below recommendation | Current policy shown | No change |
+
+Node positions never mix UTF-16 string offsets with UTF-8 byte offsets; parser
+token ranges are converted to original byte ranges, and multibyte characters
+and CRLF before the range are covered by fixtures. The file is never fully
+stringified. New lines follow the document's existing newline style and
+indentation, and comments are preserved.
+
+`ByteEdit` kinds are `insertScalar`, `replaceScalar`, `insertMapping`, and
+`insertParentMapping`. Every edit must satisfy: `startByte <= endByte`; no
+overlap within one file; original byte ranges only; insertion at a line boundary
+or a confirmed offset on the same line. Any violation fails plan creation.
+After applying edits, reparse and diff semantically: only allowed semantic paths
+may change, and the semantic diff must correspond exactly to `edits`, or the
+plan is not applied. A plan identical to the current value ends as a no-op.
+
+## Plan state and dependencies
+
+`PatchPlan.status` is a separate record with `state`, `revision`,
+`previewedAt`, `approvedAt`, and `approvalNonceId`. States move forward
+only: `draft → preview → approved`. Going back means a new plan with a new
+digest. Status changes are stored outside `planDigest`; a changed digest never
+inherits an earlier state.
+
+| Transition | Condition | Recorded |
+| --- | --- | --- |
+| draft → preview | Preview surface re-reads current bytes and source hash | `previewedAt`, `revision + 1` |
+| preview → approved | Single-use nonce consumed atomically, or a separate terminal purpose and digest confirmation | `approvedAt`, `approvalNonceId`, `revision + 1` |
+| Post-approval recheck mismatch | File, policy, or premise changed | State kept, reason code added |
+
+`dependencies` is the sorted list `{ref, sha256}` of local files that the
+edited bytes depend on (local actions, scripts, reusable workflows,
+configuration). `dependencyHash` is the sha256 of the CDJ1 encoding of
+`{dependencies}`; an empty list has a defined hash too. If any dependency hash
+changes, both the premise and the plan are void. Any non-empty `blockers` list
+blocks apply even from `approved`.
+
+## Premises versus final approval
+
+An Attestation is a durable human claim such as "this workflow runs checks only".
+An `ApprovalChallenge` authorizes one specific byte change right now. They are
+separate records and are never merged. `planDigest` binds the full premise
+snapshot, revision, dependency fingerprint, policy snapshot, and edit content.
+
+The scope level matters: workflow, job, or step. A job is never automatically
+included because its workflow is attested, and a step is never carried over
+because an index happens to match. Even when the workflow file hash is
+unchanged, a changed local action or script changes the dependency fingerprint
+and voids the plan. Mutable action refs stay opaque until a resolved revision is
+approved.
+
+Immediately before the final approval, recheck plan expiry, premise expiry and
+revocation, Binding identity, current bytes, and policy freshness. A policy
+value that changed requires a new plan and preview; never silently rewrite the
+digest to a newer value. Relevant policy must be at most 600 seconds old, and a
+write stops if fresh data cannot be obtained.
+
+## Apply invariants
+
+An approved plan is not applied if any invariant fails. The reason code list is
+closed and is exactly this table.
+
+| Invariant | Reason code |
+| --- | --- |
+| Unapplied plan TTL (7 days) still valid | `PLAN_EXPIRED` |
+| Attestation exists and is valid for the edited job or step | `ATTESTATION_MISSING` / `ATTESTATION_EXPIRED` / `ATTESTATION_REVOKED` |
+| Attestation `workflowHash` and `dependencyHash` match current bytes | `ATTESTATION_HASH_MISMATCH` |
+| Attestation scope covers the edit | `ATTESTATION_SCOPE_INSUFFICIENT` |
+| Plan `dependencies` hash matches current values | `DEPENDENCY_HASH_MISMATCH` |
+| `blockers` is empty | `BLOCKERS_PRESENT` |
+| Coverage allows writes (`full`, or `subset` plus complete edit evidence) | `COVERAGE_INSUFFICIENT_FOR_WRITE` |
+| Current bytes hash equals `sourceHash` | `SOURCE_HASH_MISMATCH` |
+| Nonce is valid, unused, and from the same peer | `NONCE_INVALID` |
+| Policy snapshot is at most 600 seconds old | `POLICY_STALE` |
+| Backup is durably stored | `BACKUP_UNAVAILABLE` |
+
+`inputHashes` is the sorted sha256 list recorded on both the plan and the
+premise: `workflowSource`, `workflowDefinition`, `policySnapshot`, and
+`dependencyHash`. Comparison uses hashes, never path strings alone.
+
+## Apply transaction
+
+The file store and the target writer share one service path. The CLI and the Web
+UI do not carry separate write implementations.
+
+| Step | Check and record | On failure |
+| --- | --- | --- |
+| prepare | Current bytes, Binding, premise, policy, allowed paths | Project file untouched |
+| reserve | Reserve backup before/after/manifest and temp space | `BACKUP_QUOTA_EXCEEDED` or storage error, untouched |
+| durable prepare | Write before and after as immutable files, re-read hashes, flush, journal PREPARED | Untouched; a completed orphan backup is diagnosable |
+| approve | Consume the nonce atomically, or confirm purpose and digest in a separate terminal | Untouched; no approval reuse |
+| recheck | File hash, identity, premise, quota | `PLAN_STALE`, apply cancelled |
+| replace | Write the result to a temp file on the same volume, replace atomically, preserve mode | Never delete the original; record the failure |
+| confirm | Verify target after-hash, journal APPLIED | `RECOVERY_REQUIRED`; never a normal success response |
+
+There is no mode that warns and continues when the backup cannot be written: the
+user must choose a new durable location and create a new plan. CI Diet uses a
+single-writer lease per repository and path to serialize its own CLI and Web
+applies. External editors are not part of that lease; POSIX rename and Node
+filesystem calls do not provide atomic compare-and-swap against other writers,
+so the product promises detection through pre/post rechecks, not lossless
+concurrent editing.
+
+On Windows, a replacement blocked by an open handle, antivirus, or permissions
+fails after limited retries. Deleting the target and renaming over it is
+forbidden. Platform replacement, ACL, and flush behaviour must pass the Windows
+A1 spike before writes are enabled. Where directory fsync is unavailable, no
+equivalent power-loss durability is claimed.
+
+## Recovery
+
+| Journal and target | Next action |
+| --- | --- |
+| PREPARED and target equals before | Mark as not applied. Do not reapply without a new approval |
+| APPLYING/PREPARED and target equals after | Recover the receipt from the stored result; write no extra bytes |
+| APPLIED and target equals after | Revert is available |
+| Any state, target differs from both before and after | `CONFLICT`; never overwrite the current file |
+| Required backup missing or hash mismatch | `RECOVERY_REQUIRED`; never restore corrupted bytes |
+
+Revert also needs a separate approval and quota/target recheck, and changes the
+file only when `current == after`. If the user edited the file afterwards, offer
+the conflict and the preserved original comparison only. `git reset --hard`,
+`git checkout --`, and forced overwrite are never recovery mechanisms.
+
+Backups are stored verbatim for exact revert; masking happens only in exports,
+logs, and error messages. Deleting an applied backup is a separate human action
+that confirms revert is no longer possible and is not tied to report TTL.
+Because nothing is auto-pruned, reaching the 256 MiB store quota blocks new
+applies with `BACKUP_UNAVAILABLE`; space is freed only through a cleanup
+procedure that lists targets, shows the export path, and asks for explicit
+confirmation. Old backups are never silently deleted. If the process stops or
+an update is requested before the journal state is settled, the work is not
+discarded silently; it remains for the recovery check on the next start.
