@@ -292,6 +292,13 @@ function readJobs(text: string, jobsNode: Node | null | undefined, unsupported: 
   return jobs;
 }
 
+function readRunWorkingDirectory(node: Node | null | undefined): string | null {
+  if (!node || !isMap(node)) return null;
+  const run = node.get("run", true) as Node | null;
+  if (!run || !isMap(run)) return null;
+  return scalarText(run.get("working-directory", true) as Node | null);
+}
+
 function readJob(text: string, key: string, keyNode: Node, jobNode: Node | null | undefined): WorkflowJob {
   const job = jobNode && isMap(jobNode) ? jobNode : null;
   const nameNode = (job ? job.get("name", true) : null) as Node | null;
@@ -317,6 +324,7 @@ function readJob(text: string, key: string, keyNode: Node, jobNode: Node | null 
     environment: environment.name,
     environmentRange: environment.range,
     reusableWorkflow: scalarText(reusableNode),
+    defaultWorkingDirectory: readRunWorkingDirectory(job ? (job.get("defaults", true) as Node | null) : null),
     steps: readSteps(text, job ? (job.get("steps", true) as Node | null) : null),
   };
 }
@@ -387,6 +395,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
       name: null,
       triggers: [],
       pullRequestTypes: null,
+      defaultWorkingDirectory: null,
       concurrency: null,
       jobs: [],
       unsupported,
@@ -428,6 +437,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
       name: null,
       triggers: [],
       pullRequestTypes: null,
+      defaultWorkingDirectory: null,
       concurrency: null,
       jobs: [],
       unsupported,
@@ -443,6 +453,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
     name: scalarText(rootMap.get("name", true)),
     triggers: readTriggers(onNode),
     pullRequestTypes: readPullRequestTypes(onNode),
+    defaultWorkingDirectory: readRunWorkingDirectory(rootMap.get("defaults", true) as Node | null),
     concurrency: readConcurrency(text, rootMap.get("concurrency", true) as Node | null),
     jobs: readJobs(text, rootMap.get("jobs", true) as Node | null, unsupported),
     unsupported,

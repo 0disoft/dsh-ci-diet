@@ -85,6 +85,8 @@ export interface WorkflowJob {
   readonly environmentRange: ByteRange | null;
   /** `uses:` of a reusable workflow job, when present. */
   readonly reusableWorkflow: string | null;
+  /** `defaults.run.working-directory` for this job, when it is a literal. */
+  readonly defaultWorkingDirectory: string | null;
   readonly steps: readonly WorkflowStep[];
 }
 
@@ -110,6 +112,8 @@ export interface WorkflowDefinition {
   readonly triggers: readonly string[];
   /** Explicit `on.pull_request.types`, or null when the trigger uses defaults. */
   readonly pullRequestTypes: readonly string[] | null;
+  /** Top-level `defaults.run.working-directory`, when it is a literal. */
+  readonly defaultWorkingDirectory: string | null;
   readonly concurrency: WorkflowConcurrency | null;
   readonly jobs: readonly WorkflowJob[];
   readonly unsupported: readonly UnsupportedFeature[];

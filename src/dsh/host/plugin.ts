@@ -388,7 +388,8 @@ export function apply(ctx: Context, config: Config) {
           });
       if (eligibility !== null && !eligibility.allowed) blockers.push(...eligibility.reasons);
 
-      const dependencies = collectDependencies(binding.workspaceRoot, workflow);
+      const dependencyReport = collectDependencies(binding.workspaceRoot, workflow);
+      for (const ref of dependencyReport.unresolved) blockers.push("UNRESOLVED_DEPENDENCY:" + ref);
 
       let planDigest: string | null = null;
       if (blockers.length === 0 && history !== null) {
@@ -396,7 +397,7 @@ export function apply(ctx: Context, config: Config) {
           bindingId: binding.bindingId,
           workflowPath: file.path,
           workflowHash: workflow.sha256,
-          dependencyHash: dependencyHashOf(dependencies),
+          dependencyHash: dependencyHashOf(dependencyReport.dependencies),
           scope,
           jobKey,
           stepKey,
@@ -417,7 +418,7 @@ export function apply(ctx: Context, config: Config) {
             blockers: eligibility === null ? [] : eligibility.remainingBlockers,
             coverageWriteAllowed: true,
             now,
-            dependencies,
+            dependencies: dependencyReport.dependencies,
             expected,
           });
           planDigest = built.plan.planDigest;

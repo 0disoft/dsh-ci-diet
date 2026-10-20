@@ -560,12 +560,12 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     expected = { days };
   }
 
-  const dependencies = collectDependencies(binding.workspaceRoot, workflow);
+  const dependencyReport = collectDependencies(binding.workspaceRoot, workflow);
   const attestation = createAttestation({
     bindingId: binding.bindingId,
     workflowPath: file.path,
     workflowHash: workflow.sha256,
-    dependencyHash: dependencyHashOf(dependencies),
+    dependencyHash: dependencyHashOf(dependencyReport.dependencies),
     scope,
     jobKey,
     stepKey,
@@ -606,10 +606,13 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     edits,
     attestations: [attestation],
     policies,
-    blockers: eligibility.remainingBlockers,
+    blockers: [
+      ...eligibility.remainingBlockers,
+      ...dependencyReport.unresolved.map((ref) => "UNRESOLVED_DEPENDENCY:" + ref),
+    ],
     coverageWriteAllowed: true,
     now,
-    dependencies,
+    dependencies: dependencyReport.dependencies,
     expected,
   });
 

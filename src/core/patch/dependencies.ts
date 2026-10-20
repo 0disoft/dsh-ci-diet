@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
-import type { WorkflowDefinition } from "../workflow/model.ts";
+import type { WorkflowDefinition, WorkflowJob, WorkflowStep } from "../workflow/model.ts";
 import { sha256Hex } from "../../shared/cdj1.ts";
 
 /** Files a workflow runs from the repository, pinned by content hash. */
@@ -9,19 +9,95 @@ export interface DependencyRef {
   readonly sha256: string;
 }
 
+/** What the dependency scan could pin, and what it could not resolve. */
+export interface DependencyCollection {
+  readonly dependencies: readonly DependencyRef[];
+  /** Repository paths the workflow names but the scan could not hash. */
+  readonly unresolved: readonly string[];
+}
+
 const MAX_DEPENDENCY_BYTES = 2 * 1024 * 1024;
-const LOCAL_ACTION_FILES = ["action.yml", "action.yaml"];
+const MAX_ACTION_FILES = 500;
+const ACTION_SKIP_DIRS = new Set([".git", "node_modules"]);
+
+/** Commands whose first non-flag argument is a script path. */
+const INTERPRETERS = new Set([
+  "node",
+  "nodejs",
+  "bun",
+  "deno",
+  "tsx",
+  "ts-node",
+  "python",
+  "python3",
+  "py",
+  "sh",
+  "bash",
+  "zsh",
+  "pwsh",
+  "powershell",
+  "ruby",
+  "perl",
+  "php",
+]);
+
+/** Interpreter flags that consume the following token instead of naming a script. */
+const FLAGS_WITH_VALUE = new Set([
+  "-r",
+  "--require",
+  "--loader",
+  "--import",
+  "-p",
+  "--print",
+  "--enable-source-maps",
+  "-i",
+  "--inspect",
+  "--inspect-brk",
+  "-w",
+  "--watch",
+  "--env-file",
+]);
+
+const MODULE_FLAGS = new Set(["-m", "--module"]);
+const INLINE_FLAGS = new Set(["-e", "--eval", "-c"]);
+const SHELL_SOURCE_COMMANDS = new Set([".", "source"]);
 
 function toPosix(value: string): string {
   return sep === "/" ? value : value.split(sep).join("/");
 }
 
-function resolveInside(realRoot: string, candidate: string): string | null {
-  if (isAbsolute(candidate)) return null;
-  if (candidate.startsWith("-")) return null;
-  if (candidate.includes("://")) return null;
-  if (candidate.includes("${{")) return null;
-  const target = join(realRoot, candidate);
+function normalizeBase(base: string): string | null {
+  const text = base.trim().replace(/^["']|["']$/g, "");
+  if (text === "" || text === ".") return "";
+  if (text.includes("${{")) return null;
+  if (text.includes("://") || isAbsolute(text)) return null;
+  const segments: string[] = [];
+  for (const segment of text.split("/")) {
+    if (segment === "" || segment === ".") continue;
+    if (segment === "..") {
+      if (segments.length === 0) return null;
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return segments.join("/");
+}
+
+function joinRelative(base: string, candidate: string): string {
+  if (base === "") return candidate;
+  if (candidate.startsWith("/")) return candidate;
+  return base + "/" + candidate;
+}
+
+function insideRoot(realRoot: string, real: string): boolean {
+  return real === realRoot || real.startsWith(realRoot + sep);
+}
+
+function resolveFile(realRoot: string, base: string, candidate: string): string | null {
+  if (candidate === "") return null;
+  if (isAbsolute(candidate) || candidate.includes("://")) return null;
+  const target = join(realRoot, base, candidate);
   if (!existsSync(target)) return null;
   let real: string;
   try {
@@ -29,15 +105,32 @@ function resolveInside(realRoot: string, candidate: string): string | null {
   } catch {
     return null;
   }
-  if (real !== realRoot && !real.startsWith(realRoot + sep)) return null;
-  let info;
+  if (!insideRoot(realRoot, real)) return null;
   try {
-    info = statSync(real);
+    const info = statSync(real);
+    if (!info.isFile() || info.size > MAX_DEPENDENCY_BYTES) return null;
   } catch {
     return null;
   }
-  if (!info.isFile()) return null;
-  if (info.size > MAX_DEPENDENCY_BYTES) return null;
+  return real;
+}
+
+function resolveDirectory(realRoot: string, base: string, candidate: string): string | null {
+  if (candidate === "" || isAbsolute(candidate) || candidate.includes("://")) return null;
+  const target = join(realRoot, base, candidate);
+  if (!existsSync(target)) return null;
+  let real: string;
+  try {
+    real = realpathSync(target);
+  } catch {
+    return null;
+  }
+  if (!insideRoot(realRoot, real)) return null;
+  try {
+    if (!statSync(real).isDirectory()) return null;
+  } catch {
+    return null;
+  }
   return real;
 }
 
@@ -49,30 +142,54 @@ function hashFile(realPath: string): string | null {
   }
 }
 
-function commandTokens(run: string): string[] {
+/** Split a run script into one token list per command segment. */
+function commandSegments(run: string): string[][] {
   return run
     .split(/\r?\n/)
     .flatMap((line) => line.split(/&&|\|\||[;|]/))
-    .flatMap((segment) => segment.trim().split(/\s+/))
-    .map((token) => token.replace(/^["\u0027]|["\u0027]$/g, ""))
-    .filter((token) => token.length > 0);
+    .map((segment) =>
+      segment
+        .trim()
+        .split(/\s+/)
+        .map((token) => token.replace(/^["']|["']$/g, ""))
+        .filter((token) => token.length > 0),
+    )
+    .filter((segment) => segment.length > 0);
 }
 
-/**
- * Collect local files a workflow depends on: script arguments that look like
- * repository paths and local actions referenced with `uses: ./...`. The plan
- * stores their hashes so an apply can refuse when a script changed.
- */
-export function collectDependencies(workspaceRoot: string, workflow: WorkflowDefinition): DependencyRef[] {
+function baseName(token: string): string {
+  const normalized = token.split("/").pop() ?? token;
+  return normalized.replace(/\.(exe|cmd|bat)$/i, "");
+}
+
+function stepBase(
+  workflow: WorkflowDefinition,
+  job: WorkflowJob,
+  step: WorkflowStep,
+): string | null {
+  const declared = step.otherEntries.find((entry) => entry.key === "working-directory");
+  if (declared !== undefined) {
+    if (declared.kind !== "literal" || declared.literal === null) return null;
+    return normalizeBase(declared.literal);
+  }
+  const raw = job.defaultWorkingDirectory ?? workflow.defaultWorkingDirectory ?? "";
+  return normalizeBase(raw);
+}
+
+export function collectDependencies(
+  workspaceRoot: string,
+  workflow: WorkflowDefinition,
+): DependencyCollection {
   let realRoot: string;
   try {
     realRoot = realpathSync(workspaceRoot);
   } catch {
-    return [];
+    return { dependencies: [], unresolved: ["<workspace>"] };
   }
   const found = new Map<string, string>();
-  const add = (candidate: string): void => {
-    const real = resolveInside(realRoot, candidate);
+  const unresolved = new Set<string>();
+  const add = (base: string, candidate: string): void => {
+    const real = resolveFile(realRoot, base, candidate);
     if (real === null) return;
     const relativePath = toPosix(relative(realRoot, real));
     if (relativePath === "" || relativePath.startsWith("..")) return;
@@ -81,23 +198,140 @@ export function collectDependencies(workspaceRoot: string, workflow: WorkflowDef
     if (hash === null) return;
     found.set(relativePath, hash);
   };
+  const miss = (base: string, candidate: string): void => {
+    const display = joinRelative(base, candidate);
+    unresolved.add(display.startsWith("./") ? display.slice(2) : display);
+  };
+  const addActionDirectory = (base: string, candidate: string): void => {
+    const dir = resolveDirectory(realRoot, base, candidate);
+    if (dir === null) {
+      miss(base, candidate);
+      return;
+    }
+    const stack: string[] = [dir];
+    let collected = 0;
+    let visited = 0;
+    while (stack.length > 0 && visited < MAX_ACTION_FILES) {
+      const current = stack.pop() as string;
+      let entries;
+      try {
+        entries = readdirSync(current, { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const entry of entries) {
+        visited += 1;
+        if (visited > MAX_ACTION_FILES) break;
+        if (entry.isDirectory()) {
+          if (!ACTION_SKIP_DIRS.has(entry.name)) stack.push(join(current, entry.name));
+          continue;
+        }
+        if (!entry.isFile()) continue;
+        const real = join(current, entry.name);
+        const relativePath = toPosix(relative(realRoot, real));
+        if (found.has(relativePath)) continue;
+        const hash = hashFile(real);
+        if (hash === null) continue;
+        found.set(relativePath, hash);
+        collected += 1;
+      }
+    }
+    if (collected === 0) unresolved.add(toPosix(relative(realRoot, dir)));
+  };
 
   for (const job of workflow.jobs) {
     for (const step of job.steps) {
+      const base = stepBase(workflow, job, step);
       if (step.uses !== null && step.uses.startsWith("./")) {
-        for (const actionFile of LOCAL_ACTION_FILES) {
-          add(step.uses.slice(2) + "/" + actionFile);
-        }
+        // Local actions resolve from the repository root, not the step working directory.
+        addActionDirectory("", step.uses.slice(2));
       }
       if (step.run === null) continue;
-      for (const token of commandTokens(step.run)) {
-        if (!token.includes("/")) continue;
-        add(token);
+      if (base === null) {
+        unresolved.add(
+          "jobs." + job.key + ".steps[" + step.index + "] (dynamic working-directory)",
+        );
+        continue;
+      }
+      if (step.run.includes("${{")) {
+        unresolved.add("jobs." + job.key + ".steps[" + step.index + "] (dynamic run script)");
+        continue;
+      }
+      let working = base;
+      for (const segment of commandSegments(step.run)) {
+        const head = segment[0] ?? "";
+        if (head === "cd" && segment[1] !== undefined) {
+          const next = normalizeBase(joinRelative(working, segment[1]));
+          if (next !== null) working = next;
+          continue;
+        }
+        if (head.startsWith("./") || head.startsWith("../")) {
+          add(working, head);
+          if (resolveFile(realRoot, working, head) === null) miss(working, head);
+          continue;
+        }
+        if (SHELL_SOURCE_COMMANDS.has(head)) {
+          const script = segment[1];
+          if (script !== undefined) {
+            add(working, script);
+            if (resolveFile(realRoot, working, script) === null) miss(working, script);
+          }
+          continue;
+        }
+        const interpreter = INTERPRETERS.has(baseName(head)) ? baseName(head) : null;
+        if (interpreter === null) {
+          for (const token of segment) {
+            if (token.includes("/")) add(working, token);
+          }
+          continue;
+        }
+        let index = 1;
+        let moduleMode = false;
+        let inline = false;
+        while (index < segment.length) {
+          const token = segment[index] as string;
+          if (INLINE_FLAGS.has(token)) {
+            inline = true;
+            break;
+          }
+          if (MODULE_FLAGS.has(token)) {
+            moduleMode = true;
+            index += 1;
+            break;
+          }
+          if (FLAGS_WITH_VALUE.has(token)) {
+            index += 2;
+            continue;
+          }
+          if (token.startsWith("-")) {
+            index += 1;
+            continue;
+          }
+          break;
+        }
+        if (inline || moduleMode) {
+          for (let extra = index; extra < segment.length; extra += 1) {
+            const token = segment[extra] as string;
+            if (token.includes("/")) add(working, token);
+          }
+          continue;
+        }
+        const script = segment[index];
+        if (script === undefined) continue;
+        add(working, script);
+        if (resolveFile(realRoot, working, script) === null) miss(working, script);
+        for (let extra = index + 1; extra < segment.length; extra += 1) {
+          const token = segment[extra] as string;
+          if (token.includes("/")) add(working, token);
+        }
       }
     }
   }
 
-  return [...found.entries()]
-    .map(([ref, sha256]) => ({ ref, sha256 }))
-    .sort((left, right) => (left.ref < right.ref ? -1 : left.ref > right.ref ? 1 : 0));
+  return {
+    dependencies: [...found.entries()]
+      .map(([ref, sha256]) => ({ ref, sha256 }))
+      .sort((left, right) => (left.ref < right.ref ? -1 : left.ref > right.ref ? 1 : 0)),
+    unresolved: [...unresolved].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+  };
 }

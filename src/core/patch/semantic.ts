@@ -40,17 +40,16 @@ function deepEqual(left: unknown, right: unknown): boolean {
   return false;
 }
 
-function isAllowedLeaf(path: readonly PathSeg[], allowed: readonly (readonly PathSeg[])[]): boolean {
+function isAllowedLeaf(
+  path: readonly PathSeg[],
+  allowed: readonly (readonly PathSeg[])[],
+): boolean {
   return allowed.some((candidate) => isPrefix(candidate, path));
 }
 
 function isPrefix(prefix: readonly PathSeg[], path: readonly PathSeg[]): boolean {
   if (prefix.length > path.length) return false;
   return prefix.every((segment, index) => segment === path[index]);
-}
-
-function isAllowedAncestor(path: readonly PathSeg[], allowed: readonly (readonly PathSeg[])[]): boolean {
-  return allowed.some((candidate) => candidate.length > path.length && isPrefix(path, candidate));
 }
 
 function collectDifferences(
@@ -77,16 +76,27 @@ function collectDifferences(
     }
     return;
   }
-  if (afterIsObject && (before === undefined || before === null)) {
-    for (const key of Object.keys(after)) collectDifferences(undefined, after[key], [...path, key], allowed, out);
-    return;
+  if (beforeIsObject || afterIsObject) {
+    const object = (beforeIsObject ? before : after) as Record<string, unknown>;
+    const other = beforeIsObject ? after : before;
+    const keys = Object.keys(object);
+    if ((other === undefined || other === null) && keys.length > 0) {
+      for (const key of keys) {
+        collectDifferences(
+          beforeIsObject ? object[key] : undefined,
+          beforeIsObject ? undefined : object[key],
+          [...path, key],
+          allowed,
+          out,
+        );
+      }
+      return;
+    }
   }
-  if (beforeIsObject && (after === undefined || after === null)) {
-    for (const key of Object.keys(before)) collectDifferences(before[key], undefined, [...path, key], allowed, out);
-    return;
-  }
-  if (isAllowedAncestor(path, allowed)) return;
-  out.push({ path, kind: before === undefined ? "added" : after === undefined ? "missing" : "changed" });
+  out.push({
+    path,
+    kind: before === undefined ? "added" : after === undefined ? "missing" : "changed",
+  });
 }
 
 function jobKeyOf(edit: ByteEdit): string | null {
@@ -113,7 +123,8 @@ export function allowedPaths(edits: readonly ByteEdit[]): PathSeg[][] {
       continue;
     }
     const stepIndex = stepIndexIn(edit);
-    if (stepIndex !== null) paths.push(["jobs", jobKey, "steps", stepIndex, "with", "retention-days"]);
+    if (stepIndex !== null)
+      paths.push(["jobs", jobKey, "steps", stepIndex, "with", "retention-days"]);
   }
   return paths;
 }
@@ -137,8 +148,10 @@ export interface SemanticInput {
 /** Return every structural difference outside the exact leaves the plan claims. */
 export function semanticProblems(input: SemanticInput): string[] {
   const reparsed = parseWorkflow(input.original.path, input.resultText);
-  if (reparsed.parseError !== null) return ["edited workflow does not parse: " + reparsed.parseError.message];
-  if (reparsed.unsupported.length > 0) return reparsed.unsupported.map((feature) => "edited workflow is unsupported: " + feature.code);
+  if (reparsed.parseError !== null)
+    return ["edited workflow does not parse: " + reparsed.parseError.message];
+  if (reparsed.unsupported.length > 0)
+    return reparsed.unsupported.map((feature) => "edited workflow is unsupported: " + feature.code);
 
   let before: unknown;
   let after: unknown;
@@ -146,13 +159,19 @@ export function semanticProblems(input: SemanticInput): string[] {
     before = parse(input.originalText);
     after = parse(input.resultText);
   } catch (error) {
-    return ["edited workflow does not parse as YAML: " + (error instanceof Error ? error.message : String(error))];
+    return [
+      "edited workflow does not parse as YAML: " +
+        (error instanceof Error ? error.message : String(error)),
+    ];
   }
   const allowed = allowedPaths(input.edits);
   const differences: Difference[] = [];
   collectDifferences(before, after, [], allowed, differences);
   if (differences.length === 0) return [];
-  return differences.map((difference) => difference.kind + " outside the allowed edit paths: " + formatPath(difference.path));
+  return differences.map(
+    (difference) =>
+      difference.kind + " outside the allowed edit paths: " + formatPath(difference.path),
+  );
 }
 
 /** Kept for callers that only need the original definition and its bytes. */
