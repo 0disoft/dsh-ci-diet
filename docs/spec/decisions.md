@@ -41,6 +41,9 @@ new record, not an edit to the rationale.
   (`evidence/a0a/parser-verify.json`). Honoring `matrix.include` and `exclude`
   explains the gain; computed matrices still resolve to nothing, so the
   key-recovery ceiling is a data property, not an implementation gap.
+- CD004 is on by default although ADR-13 names three history-dependent rules: it
+  reads workflow text only, is review-only, and has no write path, so the
+  write-safety gate does not apply to it.
 - CD005 is revisited only with real history, not with a lowered threshold: after
   five or more users sync 90 days of history, if at least half of those
   repositories produce one or more candidates with no timeout, a cohort of five
