@@ -111,6 +111,38 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(approved.plan.status.state, "approved");
 });
 
+for (const defect of ["coverage-string", "nonce-channel", "nonce-subject", "nonce-time"] as const) {
+  test("apply refuses malformed sidecar fields: " + defect, async () => {
+    const f = setup();
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const noncePath = join(f.store.root, "plans", f.plan.planId + ".nonce.json");
+    const path = defect === "coverage-string"
+      ? join(f.store.root, "plans", f.plan.planId + ".meta.json")
+      : noncePath;
+    const record = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    if (defect === "coverage-string") record.coverageWriteAllowed = "false";
+    else if (defect === "nonce-channel") record.channel = "agent";
+    else if (defect === "nonce-subject") delete record.subjectId;
+    else record.createdAt = "not a timestamp";
+    const contents = JSON.stringify(record);
+    writeFileSync(path, contents);
+    const nonceBefore = readFileSync(noncePath, "utf8");
+
+    await assert.rejects(
+      async () => {
+        const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+        assert.fail("Malformed sidecar returned " + result.state);
+      },
+      (error: unknown) => error instanceof Error && error.message.startsWith("STATE_INVALID:") && error.message.includes(path),
+    );
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+    assert.equal(readFileSync(path, "utf8"), contents);
+    assert.equal(readFileSync(noncePath, "utf8"), nonceBefore);
+    assert.equal(f.store.listChanges().length, 0);
+  });
+}
+
 test("apply refuses a second time because the nonce was consumed", async () => {
   const fixture = setup();
   approvePlan({

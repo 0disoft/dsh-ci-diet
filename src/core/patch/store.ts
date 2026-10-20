@@ -253,7 +253,11 @@ export class PatchStore {
   readPlan(planId: string): StoredPlan | null {
     const plan = this.readJson<PatchPlan>(this.path("plans", requireId(planId, "planId") + ".json"), "PatchPlan");
     if (plan === null) return null;
-    const meta = this.readJson<PlanMeta>(this.path("plans", requireId(planId, "planId") + ".meta.json"));
+    const metaPath = this.path("plans", requireId(planId, "planId") + ".meta.json");
+    const meta = this.readJson<PlanMeta>(metaPath);
+    if (meta !== null && (typeof meta.coverageWriteAllowed !== "boolean" || (meta.reportId !== null && typeof meta.reportId !== "string"))) {
+      throw new StoreCorruptionError(metaPath, "PlanMeta schema mismatch");
+    }
     return { plan, meta: meta ?? { coverageWriteAllowed: false, reportId: null } };
   }
 
@@ -279,7 +283,18 @@ export class PatchStore {
   }
 
   readNonce(planId: string): ApprovalNonce | null {
-    return this.readJson<ApprovalNonce>(this.path("plans", requireId(planId, "planId") + ".nonce.json"));
+    const path = this.path("plans", requireId(planId, "planId") + ".nonce.json");
+    const nonce = this.readJson<ApprovalNonce>(path);
+    if (nonce !== null && (
+      typeof nonce.nonceId !== "string" || !ID_PATTERN.test(nonce.nonceId)
+      || typeof nonce.planDigest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(nonce.planDigest)
+      || typeof nonce.createdAt !== "string" || !Number.isFinite(Date.parse(nonce.createdAt))
+      || typeof nonce.subjectId !== "string" || nonce.subjectId.trim() === ""
+      || (nonce.channel !== "human-cli" && nonce.channel !== "human-ui")
+    )) {
+      throw new StoreCorruptionError(path, "ApprovalNonce schema mismatch");
+    }
+    return nonce;
   }
 
   consumeNonce(planId: string, nonceId: string): boolean {
