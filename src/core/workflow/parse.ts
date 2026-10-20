@@ -7,10 +7,12 @@ import type {
   ByteRange,
   MatrixAxis,
   MatrixPlan,
+  StepWithEntry,
   UnsupportedFeature,
   WorkflowConcurrency,
   WorkflowDefinition,
   WorkflowJob,
+  WorkflowStep,
 } from "./model.ts";
 
 const MATRIX_EXPRESSION = /\$\{\{/;
@@ -97,6 +99,14 @@ function jsonOf(value: unknown): unknown {
   return undefined;
 }
 
+function scalarText(node: Node | null | undefined): string | null {
+  if (!node || !isScalar(node)) return null;
+  const value = node.value;
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
 function readMatrix(matrixNode: Node | null | undefined): MatrixPlan | null {
   if (matrixNode === null || matrixNode === undefined) return null;
   if (!isMap(matrixNode)) return { axes: [], include: [], exclude: [], dynamic: true };
@@ -159,12 +169,102 @@ function readMatrix(matrixNode: Node | null | undefined): MatrixPlan | null {
   return { axes, include, exclude, dynamic };
 }
 
-function scalarText(node: Node | null | undefined): string | null {
-  if (!node || !isScalar(node)) return null;
-  const value = node.value;
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return null;
+function readStringList(node: Node | null | undefined): string[] {
+  if (!node) return [];
+  if (isScalar(node)) {
+    const text = scalarText(node);
+    return text === null ? [] : [text];
+  }
+  if (!isSeq(node)) return [];
+  const out: string[] = [];
+  for (const item of node.items) {
+    const text = scalarText(item as Node);
+    if (text !== null) out.push(text);
+  }
+  return out;
+}
+
+function readSteps(text: string, stepsNode: Node | null | undefined): WorkflowStep[] {
+  if (!stepsNode || !isSeq(stepsNode)) return [];
+  const steps: WorkflowStep[] = [];
+  for (const [index, item] of stepsNode.items.entries()) {
+    const stepNode = item as Node | null;
+    if (!stepNode || !isMap(stepNode)) {
+      steps.push({
+        index,
+        name: null,
+        uses: null,
+        usesRange: null,
+        run: null,
+        withPresent: false,
+        withEntries: [],
+        withRange: null,
+        withFlow: false,
+        flow: false,
+        range: byteRangeOf(text, stepNode),
+      });
+      continue;
+    }
+    const usesNode = stepNode.get("uses", true) as Node | null;
+    const usesText = scalarText(usesNode);
+    const withNode = stepNode.get("with", true) as Node | null;
+    const withEntries: StepWithEntry[] = [];
+    let withPresent = false;
+    let withFlow = false;
+    if (withNode) {
+      withPresent = true;
+      if (isMap(withNode)) {
+        withFlow = (withNode as { flow?: boolean }).flow === true;
+        for (const pair of withNode.items) {
+          const key = scalarText(pair.key as Node);
+          if (key === null) continue;
+          const keyRange = byteRangeOf(text, pair.key as Node) ?? { startByte: 0, endByte: 0 };
+          const valueNode = pair.value as Node | null;
+          const valueRange = byteRangeOf(text, valueNode);
+          if (valueNode && isScalar(valueNode)) {
+            const raw = (valueNode as { value?: unknown }).value;
+            if (typeof raw === "string") {
+              if (MATRIX_EXPRESSION.test(raw)) {
+                withEntries.push({ key, keyRange, kind: "expression", literal: null, valueRange });
+              } else {
+                withEntries.push({ key, keyRange, kind: "literal", literal: raw, valueRange });
+              }
+            } else if (typeof raw === "number" || typeof raw === "boolean") {
+              withEntries.push({ key, keyRange, kind: "literal", literal: String(raw), valueRange });
+            } else {
+              withEntries.push({ key, keyRange, kind: "non-scalar", literal: null, valueRange });
+            }
+          } else {
+            withEntries.push({ key, keyRange, kind: "non-scalar", literal: null, valueRange });
+          }
+        }
+      }
+    }
+    steps.push({
+      index,
+      name: scalarText(stepNode.get("name", true) as Node | null),
+      uses: usesText !== null && !MATRIX_EXPRESSION.test(usesText) ? usesText : null,
+      usesRange: byteRangeOf(text, usesNode),
+      run: scalarText(stepNode.get("run", true) as Node | null),
+      withPresent,
+      withEntries,
+      withRange: byteRangeOf(text, withNode),
+      withFlow,
+      flow: (stepNode as { flow?: boolean }).flow === true,
+      range: byteRangeOf(text, stepNode),
+    });
+  }
+  return steps;
+}
+
+function readEnvironment(text: string, node: Node | null | undefined): { name: string | null; range: ByteRange | null } {
+  if (!node) return { name: null, range: null };
+  if (isScalar(node)) return { name: scalarText(node), range: byteRangeOf(text, node) };
+  if (isMap(node)) {
+    const nameNode = node.get("name", true) as Node | null;
+    return { name: scalarText(nameNode), range: byteRangeOf(text, node) };
+  }
+  return { name: null, range: byteRangeOf(text, node) };
 }
 
 function readJobs(text: string, jobsNode: Node | null | undefined, unsupported: UnsupportedFeature[]): WorkflowJob[] {
@@ -192,7 +292,11 @@ function readJob(text: string, key: string, keyNode: Node, jobNode: Node | null 
   const timeoutNode = (job ? job.get("timeout-minutes", true) : null) as Node | null;
   const strategyNode = (job ? job.get("strategy", true) : null) as Node | null;
   const matrixNode = strategyNode && isMap(strategyNode) ? (strategyNode.get("matrix", true) as Node | null) : null;
+  const runsOnNode = (job ? job.get("runs-on", true) : null) as Node | null;
+  const environment = readEnvironment(text, job ? (job.get("environment", true) as Node | null) : null);
+  const reusableNode = (job ? job.get("uses", true) : null) as Node | null;
   const timeoutValue = timeoutNode && isScalar(timeoutNode) ? timeoutNode.value : null;
+  const runsOnText = runsOnNode && isScalar(runsOnNode) ? scalarText(runsOnNode) : null;
   return {
     key,
     keyRange: byteRangeOf(text, keyNode) ?? { startByte: 0, endByte: 0 },
@@ -201,6 +305,13 @@ function readJob(text: string, key: string, keyNode: Node, jobNode: Node | null 
     timeoutMinutes: typeof timeoutValue === "number" && Number.isSafeInteger(timeoutValue) ? timeoutValue : null,
     timeoutRange: byteRangeOf(text, timeoutNode),
     matrix: readMatrix(matrixNode as Node | null),
+    needs: readStringList(job ? (job.get("needs", true) as Node | null) : null),
+    runsOn: runsOnText,
+    runsOnRange: byteRangeOf(text, runsOnNode),
+    environment: environment.name,
+    environmentRange: environment.range,
+    reusableWorkflow: scalarText(reusableNode),
+    steps: readSteps(text, job ? (job.get("steps", true) as Node | null) : null),
   };
 }
 
@@ -229,18 +340,29 @@ function readTriggers(value: Node | null | undefined): string[] {
   return [];
 }
 
+function readPullRequestTypes(onNode: Node | null | undefined): string[] | null {
+  if (!onNode || !isMap(onNode)) return null;
+  const prNode = onNode.get("pull_request", true) as Node | null;
+  if (!prNode || !isMap(prNode)) return null;
+  const typesNode = prNode.get("types", true) as Node | null;
+  if (!typesNode) return null;
+  return readStringList(typesNode);
+}
+
 function readConcurrency(text: string, value: Node | null | undefined): WorkflowConcurrency | null {
   if (!value) return null;
   const range = byteRangeOf(text, value);
   if (!range) return null;
-  if (isScalar(value)) return { group: scalarText(value), cancelInProgress: null, range };
+  if (isScalar(value)) return { group: scalarText(value), cancelInProgress: null, queue: null, range };
   if (!isMap(value)) return null;
   const groupNode = value.get("group", true) as Node | null;
   const cancelNode = value.get("cancel-in-progress", true) as Node | null;
+  const queueNode = value.get("queue", true) as Node | null;
   const cancel = cancelNode && isScalar(cancelNode) ? cancelNode.value : null;
   return {
     group: scalarText(groupNode),
     cancelInProgress: typeof cancel === "boolean" ? cancel : null,
+    queue: scalarText(queueNode),
     range,
   };
 }
@@ -258,6 +380,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
       bytes: bytes.byteLength,
       name: null,
       triggers: [],
+      pullRequestTypes: null,
       concurrency: null,
       jobs: [],
       unsupported,
@@ -298,6 +421,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
       bytes: bytes.byteLength,
       name: null,
       triggers: [],
+      pullRequestTypes: null,
       concurrency: null,
       jobs: [],
       unsupported,
@@ -305,12 +429,14 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
     };
   }
   const rootMap = root as YAMLMap;
+  const onNode = rootMap.get("on", true) as Node | null;
   return {
     path,
     sha256,
     bytes: bytes.byteLength,
     name: scalarText(rootMap.get("name", true)),
-    triggers: readTriggers(rootMap.get("on", true) as Node | null),
+    triggers: readTriggers(onNode),
+    pullRequestTypes: readPullRequestTypes(onNode),
     concurrency: readConcurrency(text, rootMap.get("concurrency", true) as Node | null),
     jobs: readJobs(text, rootMap.get("jobs", true) as Node | null, unsupported),
     unsupported,

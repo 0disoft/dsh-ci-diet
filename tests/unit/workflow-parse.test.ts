@@ -36,10 +36,11 @@ test("parses jobs, triggers, timeouts, and matrix axes", async () => {
   assert.equal(slice(text, timeout), "30");
   const matrix = job.matrix;
   assert.ok(matrix);
-  assert.equal(matrix.axes.length, 1);
+  assert.equal(matrix.axes.length, 2);
   assert.equal(matrix.axes[0]?.name, "runner");
   assert.equal(matrix.axes[0]?.values.length, 3);
-  assert.equal(matrix.dynamic, true);
+  assert.equal(matrix.axes[1]?.name, "run-all");
+  assert.equal(matrix.dynamic, false);
   assert.equal(matrix.exclude.length, 1);
 });
 

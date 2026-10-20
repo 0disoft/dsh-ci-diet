@@ -35,6 +35,36 @@ export interface MatrixPlan {
   readonly dynamic: boolean;
 }
 
+/** How one `with:` value resolved; only literals are candidates for a patch. */
+export type StepValueKind = "literal" | "expression" | "non-scalar";
+
+export interface StepWithEntry {
+  readonly key: string;
+  readonly keyRange: ByteRange;
+  readonly kind: StepValueKind;
+  /** Scalar text when kind is literal, otherwise null. */
+  readonly literal: string | null;
+  readonly valueRange: ByteRange | null;
+}
+
+export interface WorkflowStep {
+  /** Zero-based position inside the job's `steps:` sequence. */
+  readonly index: number;
+  readonly name: string | null;
+  /** Literal `uses:` reference, null when computed or absent. */
+  readonly uses: string | null;
+  readonly usesRange: ByteRange | null;
+  readonly run: string | null;
+  readonly withPresent: boolean;
+  readonly withEntries: readonly StepWithEntry[];
+  readonly withRange: ByteRange | null;
+  /** True when `with:` is a flow mapping, which v0.1 never edits. */
+  readonly withFlow: boolean;
+  /** True when the step itself is a flow mapping. */
+  readonly flow: boolean;
+  readonly range: ByteRange | null;
+}
+
 export interface WorkflowJob {
   readonly key: string;
   readonly keyRange: ByteRange;
@@ -44,11 +74,23 @@ export interface WorkflowJob {
   readonly timeoutMinutes: number | null;
   readonly timeoutRange: ByteRange | null;
   readonly matrix: MatrixPlan | null;
+  readonly needs: readonly string[];
+  /** Literal `runs-on:` scalar, null when it is an expression or a list. */
+  readonly runsOn: string | null;
+  readonly runsOnRange: ByteRange | null;
+  /** Environment name when the job declares an environment. */
+  readonly environment: string | null;
+  readonly environmentRange: ByteRange | null;
+  /** `uses:` of a reusable workflow job, when present. */
+  readonly reusableWorkflow: string | null;
+  readonly steps: readonly WorkflowStep[];
 }
 
 export interface WorkflowConcurrency {
   readonly group: string | null;
   readonly cancelInProgress: boolean | null;
+  /** Queue policy when present; v0.1 never writes a queue policy. */
+  readonly queue: string | null;
   readonly range: ByteRange;
 }
 
@@ -64,8 +106,15 @@ export interface WorkflowDefinition {
   readonly bytes: number;
   readonly name: string | null;
   readonly triggers: readonly string[];
+  /** Explicit `on.pull_request.types`, or null when the trigger uses defaults. */
+  readonly pullRequestTypes: readonly string[] | null;
   readonly concurrency: WorkflowConcurrency | null;
   readonly jobs: readonly WorkflowJob[];
   readonly unsupported: readonly UnsupportedFeature[];
   readonly parseError: WorkflowParseError | null;
+}
+
+/** True when the definition can be analyzed without a caveat. */
+export function isAnalyzable(workflow: WorkflowDefinition): boolean {
+  return workflow.parseError === null && workflow.unsupported.length === 0;
 }
