@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +9,9 @@ import { runStaticScan } from "../../src/core/scan/scan.ts";
 import { PatchStore } from "../../src/core/patch/store.ts";
 import { escapeHtml, renderHtmlReport } from "../../src/core/report/html.ts";
 import type { AnalysisReport } from "../../src/core/contracts/schema.ts";
+import { isolatedEnv } from "../helpers/test-env.ts";
+import { localizedFinding } from "../../src/core/report/localize.ts";
+import { LOCALES } from "../../src/shared/i18n/index.ts";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const cliPath = join(repoRoot, "src", "cli", "index.ts");
@@ -21,7 +24,7 @@ function runCli(args: readonly string[]): { status: number; stdout: string; stde
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" },
+    env: isolatedEnv(),
   });
   if (result.error !== undefined) throw result.error;
   return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
@@ -54,7 +57,10 @@ describe("html report", () => {
     assert.equal(escapeHtml('a<b>&"c"'), "a&lt;b&gt;&amp;&quot;c&quot;");
     const hostile: AnalysisReport = {
       ...report,
-      findings: report.findings.map((finding) => ({ ...finding, title: "<script>alert(1)</script>" })),
+      findings: report.findings.map((finding) => {
+        const { message: _message, ...rest } = finding;
+        return { ...rest, title: "<script>alert(1)</script>" };
+      }),
     };
     const html = renderHtmlReport(hostile);
     assert.doesNotMatch(html, /<script>/);
@@ -127,3 +133,47 @@ describe("ci-diet prune", () => {
     assert.equal((JSON.parse(after.stdout) as { reportId: string }).reportId, report.reportId);
   });
 });
+describe("localized rendering", () => {
+  it("renders each shipped language with its own lang attribute", () => {
+    const englishFinding = localizedFinding(report.findings[0]!, "en").title;
+    const english = renderHtmlReport(report, { locale: "en" });
+    for (const locale of LOCALES) {
+      const html = renderHtmlReport(report, { locale });
+      assert.match(html, new RegExp("<html lang=\"" + locale + "\""), "lang attribute for " + locale);
+      const title = localizedFinding(report.findings[0]!, locale).title;
+      assert.ok(html.includes(escapeHtml(title)), "localized finding title for " + locale);
+      assert.ok(html.includes("CD004"), "rule id stays untranslated");
+      if (locale !== "en") assert.notEqual(title, englishFinding, "finding title translated for " + locale);
+    }
+    assert.match(english, /<html lang="en">/);
+  });
+
+  it("keeps machine codes and numbers untranslated", () => {
+    for (const locale of LOCALES) {
+      const html = renderHtmlReport(report, { locale });
+      assert.ok(html.includes("MATRIX_EDIT_NOT_SUPPORTED"), "blocker code in " + locale);
+      assert.ok(html.includes("CD008"), "rule id in " + locale);
+      assert.ok(html.includes("2"), "finding count in " + locale);
+    }
+  });
+
+  it("prints human findings in every shipped language", () => {
+    for (const locale of LOCALES) {
+      const result = runCli(["report", "--state-dir", stateDir, "--lang", locale]);
+      assert.equal(result.status, 0, "exit status for " + locale);
+      const title = localizedFinding(report.findings[0]!, locale).title;
+      assert.ok(result.stdout.includes(title), "finding title in " + locale + " output: " + result.stdout);
+      assert.ok(result.stdout.includes("CD004"), "rule id in " + locale);
+    }
+  });
+
+  it("writes HTML in the requested language", () => {
+    const target = join(workspace, "out", "report-ko.html");
+    const result = runCli(["report", "--state-dir", stateDir, "--format", "html", "--lang", "ko", "--out", target]);
+    assert.equal(result.status, 0);
+    const html = readFileSync(target, "utf8");
+    assert.match(html, /<html lang="ko">/);
+    assert.ok(html.includes(escapeHtml(localizedFinding(report.findings[0]!, "ko").title)));
+  });
+});
+

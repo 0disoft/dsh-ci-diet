@@ -11,6 +11,7 @@ import { PatchStore } from "../../src/core/patch/store.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import type { HistoryBundle, HistoryRun } from "../../src/core/history/model.ts";
+import { isolatedEnv } from "../helpers/test-env.ts";
 
 const NOW = "2026-10-20T00:00:00.000Z";
 const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
@@ -122,7 +123,7 @@ function cli(
   args: readonly string[],
   cwd: string,
 ): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8" });
+  const result = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: isolatedEnv() });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 

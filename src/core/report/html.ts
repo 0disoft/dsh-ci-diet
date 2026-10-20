@@ -1,9 +1,12 @@
 import type { AnalysisReport, Finding, Metric } from "../contracts/schema.ts";
+import { t, type Locale } from "../../shared/i18n/index.ts";
 import { ENGINE_VERSION } from "../version.ts";
+import { localizedFinding } from "./localize.ts";
 
 export interface HtmlReportOptions {
   readonly title?: string;
   readonly generatedBy?: string;
+  readonly locale?: Locale;
 }
 
 const ESCAPES: Record<string, string> = {
@@ -31,22 +34,30 @@ function metricReason(metric: Metric): string {
   return metric.reason === null ? "" : escapeHtml(metric.reason);
 }
 
-function findingRows(findings: readonly Finding[]): string {
-  if (findings.length === 0) return "<p class=empty>No findings in this report.</p>";
+function findingRows(findings: readonly Finding[], locale: Locale): string {
+  if (findings.length === 0) return "<p class=empty>" + escapeHtml(t("report.noFindings", undefined, locale)) + "</p>";
   const rows = findings.map((finding) => {
     const blockers = finding.blockers.length === 0 ? "" : finding.blockers.map((blocker) => "<code>" + escapeHtml(blocker) + "</code>").join(" ");
     return [
       "<tr>",
       "<td><code>" + escapeHtml(finding.ruleId) + "</code></td>",
       "<td>" + text(finding.workflowPath) + "</td>",
-      "<td>" + text(finding.title) + "</td>",
+      "<td>" + text(localizedFinding(finding, locale).title) + "</td>",
       "<td>" + escapeHtml(finding.evidenceLevel) + "</td>",
       "<td>" + escapeHtml(finding.patchability) + "</td>",
       "<td>" + (blockers === "" ? "—" : blockers) + "</td>",
       "</tr>",
     ].join("");
   });
-  return ["<table class=findings><thead><tr><th>Rule</th><th>Workflow</th><th>Finding</th><th>Evidence</th><th>Patch</th><th>Blockers</th></tr></thead><tbody>", ...rows, "</tbody></table>"].join("\n");
+  const headers = [
+    t("report.rule", undefined, locale),
+    t("report.workflow", undefined, locale),
+    t("report.finding", undefined, locale),
+    t("report.evidence", undefined, locale),
+    t("report.patch", undefined, locale),
+    t("report.blockers", undefined, locale),
+  ].map((label) => "<th>" + escapeHtml(label) + "</th>").join("");
+  return ["<table class=findings><thead><tr>" + headers + "</tr></thead><tbody>", ...rows, "</tbody></table>"].join("\n");
 }
 
 function coverageRow(name: string, dimension: { status: string; fetched: number | null; expected: number | null; reasons: readonly string[] }): string {
@@ -56,10 +67,10 @@ function coverageRow(name: string, dimension: { status: string; fetched: number 
   );
 }
 
-function ruleRows(report: AnalysisReport): string {
-  if (report.ruleResults.length === 0) return "<p class=empty>No rule results in this report.</p>";
+function ruleRows(report: AnalysisReport, locale: Locale): string {
+  if (report.ruleResults.length === 0) return "<p class=empty>" + escapeHtml(t("report.noRuleResults", undefined, locale)) + "</p>";
   return [
-    "<table><thead><tr><th>Rule</th><th>Outcome</th><th>Reasons</th></tr></thead><tbody>",
+    "<table><thead><tr><th>" + escapeHtml(t("report.rule", undefined, locale)) + "</th><th>" + escapeHtml(t("report.outcome", undefined, locale)) + "</th><th>" + escapeHtml(t("report.reasons", undefined, locale)) + "</th></tr></thead><tbody>",
     ...report.ruleResults.map((result) =>
       "<tr><td><code>" + escapeHtml(result.ruleId) + "</code></td><td>" + escapeHtml(result.outcome) + "</td><td>" + escapeHtml(result.reasons.join(", ")) + "</td></tr>",
     ),
@@ -68,20 +79,27 @@ function ruleRows(report: AnalysisReport): string {
 }
 
 export function renderHtmlReport(report: AnalysisReport, options: HtmlReportOptions = {}): string {
-  const title = options.title ?? "CI Diet report";
+  const locale = options.locale ?? "en";
+  const title = options.title ?? t("report.title", undefined, locale);
   const metrics = report.metrics;
   const metricRows: readonly (readonly [string, Metric])[] = [
-    ["Observed runner seconds", metrics.observedRunnerSeconds],
-    ["Candidate removable seconds", metrics.candidateRemovableSeconds],
-    ["Modeled rounded minutes", metrics.modeledRoundedMinutes],
-    ["List price (USD)", metrics.listPriceUsd],
-    ["Estimated marginal (USD)", metrics.estimatedMarginalUsd],
-    ["Actual billed (USD)", metrics.actualBilledUsd],
+    [t("metric.observedRunnerSeconds", undefined, locale), metrics.observedRunnerSeconds],
+    [t("metric.candidateRemovableSeconds", undefined, locale), metrics.candidateRemovableSeconds],
+    [t("metric.modeledRoundedMinutes", undefined, locale), metrics.modeledRoundedMinutes],
+    [t("metric.listPriceUsd", undefined, locale), metrics.listPriceUsd],
+    [t("metric.estimatedMarginalUsd", undefined, locale), metrics.estimatedMarginalUsd],
+    [t("metric.actualBilledUsd", undefined, locale), metrics.actualBilledUsd],
   ];
+  const provenance = t("report.provenance", {
+    provenance: report.provenance,
+    generatedAt: report.generatedAt,
+    engine: report.engineVersion,
+    reportId: report.reportId,
+  }, locale);
 
   return [
     "<!doctype html>",
-    '<html lang="en">',
+    '<html lang="' + escapeHtml(locale) + '">',
     "<head>",
     '<meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
@@ -101,27 +119,29 @@ export function renderHtmlReport(report: AnalysisReport, options: HtmlReportOpti
     "</head>",
     "<body><main>",
     "<h1>" + escapeHtml(title) + "</h1>",
-    '<p class="muted">' + escapeHtml(report.provenance) + " report · generated " + escapeHtml(report.generatedAt) + " · engine " + escapeHtml(report.engineVersion) + " · report " + escapeHtml(report.reportId) + "</p>",
-    "<h2>Coverage</h2>",
-    "<table><thead><tr><th>Axis</th><th>Status</th><th>Reasons</th></tr></thead><tbody>",
-    coverageRow("History", report.coverage.history),
-    coverageRow("Workflow definitions", report.coverage.workflowDefinitions),
-    coverageRow("Changed files", report.coverage.changedFiles),
-    coverageRow("Protection rules", report.coverage.protectionRules),
-    coverageRow("Retention policy", report.coverage.retentionPolicy),
+    '<p class="muted">' + escapeHtml(provenance) + "</p>",
+    "<h2>" + escapeHtml(t("report.coverage", undefined, locale)) + "</h2>",
+    "<table><thead><tr><th>" + escapeHtml(t("report.axis", undefined, locale)) + "</th><th>" + escapeHtml(t("report.status", undefined, locale)) + "</th><th>" + escapeHtml(t("report.reasons", undefined, locale)) + "</th></tr></thead><tbody>",
+    coverageRow(t("report.axis.history", undefined, locale), report.coverage.history),
+    coverageRow(t("report.axis.workflowDefinitions", undefined, locale), report.coverage.workflowDefinitions),
+    coverageRow(t("report.axis.changedFiles", undefined, locale), report.coverage.changedFiles),
+    coverageRow(t("report.axis.protectionRules", undefined, locale), report.coverage.protectionRules),
+    coverageRow(t("report.axis.retentionPolicy", undefined, locale), report.coverage.retentionPolicy),
     "</tbody></table>",
-    "<h2>Cost metrics</h2>",
-    "<table><thead><tr><th>Metric</th><th>Value</th><th>Basis</th><th>Reason</th></tr></thead><tbody>",
+    "<h2>" + escapeHtml(t("report.costMetrics", undefined, locale)) + "</h2>",
+    "<table><thead><tr><th>" + escapeHtml(t("report.metric", undefined, locale)) + "</th><th>" + escapeHtml(t("report.value", undefined, locale)) + "</th><th>" + escapeHtml(t("report.basis", undefined, locale)) + "</th><th>" + escapeHtml(t("report.reason", undefined, locale)) + "</th></tr></thead><tbody>",
     ...metricRows.map(([label, metric]) => "<tr><td>" + escapeHtml(label) + "</td><td>" + metricCell(metric) + "</td><td>" + escapeHtml(metric.basis) + "</td><td>" + metricReason(metric) + "</td></tr>"),
     "</tbody></table>",
-    "<h2>Findings (" + String(report.findings.length) + ")</h2>",
-    findingRows(report.findings),
-    "<h2>Rule results</h2>",
-    ruleRows(report),
+    "<h2>" + escapeHtml(t("report.findings", { count: report.findings.length }, locale)) + "</h2>",
+    findingRows(report.findings, locale),
+    "<h2>" + escapeHtml(t("report.ruleResults", undefined, locale)) + "</h2>",
+    ruleRows(report, locale),
     '<p class="note">',
-    "Read-only report. CI Diet never edits workflow files from a report; patches are separate plans that require human approval.",
-    " Pricing snapshot " + escapeHtml(report.pricingSnapshot.pricingSnapshotId) + " (" + escapeHtml(report.pricingSnapshot.contentHash) + ").",
-    " Generated by " + escapeHtml(options.generatedBy ?? "dsh-ci-diet " + ENGINE_VERSION) + ".",
+    escapeHtml(t("report.note", {
+      snapshot: report.pricingSnapshot.pricingSnapshotId,
+      hash: report.pricingSnapshot.contentHash,
+      generator: options.generatedBy ?? "dsh-ci-diet " + ENGINE_VERSION,
+    }, locale)),
     "</p>",
     "</main></body></html>",
     "",

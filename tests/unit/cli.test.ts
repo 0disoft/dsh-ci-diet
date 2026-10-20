@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, before, describe, it } from "node:test";
+import { isolatedEnv } from "../helpers/test-env.ts";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const cliPath = join(repoRoot, "src", "cli", "index.ts");
@@ -21,7 +22,7 @@ function runCli(args: readonly string[]): Run {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
-    env: { ...process.env, LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" },
+    env: isolatedEnv(),
   });
   if (result.error !== undefined) throw result.error;
   return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };

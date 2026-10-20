@@ -32,7 +32,9 @@ import { createAttestation } from "../core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../core/patch/approval.ts";
 import { applyPlan, revertChange } from "../core/patch/apply.ts";
 import { renderHtmlReport } from "../core/report/html.ts";
-import { createTranslator, resolveLocale, resolveLocaleFromEnv } from "../shared/i18n/index.ts";
+import { localizedFinding } from "../core/report/localize.ts";
+import { resolveRequestedLocale } from "../shared/i18n/host.ts";
+import { createTranslator } from "../shared/i18n/index.ts";
 import type { Locale, MessageKey } from "../shared/i18n/index.ts";
 
 const EXIT_OK = 0;
@@ -247,8 +249,7 @@ function stateDirOf(options: Options): string {
 }
 
 function resolveUiLocale(lang: string | null): Locale {
-  const fromFlag = lang === null ? null : resolveLocale(lang);
-  return fromFlag ?? resolveLocaleFromEnv(process.env);
+  return resolveRequestedLocale(lang, process.env);
 }
 
 function writeAtomically(path: string, content: string): void {
@@ -308,7 +309,7 @@ function scan(options: Options, locale: Locale): number {
       a.ruleId === b.ruleId ? (a.workflowPath < b.workflowPath ? -1 : 1) : a.ruleId < b.ruleId ? -1 : 1,
     );
     for (const finding of ordered) {
-      lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: finding.title }));
+      lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: localizedFinding(finding, locale).title }));
     }
     lines.push(t("cli.scan.summary", { findings: report.findings.length }));
   }
@@ -416,7 +417,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     lines.push(t("cli.scan.noFindings"));
   } else {
     for (const finding of report.findings) {
-      lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: finding.title }));
+      lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: localizedFinding(finding, locale).title }));
     }
     lines.push(t("cli.scan.summary", { findings: report.findings.length }));
   }
@@ -750,7 +751,7 @@ function reportCommand(options: Options, locale: Locale): number {
 
   const format = options.json ? "json" : options.format;
   if (format === "html") {
-    const html = renderHtmlReport(report);
+    const html = renderHtmlReport(report, { locale });
     if (options.out === null) process.stdout.write(html);
     else {
       writeAtomically(options.out, html);
@@ -785,7 +786,7 @@ function reportCommand(options: Options, locale: Locale): number {
   }));
   if (report.findings.length === 0) lines.push(t("cli.scan.noFindings"));
   else {
-    for (const finding of report.findings) lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: finding.title }));
+    for (const finding of report.findings) lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: localizedFinding(finding, locale).title }));
     lines.push(t("cli.scan.summary", { findings: report.findings.length }));
   }
   if (isIncomplete(report.coverage)) lines.push(t("cli.scan.incomplete"));

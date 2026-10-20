@@ -24,6 +24,9 @@ import { defaultStateDir } from "../../core/state/paths.ts";
 import { syncRepositoryHistory } from "../../core/history/sync.ts";
 import { parseWorkflow } from "../../core/workflow/parse.ts";
 import type { WorkflowJob } from "../../core/workflow/model.ts";
+import { localizedFinding } from "../../core/report/localize.ts";
+import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
+import { createTranslator } from "../../shared/i18n/index.ts";
 export const name = "ci-diet";
 export const inject = ["tools"];
 
@@ -87,11 +90,12 @@ function metricRows(metrics: Record<string, { status: string; value: number | st
 }
 
 export function apply(ctx: Context, config: Config) {
+  // The registry captures this text at mount time; a live locale switch needs a reload.
+  const locale = resolveRequestedLocale(null, process.env);
+  const t = createTranslator(locale);
   ctx.tools.register(defineTool({
     name: "ci_diet_scan",
-    description:
-      "Scan a checked-out GitHub repository for wasteful CI workflows without network access. " +
-      "Reads .github/workflows, parses it, evaluates the enabled static rules, and stores the report locally.",
+    description: t("dsh.scan.description"),
     parameters: {
       cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
       rules: { type: "array", items: { type: "string", enum: [...RULE_IDS] }, description: "Rules to evaluate; defaults to the configured set." },
@@ -110,10 +114,12 @@ export function apply(ctx: Context, config: Config) {
         additionalProperties: false,
       },
       render: (_args, value) =>
-        text(
-          "CI Diet static scan: " + value.workflowsParsed + " of " + value.workflowsTotal + " workflows parsed. " +
-          (value.findings ?? []).length + " finding(s). Report " + value.reportId + ".",
-        ),
+        text(t("dsh.scan.render", {
+          parsed: value.workflowsParsed ?? 0,
+          total: value.workflowsTotal ?? 0,
+          findings: (value.findings ?? []).length,
+          report: value.reportId ?? "",
+        })),
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
@@ -131,7 +137,7 @@ export function apply(ctx: Context, config: Config) {
         workflowsTotal: scan.workflows.length + scan.skipped.length,
         findings: scan.report.findings.map((finding) => ({
           ruleId: finding.ruleId,
-          title: finding.title,
+          title: localizedFinding(finding, locale).title,
           patchability: finding.patchability,
           workflowPath: finding.workflowPath,
         })),
@@ -142,9 +148,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.tools.register(defineTool({
     name: "ci_diet_sync",
-    description:
-      "Fetch read-only GitHub Actions history for a repository, combine it with the local workflow files, " +
-      "evaluate the history rules, and store the report. Requires network access to be enabled in the plugin config.",
+    description: t("dsh.sync.description"),
     parameters: {
       cwd: { type: "string", description: "Absolute repository root; defaults to the current working directory." },
       repo: { type: "string", description: "owner/name; defaults to the origin remote." },
@@ -163,7 +167,7 @@ export function apply(ctx: Context, config: Config) {
         additionalProperties: false,
       },
       render: (_args, value) =>
-        text("Synced " + value.repository + ": " + (value.findings ?? []).length + " finding(s). Report " + value.reportId + "."),
+        text(t("dsh.sync.render", { repository: value.repository ?? "", findings: (value.findings ?? []).length, report: value.reportId ?? "" })),
     },
     async execute(args, _exec) {
       if (!config.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
@@ -198,7 +202,7 @@ export function apply(ctx: Context, config: Config) {
         reportId: built.report.reportId,
         findings: built.report.findings.map((finding) => ({
           ruleId: finding.ruleId,
-          title: finding.title,
+          title: localizedFinding(finding, locale).title,
           patchability: finding.patchability,
           workflowPath: finding.workflowPath,
         })),
@@ -210,7 +214,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.tools.register(defineTool({
     name: "ci_diet_report",
-    description: "Read the most recent CI Diet report stored locally, without scanning or syncing again.",
+    description: t("dsh.report.description"),
     parameters: {},
     output: {
       schema: {
@@ -224,7 +228,7 @@ export function apply(ctx: Context, config: Config) {
         },
         additionalProperties: false,
       },
-      render: (_args, value) => text("Report " + value.reportId + " for " + value.repository + " has " + (value.findings ?? []).length + " finding(s)."),
+      render: (_args, value) => text(t("dsh.report.render", { report: value.reportId ?? "", repository: value.repository ?? "", findings: (value.findings ?? []).length })),
     },
     async execute(_args, exec) {
       exec.signal.throwIfAborted();
@@ -237,7 +241,7 @@ export function apply(ctx: Context, config: Config) {
         repository: binding?.repositoryFullName ?? "unknown",
         findings: report.findings.map((finding) => ({
           ruleId: finding.ruleId,
-          title: finding.title,
+          title: localizedFinding(finding, locale).title,
           patchability: finding.patchability,
           workflowPath: finding.workflowPath,
         })),
@@ -249,9 +253,7 @@ export function apply(ctx: Context, config: Config) {
 
   ctx.tools.register(defineTool({
     name: "ci_diet_plan",
-    description:
-      "Preview the exact byte edits CI Diet would make for one eligible finding. This tool never writes a file " +
-      "and never approves anything; the human prints the plan with the ci-diet CLI and approves it there.",
+    description: t("dsh.plan.description"),
     parameters: {
       rule: { type: "string", enum: ["CD001", "CD005", "CD008"], required: true, description: "Patch rule to preview." },
       workflow: { type: "string", description: "Workflow path relative to the repository root." },
@@ -282,8 +284,9 @@ export function apply(ctx: Context, config: Config) {
         additionalProperties: false,
       },
       render: (_args, value) =>
-        text((value.edits ?? []).length + " edit(s) proposed for " + value.workflowPath + ". " +
-          (value.writeAllowed ? "The human can approve this with: " + value.nextCommand : "Blocked: " + (value.blockers ?? []).join(", "))),
+        text(value.writeAllowed
+          ? t("dsh.plan.render", { edits: (value.edits ?? []).length, workflow: value.workflowPath ?? "", command: value.nextCommand ?? "" })
+          : t("dsh.plan.blocked", { edits: (value.edits ?? []).length, workflow: value.workflowPath ?? "", blockers: (value.blockers ?? []).join(", ") })),
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
