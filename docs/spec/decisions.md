@@ -17,6 +17,7 @@ new record, not an edit to the rationale.
 | ADR-10 | Limit writes on untested prereleases and unknown policy. | A broad compatibility claim does not replace tested compatibility and safety. |
 | ADR-11 | The JSON contracts are mirrored into this repository; only prose fields are localized. | The public repo must build without the private Korean design pack, while structure, enums, hashes, and digests stay identical. Localized pointers are declared in `scripts/sync-contracts.mjs`. |
 | ADR-12 | Public documentation is English; Korean is a mirrored README. | Three-language UI validation and translation drift cost more than they return at this stage, and domain terms mistranslate easily. Simplified Chinese remains a translation slot. |
+| ADR-14 | Every digest is sha256 over CDJ1 canonical JSON, and the TypeScript types are generated from the committed JSON Schema. | One canonical form keeps pricing hashes, dependency hashes, and plan digests reproducible across CLI, plugin, and tests. Generated types are checked in CI so the schema cannot drift from the code that consumes it. |
 | ADR-13 | Rule defaults follow the A0a spike: CD001, CD002, and CD008 are on by default; CD005 stays off until job keys resolve; CD003 stays off until its sample is widened. | Only CD001 and CD008 had enough observable targets, and job rows cannot be attributed to YAML job keys, so a timeout patch could otherwise target the wrong job. The measurement is recorded in `docs/spikes/a0a-rules.md`. |
 
 ## Notes
@@ -36,3 +37,17 @@ new record, not an edit to the rationale.
 - ADR-13 also rests on `evidence/a0a/jobkey.json`: best-effort key recovery
   matched 40.7% of sampled jobs, and the only key-level cohort with 20 samples
   already carried a timeout. Per-matrix cohorting makes the gate rarer still.
+- CD005 is revisited only with real history, not with a lowered threshold: after
+  five or more users sync 90 days of history, if at least half of those
+  repositories produce one or more candidates with no timeout, a cohort of five
+  or more samples, and removable minutes above zero, a new ADR may propose the
+  5-sample threshold and the larger margin. Otherwise CD005 is removed from the
+  v0.1 UI and kept as a v0.2 candidate. The code path stays behind
+  `rules.CD005.enabled=false` so re-enabling is a setting, not a rewrite.
+- ADR-14 covers `src/shared/cdj1.ts`: object keys sort in ASCII order, arrays keep
+  their order, only safe integers are allowed, and keys must be printable ASCII.
+  The implementation reproduces the three committed vectors (pricing
+  `sha256:acc8d110...`, empty dependency `sha256:81059fe6...`, example plan
+  `sha256:d8984479...`). `src/core/contracts/schema.ts` is a structural mirror;
+  pattern, length, range, format, and if/then/else constraints are enforced by
+  Ajv, not by the types.

@@ -67,6 +67,7 @@ is not shipped.
 ```
 bun install
 node --test "tests/unit/*.test.ts"
+node scripts/gen-types.mjs --check
 node scripts/sync-contracts.mjs --check
 bun run typecheck
 bun run lint

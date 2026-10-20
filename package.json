@@ -24,6 +24,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "oxlint src tests",
     "format": "oxfmt src tests",
+    "gen:types": "node scripts/gen-types.mjs",
+    "check:types": "node scripts/gen-types.mjs --check",
     "test:core": "node --test \"tests/unit/*.test.ts\"",
     "build": "tsc -p tsconfig.build.json",
     "smoke:node": "node dist/cli/index.js --version",
