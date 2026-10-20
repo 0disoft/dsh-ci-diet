@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
@@ -175,6 +175,48 @@ test("revert restores the original bytes only when the file still matches", asyn
   assert.equal(reverted.state, "REVERTED");
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
+
+for (const operation of ["apply", "revert"] as const) {
+  test(operation + " refuses a parent directory redirected outside the workspace", async () => {
+    const f = setup();
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    if (applied !== null) assert.equal(applied.state, "applied");
+    const original = readFileSync(f.file, "utf8");
+    const outside = mkdtempSync(join(tmpdir(), "ci-diet-outside-"));
+    const outsideFile = join(outside, "ci.yml");
+    const workflows = join(f.root, ".github", "workflows");
+    const saved = join(f.root, ".github", "workflows-saved");
+    writeFileSync(outsideFile, original);
+    renameSync(workflows, saved);
+    let linked = false;
+    try {
+      symlinkSync(outside, workflows, process.platform === "win32" ? "junction" : "dir");
+      linked = true;
+      await assert.rejects(async () => {
+        const result = operation === "apply"
+          ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+          : await revertChange({ store: f.store, changeId: applied!.change!.changeId, now: f.now });
+        assert.fail("Redirected " + operation + " returned " + result.state);
+      }, /WRITE_CONFLICT/);
+      assert.equal(readFileSync(outsideFile, "utf8"), original);
+      assert.equal(readFileSync(join(saved, "ci.yml"), "utf8"), original);
+      if (operation === "apply") {
+        assert.notEqual(f.store.readNonce(f.plan.planId), null);
+        assert.equal(f.store.listChanges().length, 0);
+      } else {
+        assert.equal(f.store.readChange(applied!.change!.changeId)?.state, "APPLIED");
+      }
+    } finally {
+      if (linked) unlinkSync(workflows);
+      renameSync(saved, workflows);
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+}
 
 test("revert refuses when the working tree changed after apply", async () => {
   const fixture = setup();

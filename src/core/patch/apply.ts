@@ -1,5 +1,5 @@
-import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative as relativePath, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AppliedChange, Attestation, PatchPlan, PolicySnapshot } from "../contracts/schema.ts";
 import type { RepositoryBinding } from "../contracts/schema.ts";
@@ -40,6 +40,10 @@ function resolveInside(root: string, relative: string): string {
   const base = resolve(root);
   const target = resolve(base, relative);
   if (!target.startsWith(base + sep)) throw new Error("WRITE_CONFLICT: path escapes the workspace");
+  const physical = relativePath(realpathSync.native(base), realpathSync.native(target));
+  if (physical === "" || isAbsolute(physical) || physical === ".." || physical.startsWith(".." + sep)) {
+    throw new Error("WRITE_CONFLICT: resolved path escapes the workspace");
+  }
   return target;
 }
 
@@ -280,7 +284,7 @@ export async function revertChange(options: {
   return withWriterLease(options.store, async () => {
     const backup = options.store.readBackup(change.changeId);
     if (backup === null) return { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" };
-    const target = resolve(binding.workspaceRoot, change.workflowPath);
+    const target = resolveInside(binding.workspaceRoot, change.workflowPath);
     assertRegularFile(target);
     const currentText = readFileSync(target, "utf8");
     if (textHash(currentText) !== change.after.hash) {
