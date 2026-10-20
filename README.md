@@ -100,6 +100,22 @@ The HTML file is self-contained: inline CSS, no scripts, no external requests.
 It is read-only, so approvals stay in the CLI where the digest and nonce checks
 live.
 
+## Releasing
+
+Pushing a tag that matches the version in `package.json` triggers
+`.github/workflows/publish.yml`:
+
+```
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+The workflow compares the tag with `package.json` (`node
+scripts/check-release-tag.mjs`), runs the same checks as CI, refuses to
+overwrite an already published version, and then publishes with npm trusted
+publishing. It uses GitHub OIDC (`id-token: write`) and no npm token, so the
+package's trusted publisher must name `publish.yml` for this repository.
+
 ## Requirements
 
 - Node `^22.19.0 || >=24.0.0`

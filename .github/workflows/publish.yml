@@ -1,0 +1,62 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # npm below 11.15 has no OIDC exchange path. Do not set NODE_AUTH_TOKEN
+      # and do not pass registry-url to setup-node; either makes npm prefer a
+      # token over the OIDC flow. No npm token is used anywhere in this job.
+      - name: Upgrade npm for trusted publishing
+        run: npm install --global npm@^11.15.0
+
+      - name: Check the tag against package.json
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
+
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run check:types
+      - run: bun run check:data
+      - run: bun run test:core
+      - run: bun run test:docs
+      - run: bun run check:contracts
+      - run: bun run build
+      - run: bun run smoke:node
+
+      - name: Refuse to overwrite a published version
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if npm view "dsh-ci-diet@$version" version >/dev/null 2>&1; then
+            echo "::error::dsh-ci-diet@$version is already published"
+            exit 1
+          fi
+          echo "publishing dsh-ci-diet@$version"
+
+      - name: Publish with OIDC provenance
+        run: npm publish --provenance --access public

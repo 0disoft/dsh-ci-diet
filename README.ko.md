@@ -97,6 +97,22 @@ ci-diet prune                  # 만료된 보고서, 계획, 캐시 정리
 HTML 파일은 자체 완결형입니다. 인라인 CSS만 쓰고 스크립트와 외부 요청이 없습니다.
 읽기 전용이므로 승인은 digest와 nonce 검사가 있는 CLI에 남습니다.
 
+## 릴리스
+
+`package.json`의 버전과 일치하는 태그를 푸시하면
+`.github/workflows/publish.yml`이 실행됩니다.
+
+```
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+워크플로는 태그와 `package.json` 버전을 대조하고(`node
+scripts/check-release-tag.mjs`), CI와 같은 검사를 실행한 뒤, 이미 배포된
+버전이면 게시를 거부합니다. 통과하면 npm trusted publishing으로 게시합니다.
+GitHub OIDC(`id-token: write`)를 쓰고 npm 토큰은 쓰지 않으므로, 패키지의
+trusted publisher에 이 저장소의 `publish.yml`이 등록되어 있어야 합니다.
+
 ## 요구 사항
 
 - Node `^22.19.0 || >=24.0.0`
