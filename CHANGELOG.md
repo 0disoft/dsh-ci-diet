@@ -17,13 +17,17 @@ Keep a Changelog, and the project uses semantic versioning.
 - Patch engine: byte-range edits, plan lifecycle, attestation nonces, durable
   backups, apply, and revert.
 - CLI commands `scan`, `sync`, `plan`, `approve`, `apply`, `revert`,
-  `changes`, and `plans`.
+  `changes`, `plans`, `report`, and `prune`.
+- Self-contained HTML report with inline CSS, escaped text, and no external
+  references; text and JSON formats share the same stored record.
 - DSH bundle plugin with `ci_diet_scan`, `ci_diet_sync`, `ci_diet_report`,
   and `ci_diet_plan`.
 - English and Korean message catalogs; Simplified Chinese is a slot.
 
 ### Known gaps
 
-- The DSH Web client screens are not implemented yet.
+- The DSH Web client screens are not implemented yet; the HTML report covers
+  reading and sharing a report until the client contribution format settles
+  (see ADR-16).
 - The package is not published to npm.
 - CD003 and CD005 are disabled by default pending real-history measurement.

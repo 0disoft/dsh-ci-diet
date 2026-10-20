@@ -45,6 +45,8 @@ ci-diet apply --plan <planId>
 ci-diet revert --change <changeId>
 ci-diet changes
 ci-diet plans
+ci-diet report [--report <id>] [--format text|json|html] [--out <file>]
+ci-diet prune
 ```
 
 Exit codes: `0` success (a partial report is still success), `1` usage or
@@ -74,3 +76,21 @@ same layout under the DSH home. `--state-dir` overrides both.
 Bindings, reports, plans, attestations, backups, changes, and an append-only
 event log live in separate subdirectories. Report retention is 90 days; plans
 expire after 7 days.
+## Reports
+
+`ci-diet report` prints the latest stored report, or the one named by
+`--report`. Three formats share the same stored record:
+
+| Format | Use |
+| --- | --- |
+| `text` | Default summary: report id, runner seconds, modeled minutes, list price, findings, and which coverage axes are incomplete |
+| `json` | The contract-valid `AnalysisReport`, for another tool |
+| `html` | One self-contained file with inline CSS, no scripts, and no external URLs |
+
+`--json` is shorthand for `--format json`. `--out` writes the rendered
+document to a file instead of standard output.
+
+`ci-diet prune` deletes reports older than 90 days, plans older than 7 days,
+and cache entries older than the configured cache window. It never deletes
+backups, and it reports the freed byte count.
+

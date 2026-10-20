@@ -81,3 +81,30 @@ new record, not an edit to the rationale.
   two Cordis or DSH runtime copies in one process.
 - Consequence: a peer resolution failure is a host installation problem, not a
   silent fallback. The documentation names the required DSH range.
+
+## ADR-16: v0.1 ships a static HTML report instead of DSH Web screens
+
+- Scope: how a report leaves the machine and is read by a person.
+- Decision: `ci-diet report --format html` renders one self-contained HTML file
+  from a stored report: inline CSS, no scripts, no external URLs, all dynamic
+  text escaped. `ci-diet prune` removes reports, plans, and cache entries past
+  their retention windows; backups are never pruned automatically.
+- The DSH client screens are deferred. A client plugin can only reach host data
+  through `ctx.remote.<namespace>`, and a namespace exists only when a
+  host-compiled Typert contribution is mounted with `ctx.remote.$mount`
+  (`@deepseek-ai/dsh-api-remotes/lib/client.js` mounts 25 contributions, and
+  `dsh-api-gateway/lib/types/client/index.js:88-199` validates strict descriptors
+  with a zod codec). Hand-writing that descriptor would depend on a private
+  shape, and there is no browser harness in this repository to verify the
+  rendering.
+- Rationale: a file that opens in any browser delivers the same review and
+  sharing value for the v0.1 scope (one repository, one person) without a
+  dependency that can break on a DSH patch release. The HTML output is tested
+  for escaping and for lacking external references.
+- Consequence: the report is read-only and carries no interactive approval.
+  Approvals stay in the CLI, which keeps the nonce and digest checks in one
+  place. When the client contribution format stabilizes, the screens can render
+  the same stored report; no core change is needed.
+- Reversal: replacing HTML with Web screens is additive, not a contract change,
+  because both read `AnalysisReport` from the local store.
+

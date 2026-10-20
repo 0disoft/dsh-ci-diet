@@ -3,8 +3,9 @@
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
 Status: **alpha, not published**. The contracts, specification, analysis
-engine, patch engine, CLI, and DSH plugin tools are implemented and tested.
-The Web UI screens and the npm release are still open.
+engine, patch engine, CLI, DSH plugin tools, and a self-contained HTML report
+are implemented and tested. The DSH Web client screens and the npm release are
+still open.
 
 ## What it will do
 
@@ -66,6 +67,18 @@ dsh plugin --profile web add dsh-ci-diet
 The plugin adds one disabled loader entry; enable `networkEnabled` only if you
 want history sync. Until the first npm release, install from a packed tarball:
 `bun pm pack` then `dsh plugin --profile web add ./dsh-ci-diet-0.1.0.tgz`.
+
+## Read a report
+
+```
+ci-diet report                 # text summary of the latest stored report
+ci-diet report --format html --out report.html
+ci-diet prune                  # drop expired reports, plans, and cache entries
+```
+
+The HTML file is self-contained: inline CSS, no scripts, no external requests.
+It is read-only, so approvals stay in the CLI where the digest and nonce checks
+live.
 
 ## Requirements
 

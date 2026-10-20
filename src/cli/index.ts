@@ -27,6 +27,7 @@ import type { ByteEdit } from "../core/contracts/schema.ts";
 import { createAttestation } from "../core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../core/patch/approval.ts";
 import { applyPlan, revertChange, resolveWorkflowFile } from "../core/patch/apply.ts";
+import { renderHtmlReport } from "../core/report/html.ts";
 import { createTranslator, resolveLocale, resolveLocaleFromEnv } from "../shared/i18n/index.ts";
 import type { Locale, MessageKey } from "../shared/i18n/index.ts";
 
@@ -60,6 +61,8 @@ interface Options {
   readonly confirm: string | null;
   readonly subject: string;
   readonly claims: readonly string[];
+  readonly report: string | null;
+  readonly format: "text" | "json" | "html";
 }
 
 class UsageError extends Error {}
@@ -96,6 +99,8 @@ function parseArgs(argv: readonly string[]): Options {
   let confirm: string | null = null;
   let subject = "local-user";
   let claims: readonly string[] = [];
+  let report: string | null = null;
+  let format: "text" | "json" | "html" = "text";
 
   const takeValue = (index: number, flag: string): string => {
     const value = argv[index + 1];
@@ -184,6 +189,14 @@ function parseArgs(argv: readonly string[]): Options {
     } else if (arg === "--claims") {
       claims = takeValue(index, "--claims").split(",").map((entry) => entry.trim()).filter((entry) => entry !== "");
       index += 1;
+    } else if (arg === "--report") {
+      report = takeValue(index, "--report");
+      index += 1;
+    } else if (arg === "--format") {
+      const value = takeValue(index, "--format");
+      index += 1;
+      if (value !== "text" && value !== "json" && value !== "html") throw new UsageError("INVALID_VALUE:--format");
+      format = value;
     } else if (arg.startsWith("-")) {
       throw new UsageError("UNKNOWN_FLAG:" + arg);
     } else if (command === "") {
@@ -217,6 +230,8 @@ function parseArgs(argv: readonly string[]): Options {
     confirm,
     subject,
     claims,
+    report,
+    format,
   };
 }
 
@@ -658,6 +673,94 @@ function plansList(options: Options, locale: Locale): number {
   return EXIT_OK;
 }
 
+function reportCommand(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  const stateDir = stateDirOf(options);
+  if (!existsSync(stateDir)) {
+    process.stderr.write(t("cli.report.none") + "\n");
+    return EXIT_USAGE;
+  }
+  const store = PatchStore.open(stateDir);
+  const report = options.report === null ? store.latestReport() : store.readReport(options.report);
+  if (report === null) {
+    process.stderr.write(t("cli.report.none") + "\n");
+    return EXIT_USAGE;
+  }
+
+  const format = options.json ? "json" : options.format;
+  if (format === "html") {
+    const html = renderHtmlReport(report);
+    if (options.out === null) process.stdout.write(html);
+    else {
+      writeAtomically(options.out, html);
+      process.stdout.write(t("cli.report.written", { path: resolve(options.out) }) + "\n");
+    }
+    return EXIT_OK;
+  }
+  if (format === "json") {
+    const json = JSON.stringify(report, null, 2) + "\n";
+    if (options.out === null) process.stdout.write(json);
+    else {
+      writeAtomically(options.out, json);
+      process.stdout.write(t("cli.report.written", { path: resolve(options.out) }) + "\n");
+    }
+    return EXIT_OK;
+  }
+
+  const binding = store.readBinding(report.bindingId);
+  const observed = report.metrics.observedRunnerSeconds;
+  const modeled = report.metrics.modeledRoundedMinutes;
+  const price = report.metrics.listPriceUsd;
+  const lines: string[] = [];
+  lines.push(t("cli.report.summary", {
+    report: report.reportId,
+    name: binding?.repositoryFullName ?? report.bindingId,
+    at: report.generatedAt,
+  }));
+  lines.push(t("cli.report.metrics", {
+    observed: observed.status === "known" ? String(observed.value) + "s" : observed.status,
+    modeled: modeled.status === "known" ? String(modeled.value) + " min" : modeled.status,
+    price: price.status === "known" ? String(price.value) : price.status,
+  }));
+  if (report.findings.length === 0) lines.push(t("cli.scan.noFindings"));
+  else {
+    for (const finding of report.findings) lines.push(t("cli.scan.finding", { rule: finding.ruleId, title: finding.title }));
+    lines.push(t("cli.scan.summary", { findings: report.findings.length }));
+  }
+  if (isIncomplete(report.coverage)) lines.push(t("cli.scan.incomplete"));
+  if (options.out !== null) {
+    writeAtomically(options.out, lines.join("\n") + "\n");
+    lines.push(t("cli.report.written", { path: resolve(options.out) }));
+  }
+  process.stdout.write(lines.join("\n") + "\n");
+  return EXIT_OK;
+}
+
+function pruneCommand(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  const stateDir = stateDirOf(options);
+  if (!existsSync(stateDir)) {
+    process.stdout.write(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
+    return EXIT_OK;
+  }
+  const store = PatchStore.open(stateDir);
+  const result = store.prune(new Date(), {
+    reportDays: DEFAULT_CONFIG.storage.reportDays,
+    planDays: DEFAULT_CONFIG.storage.planDays,
+    cacheDays: DEFAULT_CONFIG.storage.cacheDays,
+  });
+  if (options.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  else {
+    process.stdout.write(t("cli.prune.done", {
+      reports: result.removedReports,
+      plans: result.removedPlans,
+      cache: result.removedCacheEntries,
+    }) + "\n");
+    process.stdout.write(t("cli.prune.freed", { bytes: result.bytesFreed }) + "\n");
+  }
+  return EXIT_OK;
+}
+
 const HELP_KEYS: Record<string, MessageKey> = {
   scan: "cli.usage",
   sync: "cli.sync.help",
@@ -667,6 +770,8 @@ const HELP_KEYS: Record<string, MessageKey> = {
   revert: "cli.revert.help",
   changes: "cli.list.help",
   plans: "cli.list.help",
+  report: "cli.report.help",
+  prune: "cli.prune.help",
 };
 
 function usageMessage(error: UsageError, argv: readonly string[]): string {
@@ -742,6 +847,8 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (options.command === "revert") return await revertCommand(options, locale);
     if (options.command === "changes") return showChanged(options, locale);
     if (options.command === "plans") return plansList(options, locale);
+    if (options.command === "report") return reportCommand(options, locale);
+    if (options.command === "prune") return pruneCommand(options, locale);
   } catch (error) {
     return mapError(error, t);
   }

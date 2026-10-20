@@ -55,6 +55,33 @@ export function textHash(text: string): string {
   return sha256Text(text);
 }
 
+export interface PruneLimits {
+  readonly reportDays: number;
+  readonly planDays: number;
+  readonly cacheDays: number;
+}
+
+export interface PruneResult {
+  readonly removedReports: number;
+  readonly removedPlans: number;
+  readonly removedCacheEntries: number;
+  readonly bytesFreed: number;
+}
+
+const DAY_MS = 86_400_000;
+
+function ageCutoff(now: Date, days: number): number {
+  return now.getTime() - days * DAY_MS;
+}
+
+function entryBytes(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
 export class PatchStore {
   readonly root: string;
 
@@ -259,6 +286,59 @@ export class PatchStore {
   changeIdFor(planId: string, now: Date): string {
     const digest = digestOf({ planId, at: now.toISOString() }).slice("sha256:".length, "sha256:".length + 16);
     return "c_" + digest;
+  }
+
+  prune(now: Date, limits: PruneLimits): PruneResult {
+    const reportCutoff = ageCutoff(now, limits.reportDays);
+    const planCutoff = ageCutoff(now, limits.planDays);
+    const cacheCutoff = ageCutoff(now, limits.cacheDays);
+    let removedReports = 0;
+    let removedPlans = 0;
+    let removedCacheEntries = 0;
+    let bytesFreed = 0;
+
+    for (const name of readdirSync(this.path("reports"))) {
+      if (!name.endsWith(".json")) continue;
+      const full = this.path("reports", name);
+      const report = this.readJson<AnalysisReport>(full);
+      if (report === null) continue;
+      const at = Date.parse(report.generatedAt);
+      if (!Number.isFinite(at) || at >= reportCutoff) continue;
+      bytesFreed += entryBytes(full);
+      rmSync(full, { force: true });
+      removedReports += 1;
+    }
+
+    for (const stored of this.listPlans()) {
+      const createdAt = Date.parse(stored.plan.payload.createdAt);
+      if (!Number.isFinite(createdAt) || createdAt >= planCutoff) continue;
+      const planId = stored.plan.planId;
+      for (const suffix of [".json", ".meta.json", ".nonce.json"]) {
+        const full = this.path("plans", requireId(planId, "planId") + suffix);
+        bytesFreed += entryBytes(full);
+        rmSync(full, { force: true });
+      }
+      removedPlans += 1;
+    }
+
+    const cacheRoot = this.path("cache");
+    if (existsSync(cacheRoot)) {
+      for (const entry of readdirSync(cacheRoot)) {
+        const full = join(cacheRoot, entry);
+        let modified = 0;
+        try {
+          modified = statSync(full).mtimeMs;
+        } catch {
+          continue;
+        }
+        if (modified >= cacheCutoff) continue;
+        bytesFreed += entryBytes(full);
+        rmSync(full, { recursive: true, force: true });
+        removedCacheEntries += 1;
+      }
+    }
+
+    return { removedReports, removedPlans, removedCacheEntries, bytesFreed };
   }
 
   usage(): { bytes: number; files: number } {
