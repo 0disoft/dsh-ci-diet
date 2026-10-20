@@ -3,7 +3,8 @@ import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, re
 import { dirname, join } from "node:path";
 import type { AnalysisReport, AppliedChange, Attestation, PatchPlan, PlanStatus, RepositoryBinding } from "../contracts/schema.ts";
 import type { HistoryBundle } from "../history/model.ts";
-import { assertValidDocument } from "../contracts/validate.ts";
+import { assertValidDocument, validationErrors } from "../contracts/validate.ts";
+import type { DocumentKind } from "../contracts/validate.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 
 export interface PlanMeta {
@@ -70,6 +71,14 @@ export interface PruneResult {
 
 const DAY_MS = 86_400_000;
 
+/** Corrupt local state stays on disk for review and must not be treated as absent. */
+export class StoreCorruptionError extends Error {
+  constructor(path: string, reason: string) {
+    super("STATE_INVALID: " + path + " (" + reason + ")");
+    this.name = "StoreCorruptionError";
+  }
+}
+
 function ageCutoff(now: Date, days: number): number {
   return now.getTime() - days * DAY_MS;
 }
@@ -129,9 +138,28 @@ export class PatchStore {
     }
   }
 
-  private readJson<T>(path: string): T | null {
-    if (!existsSync(path)) return null;
-    return JSON.parse(readFileSync(path, "utf8")) as T;
+  private readJson<T>(path: string, kind?: DocumentKind): T | null {
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      // JSON parser messages can contain record contents; report only the file and category.
+      throw new StoreCorruptionError(path, "invalid JSON");
+    }
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw new StoreCorruptionError(path, "expected an object");
+    }
+    if (kind !== undefined && validationErrors(kind, value).length > 0) {
+      throw new StoreCorruptionError(path, kind + " schema mismatch");
+    }
+    return value as T;
   }
 
   saveBinding(binding: RepositoryBinding): void {
@@ -140,7 +168,7 @@ export class PatchStore {
   }
 
   readBinding(bindingId: string): RepositoryBinding | null {
-    return this.readJson<RepositoryBinding>(this.path("bindings", requireId(bindingId, "bindingId") + ".json"));
+    return this.readJson<RepositoryBinding>(this.path("bindings", requireId(bindingId, "bindingId") + ".json"), "RepositoryBinding");
   }
 
   saveReport(report: AnalysisReport): void {
@@ -156,7 +184,7 @@ export class PatchStore {
     let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of readdirSync(directory)) {
       if (!file.endsWith(".json")) continue;
-      const binding = this.readJson<RepositoryBinding>(join(directory, file));
+      const binding = this.readJson<RepositoryBinding>(join(directory, file), "RepositoryBinding");
       if (binding === null) continue;
       const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
       const at = Date.parse(binding.createdAt);
@@ -169,7 +197,7 @@ export class PatchStore {
   }
 
   readReport(reportId: string): AnalysisReport | null {
-    return this.readJson<AnalysisReport>(this.path("reports", requireId(reportId, "reportId") + ".json"));
+    return this.readJson<AnalysisReport>(this.path("reports", requireId(reportId, "reportId") + ".json"), "AnalysisReport");
   }
 
   latestReport(): AnalysisReport | null {
@@ -178,7 +206,7 @@ export class PatchStore {
     let latest: AnalysisReport | null = null;
     let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of files) {
-      const report = this.readJson<AnalysisReport>(join(directory, file));
+      const report = this.readJson<AnalysisReport>(join(directory, file), "AnalysisReport");
       if (report === null) continue;
       const at = Date.parse(report.generatedAt);
       if (at > latestAt) {
@@ -196,7 +224,7 @@ export class PatchStore {
     let latest: AnalysisReport | null = null;
     let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of files) {
-      const report = this.readJson<AnalysisReport>(join(directory, file));
+      const report = this.readJson<AnalysisReport>(join(directory, file), "AnalysisReport");
       if (report === null || report.bindingId !== bindingId) continue;
       const at = Date.parse(report.generatedAt);
       if (at > latestAt) {
@@ -213,7 +241,7 @@ export class PatchStore {
   }
 
   readAttestation(attestationId: string): Attestation | null {
-    return this.readJson<Attestation>(this.path("attestations", requireId(attestationId, "attestationId") + ".json"));
+    return this.readJson<Attestation>(this.path("attestations", requireId(attestationId, "attestationId") + ".json"), "Attestation");
   }
 
   savePlan(plan: PatchPlan, meta: PlanMeta): void {
@@ -223,7 +251,7 @@ export class PatchStore {
   }
 
   readPlan(planId: string): StoredPlan | null {
-    const plan = this.readJson<PatchPlan>(this.path("plans", requireId(planId, "planId") + ".json"));
+    const plan = this.readJson<PatchPlan>(this.path("plans", requireId(planId, "planId") + ".json"), "PatchPlan");
     if (plan === null) return null;
     const meta = this.readJson<PlanMeta>(this.path("plans", requireId(planId, "planId") + ".meta.json"));
     return { plan, meta: meta ?? { coverageWriteAllowed: false, reportId: null } };
@@ -303,14 +331,14 @@ export class PatchStore {
   }
 
   readChange(changeId: string): AppliedChange | null {
-    return this.readJson<AppliedChange>(this.path("changes", requireId(changeId, "changeId") + ".json"));
+    return this.readJson<AppliedChange>(this.path("changes", requireId(changeId, "changeId") + ".json"), "AppliedChange");
   }
 
   listChanges(): AppliedChange[] {
     const directory = this.path("changes");
     return readdirSync(directory)
       .filter((name) => name.endsWith(".json"))
-      .map((name) => this.readJson<AppliedChange>(join(directory, name)))
+      .map((name) => this.readJson<AppliedChange>(join(directory, name), "AppliedChange"))
       .filter((change): change is AppliedChange => change !== null)
       .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
   }
@@ -339,7 +367,7 @@ export class PatchStore {
     for (const name of readdirSync(this.path("reports"))) {
       if (!name.endsWith(".json")) continue;
       const full = this.path("reports", name);
-      const report = this.readJson<AnalysisReport>(full);
+      const report = this.readJson<AnalysisReport>(full, "AnalysisReport");
       if (report === null) continue;
       const at = Date.parse(report.generatedAt);
       if (!Number.isFinite(at) || at >= reportCutoff) continue;

@@ -19,7 +19,7 @@ import type { HistoryBundle } from "../core/history/model.ts";
 import { GitHubError } from "../adapters/github/errors.ts";
 import { ContractViolationError } from "../core/contracts/validate.ts";
 import { ENGINE_VERSION } from "../core/version.ts";
-import { PatchStore } from "../core/patch/store.ts";
+import { PatchStore, StoreCorruptionError } from "../core/patch/store.ts";
 import type { PlanMeta } from "../core/patch/store.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../core/patch/plan.ts";
 import { collectDependencies } from "../core/patch/dependencies.ts";
@@ -850,7 +850,7 @@ function usageMessage(error: UsageError, argv: readonly string[]): string {
 }
 
 function mapError(error: unknown, t: ReturnType<typeof createTranslator>): number {
-  if (error instanceof ContractViolationError) {
+  if (error instanceof ContractViolationError || error instanceof StoreCorruptionError) {
     process.stderr.write(t("error.SCHEMA_INVALID") + " " + error.message + "\n");
     return EXIT_SCHEMA;
   }

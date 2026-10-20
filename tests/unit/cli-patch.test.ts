@@ -222,6 +222,37 @@ test("CLI approve rejects a wrong confirmation", () => {
   );
   assert.equal(result.status, 5, result.stderr);
 });
+
+test("CLI apply rejects a corrupt approved plan without consuming approval or writing workflows", () => {
+  const { root, file } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
+  const approved = cli(
+    ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir],
+    root,
+  );
+  assert.equal(approved.status, 0, approved.stderr);
+  const planFile = join(stateDir, "plans", plan.planId + ".json");
+  const nonceFile = join(stateDir, "plans", plan.planId + ".nonce.json");
+  const nonce = readFileSync(nonceFile, "utf8");
+  const corrupt = JSON.parse(readFileSync(planFile, "utf8")) as { payload: { workflowPath: unknown } };
+  corrupt.payload.workflowPath = 17;
+  writeFileSync(planFile, JSON.stringify(corrupt));
+
+  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  assert.equal(applied.status, 2, applied.stderr);
+  assert.ok(applied.stderr.includes(planFile), applied.stderr);
+  assert.equal(applied.stdout, "");
+  assert.equal(readFileSync(file, "utf8"), WORKFLOW);
+  assert.equal(readFileSync(nonceFile, "utf8"), nonce);
+  assert.equal(PatchStore.open(stateDir).listChanges().length, 0);
+});
 test("CLI plan scopes reports to the repository at the current root", () => {
   const first = makeRepo();
   const second = makeRepo();
