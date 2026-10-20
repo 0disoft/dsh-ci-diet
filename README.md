@@ -154,10 +154,19 @@ tests/unit      fast checks that need no network
 
 ## Languages
 
-English is the default and the source of truth for message keys. Korean is
-fully translated. Simplified Chinese is a translation slot that falls back to
-English until someone maintains it. Public documentation is English, with a
-Korean README mirror.
+English is the default and the source of truth for message keys. The CLI, the
+HTML report, and DSH tool text ship in English, Korean, Simplified Chinese,
+Hindi, Spanish, and French; every dictionary is complete, so a missing key is a
+type error. Regional tags resolve by language (`hi-IN`, `es-MX`, `fr-CA`), and
+Chinese variants that are not Simplified fall back to English.
+
+Language selection is an explicit `--lang`, then the DSH locale preference,
+then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. Reports are stored in
+English and translated only when displayed: rule ids, error codes, enum values,
+paths, digests, and numbers stay untranslated, and the HTML report sets its
+`lang` attribute to the selected locale. DSH tool descriptions are captured at
+plugin load, so changing the DSH language preference needs a reload. Public
+documentation is English, with a Korean README mirror.
 
 ## Documentation
 

@@ -21,6 +21,21 @@ boot until you enable a switch.
 | `localApplyEnabled` | `false` | Reserved for applying plans from the Web UI |
 | `stateDir` | empty | Overrides the per-user state directory |
 
+## Languages
+
+The CLI, the HTML report, and the model tool text ship in English, Korean,
+Simplified Chinese, Hindi, Spanish, and French. Selection order is `--lang`,
+then the DSH locale preference (the `locale` plugin's `preference` in the
+profile patch), then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. An explicit
+but unsupported `--lang` falls back to English rather than to the host setting.
+
+Reports are stored in English. Translation happens when text is displayed:
+finding titles and descriptions come from message keys, while rule ids, error
+codes, enum values, paths, hashes, and numbers are never translated. The HTML
+report sets its `lang` attribute accordingly. Model tool descriptions and render
+templates are captured when the plugin loads, so change the DSH language
+preference and reload the plugin to see new text.
+
 ## Model tools
 
 | Tool | Network | Writes | Purpose |

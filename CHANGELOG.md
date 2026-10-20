@@ -3,6 +3,25 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
+## Unreleased
+
+### Added
+
+- Display languages: English, Korean, Simplified Chinese, Hindi, Spanish, and
+  French. Every dictionary is complete, and a missing key fails the type check.
+  Regional tags resolve by language; unsupported tags fall back to English.
+- Locale selection for the CLI and the DSH host: an explicit `--lang`, then the
+  DSH locale preference, then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English.
+- `Finding.message` (optional `titleKey`, `textKey`, `params`) so a stored
+  English finding can be rendered in another language without changing its
+  identity. The field is a tracked contract extension outside digests.
+
+### Changed
+
+- The HTML report, CLI finding lines, and DSH tool descriptions and render text
+  are localized; the HTML report sets its `lang` attribute. Rule ids, error
+  codes, enum values, paths, hashes, and numbers stay untranslated.
+
 ## 0.1.1 (2026-10-21)
 
 ### Added

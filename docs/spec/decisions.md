@@ -167,3 +167,49 @@ new record, not an edit to the rationale.
   a new evidence reference shape, not a bypass in the planner. Dependency
   coverage can be widened by adding a resolver, but never by weakening the
   unresolved-reference blocker.
+## ADR-19: Six display languages, translated at render time
+
+- Scope: which languages CI Diet ships and where translation happens.
+- Decision: ship en, ko, zh-Hans, hi, es, and fr. English stays the key source
+  of truth. Every other dictionary is a complete `Record<MessageKey, string>`,
+  so a missing key fails the type check instead of rendering an empty string.
+  Regional tags resolve by primary subtag (hi-IN to hi, es-MX to es, fr-CA to
+  fr); Chinese tags that are not Simplified (zh-TW, zh-Hant) stay unsupported
+  and fall through to English. Selection order is an explicit `--lang`, then
+  the DSH locale preference, then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English.
+  A stored report is never rewritten: rules keep English `title` and
+  `renderedText`, and the CLI, HTML report, and DSH tool text localize on
+  display. Rule ids, error codes, enum values, file paths, digests, and numbers
+  are never translated. The HTML report sets `lang` to the selected locale.
+- Rationale: the product has one stored artifact and several readers.
+  Translating at display time keeps reports reproducible and lets a Korean and
+  an English user share the same report id. Requiring a full dictionary keeps
+  coverage honest rather than falling back silently.
+- Consequence: adding a message key requires translating it in all six
+  dictionaries in the same change. DSH tool descriptions and render templates
+  are captured when the plugin loads, so changing the DSH language preference
+  needs a reload to affect them.
+- Reversal: adding a locale means adding a complete dictionary and a locale
+  match case; allowing partial dictionaries would require an explicit coverage
+  test instead of the `Record` type.
+
+## ADR-20: Finding.message carries i18n keys as an optional contract extension
+
+- Scope: how a stored finding can be rendered in another language without
+  changing its identity or its canonical text.
+- Decision: add an optional `message` object to `$defs/Finding` with
+  `titleKey`, `textKey`, and scalar `params`. `title` and `renderedText` remain
+  required English canonical text. The renderer uses `message` only when both
+  keys exist in the English dictionary; otherwise it falls back to the stored
+  text. `message` is excluded from the fingerprint and every digest, so report
+  ids are stable across translations. The field is listed in `EXTENDED` in
+  `scripts/sync-contracts.mjs`, so the frozen design pack must not contain it
+  and the repository copy must.
+- Rationale: findings are stored in reports and referenced by evidence, so a
+  translated title cannot be the only text. A separate sidecar would drift from
+  the report; an optional field is visible in the schema and validated by Ajv.
+- Consequence: a rule that adds a finding should also add its keys to all six
+  dictionaries and a round-trip test. A custom or synthetic finding without
+  `message` still renders its stored text.
+- Reversal: removing the extension is a schema change with the same review
+  process; `contracts.lock.json` is regenerated with the pack check.
