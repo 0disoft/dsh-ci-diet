@@ -176,12 +176,13 @@ export class PatchStore {
     const directory = this.path("reports");
     const files = readdirSync(directory).filter((name) => name.endsWith(".json"));
     let latest: AnalysisReport | null = null;
-    let latestAt = "";
+    let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of files) {
       const report = this.readJson<AnalysisReport>(join(directory, file));
       if (report === null) continue;
-      if (report.generatedAt > latestAt) {
-        latestAt = report.generatedAt;
+      const at = Date.parse(report.generatedAt);
+      if (at > latestAt) {
+        latestAt = at;
         latest = report;
       }
     }
@@ -193,12 +194,13 @@ export class PatchStore {
     const directory = this.path("reports");
     const files = readdirSync(directory).filter((name) => name.endsWith(".json"));
     let latest: AnalysisReport | null = null;
-    let latestAt = "";
+    let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of files) {
       const report = this.readJson<AnalysisReport>(join(directory, file));
       if (report === null || report.bindingId !== bindingId) continue;
-      if (report.generatedAt > latestAt) {
-        latestAt = report.generatedAt;
+      const at = Date.parse(report.generatedAt);
+      if (at > latestAt) {
+        latestAt = at;
         latest = report;
       }
     }
