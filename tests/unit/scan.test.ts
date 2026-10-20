@@ -74,6 +74,33 @@ for (const scenario of ["oversized", "all-oversized", "non-file"] as const) {
   });
 }
 
+test("reports a workflow directory read failure instead of an empty complete scan", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-discovery-"));
+  try {
+    mkdirSync(join(root, ".github"));
+    writeFileSync(join(root, ".github", "workflows"), "not a directory");
+    const { report, skipped } = runStaticScan({ workspaceRoot: root, generatedAt });
+    assert.deepEqual(skipped, [{ path: ".github/workflows", reason: "WORKFLOW_UNREADABLE" }]);
+    assert.equal(report.coverage.workflowDefinitions.status, "partial");
+    assert.equal(report.coverage.workflowDefinitions.fetched, 0);
+    assert.deepEqual(report.coverage.workflowDefinitions.missingScopes.map((scope) => scope.path), [".github/workflows"]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("keeps an absent workflows directory as an empty complete scan", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-discovery-"));
+  try {
+    const { report, skipped } = runStaticScan({ workspaceRoot: root, generatedAt });
+    assert.deepEqual(skipped, []);
+    assert.equal(report.coverage.workflowDefinitions.status, "complete");
+    assert.equal(report.coverage.workflowDefinitions.expected, 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("reports static matrix and retention candidates", () => {
   const { report } = scan();
   const rules = new Map(report.ruleResults.map((result) => [result.ruleId, result]));

@@ -61,8 +61,12 @@ export function discoverWorkflows(
   let entries;
   try {
     entries = readdirSync(directory, { withFileTypes: true });
-  } catch {
-    return { root, workflows: [], skipped: [] };
+  } catch (error) {
+    // A missing workflows directory is normal; other failures mean coverage is incomplete.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      skipped.push({ path: toPosix(join(...WORKFLOW_DIR)), reason: "WORKFLOW_UNREADABLE" });
+    }
+    return { root, workflows, skipped };
   }
 
   entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
