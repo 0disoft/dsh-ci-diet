@@ -277,13 +277,16 @@ export async function revertChange(options: {
 }): Promise<{ readonly state: string; readonly reason: string | null }> {
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
-  if (change.state !== "APPLIED") return { state: change.state, reason: "CHANGE_NOT_APPLIED" };
+  if (change.state !== "APPLIED" && change.state !== "RECOVERY_REQUIRED") return { state: change.state, reason: "CHANGE_NOT_APPLIED" };
   const binding = options.store.readBinding(change.bindingId);
   if (binding === null) throw new Error("BINDING_NOT_FOUND: " + change.bindingId);
 
   return withWriterLease(options.store, async () => {
     const backup = options.store.readBackup(change.changeId);
-    if (backup === null) return { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" };
+    if (backup === null) {
+      options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
+      return { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" };
+    }
     const target = resolveInside(binding.workspaceRoot, change.workflowPath);
     assertRegularFile(target);
     const currentText = readFileSync(target, "utf8");

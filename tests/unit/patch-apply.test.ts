@@ -176,6 +176,48 @@ test("revert restores the original bytes only when the file still matches", asyn
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
 
+for (const missingFile of ["manifest.json", "before.yml"] as const) {
+  test("revert records a missing " + missingFile + " and retries after backup repair", async () => {
+    const f = setup();
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+    assert.equal(applied.state, "applied");
+    const changeId = applied.change!.changeId;
+    const after = readFileSync(f.file, "utf8");
+    const backupFile = join(f.store.root, "backups", changeId, missingFile);
+    const backup = readFileSync(backupFile);
+    unlinkSync(backupFile);
+    const now = new Date(f.now.getTime() + 1000);
+    const refused = await revertChange({ store: f.store, changeId, now });
+    assert.deepEqual(refused, { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" });
+    assert.equal(f.store.readChange(changeId)?.state, "RECOVERY_REQUIRED");
+    assert.equal(f.store.readChange(changeId)?.updatedAt, now.toISOString().replace(/\.\d{3}Z$/, "Z"));
+    assert.equal(readFileSync(f.file, "utf8"), after);
+
+    writeFileSync(backupFile, backup);
+    const retried = await revertChange({ store: f.store, changeId, now });
+    assert.equal(retried.state, "REVERTED");
+    assert.equal(f.store.readChange(changeId)?.state, "REVERTED");
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+  });
+}
+
+test("revert retry from recovery still refuses a user-edited target", async () => {
+  const f = setup();
+  approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester", channel: "human-cli", now: f.now });
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+  const change = applied.change!;
+  f.store.saveChange({ ...change, state: "RECOVERY_REQUIRED" });
+  const edited = readFileSync(f.file, "utf8") + "# user edit\n";
+  writeFileSync(f.file, edited);
+  const result = await revertChange({ store: f.store, changeId: change.changeId, now: f.now });
+  assert.deepEqual(result, { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" });
+  assert.equal(f.store.readChange(change.changeId)?.state, "CONFLICT");
+  assert.equal(readFileSync(f.file, "utf8"), edited);
+});
+
 for (const operation of ["apply", "revert"] as const) {
   test(operation + " refuses a parent directory redirected outside the workspace", async () => {
     const f = setup();
