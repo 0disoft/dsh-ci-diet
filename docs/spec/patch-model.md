@@ -134,16 +134,17 @@ premise: `workflowSource`, `workflowDefinition`, `policySnapshot`, and
 
 ## Apply transaction
 
-The file store and the target writer share one service path. The CLI and the Web
-UI do not carry separate write implementations.
+The file store and the target writer share one service path. There is one writer
+in `src/core/patch`; the CLI uses it today, and a future Web write surface must
+reuse it rather than reimplement the transaction.
 
 | Step | Check and record | On failure |
 | --- | --- | --- |
 | prepare | Current bytes, Binding, premise, policy, allowed paths | Project file untouched |
-| reserve | Reserve backup before/after/manifest and temp space | `BACKUP_QUOTA_EXCEEDED` or storage error, untouched |
+| reserve | Reserve backup before/after/manifest and temp space | `BACKUP_UNAVAILABLE` or storage error, untouched |
 | durable prepare | Write before and after as immutable files, re-read hashes, flush, journal PREPARED | Untouched; a completed orphan backup is diagnosable |
 | approve | Consume the nonce atomically, or confirm purpose and digest in a separate terminal | Untouched; no approval reuse |
-| recheck | File hash, identity, premise, quota | `PLAN_STALE`, apply cancelled |
+| recheck | File hash, identity, premise, quota | `SOURCE_HASH_MISMATCH`, apply cancelled |
 | replace | Write the result to a temp file on the same volume, replace atomically, preserve mode | Never delete the original; record the failure |
 | confirm | Verify target after-hash, journal APPLIED | `RECOVERY_REQUIRED`; never a normal success response |
 

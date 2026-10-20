@@ -81,31 +81,31 @@ budget independent; it is not silently increased.
 
 | Error | User meaning | CLI exit |
 | --- | --- | ---: |
-| `AUTH_REQUIRED` / `API_FORBIDDEN` | Authentication or read permission needed | 3 |
-| `API_RATE_LIMITED` / `REQUEST_BUDGET_EXHAUSTED` | Stop collecting and keep a partial report (default 0; 3 with `--require-complete`) | 0 |
-| `API_VERSION_UNSUPPORTED` | Requested API version unsupported; no silent fallback | 3 |
-| `SCHEMA_INVALID` / `SCHEMA_VERSION_UNSUPPORTED` | Contract violation or unsupported stored record | 2 |
-| `SNAPSHOT_BINDING_MISMATCH` / `BINDING_MISMATCH` | Data belongs to another repository or profile | 4 |
-| `PLAN_STALE` / `PLAN_EXPIRED` / `POLICY_STALE` | Plan basis changed or expired | 4 |
-| `ATTESTATION_MISSING` / `ATTESTATION_EXPIRED` / `ATTESTATION_REVOKED` / `ATTESTATION_HASH_MISMATCH` / `ATTESTATION_SCOPE_INSUFFICIENT` | Premise missing or not covering current bytes | 4 |
-| `DEPENDENCY_HASH_MISMATCH` / `SOURCE_HASH_MISMATCH` / `BLOCKERS_PRESENT` / `COVERAGE_INSUFFICIENT_FOR_WRITE` | Apply invariant violated | 4 |
-| `NONCE_INVALID` | Approval challenge absent or already consumed | 5 |
-| `BACKUP_UNAVAILABLE` | Backup could not be stored; apply stopped | 6 |
-| `NON_INTERACTIVE_APPROVAL_DENIED` | A separate interactive terminal is required | 5 |
-| `APPROVAL_REQUIRED` / `APPROVAL_EXPIRED` / `APPROVAL_REPLAYED` | Final approval missing, expired, or reused | 5 |
-| `REMOTE_ACCESS_DENIED` / `CAPABILITY_UNAVAILABLE` | Not available from this host or principal | 5 |
-| `BACKUP_QUOTA_EXCEEDED` / `BACKUP_IO_FAILED` | Could not store revert bytes; nothing applied | 6 |
-| `UNSUPPORTED_YAML` / `PATCH_SCOPE_VIOLATION` | Edit outside the supported scope | 4 |
-| `WRITE_CONFLICT` / `RECOVERY_REQUIRED` | Current file and journal need human review | 6 |
+| `AUTH_REQUIRED` | `gh` credentials are missing or rejected | 3 |
+| `BUDGET_EXHAUSTED` | The local request budget ran out before a required call | 3 |
+| `PERMISSION_DENIED` / `RATE_LIMITED` / `NOT_FOUND` / `NETWORK_ERROR` / `GH_NOT_INSTALLED` / `INVALID_ENDPOINT` | Collection could not start; a failure during collection is recorded as a missing scope instead and keeps the partial report | 1 |
+| `SCHEMA_INVALID` | A stored or produced record violates the frozen contract | 2 |
+| `PLAN_EXPIRED` / `POLICY_STALE` | The plan basis aged out | 3 |
+| `ATTESTATION_MISSING` / `ATTESTATION_EXPIRED` / `ATTESTATION_REVOKED` / `ATTESTATION_HASH_MISMATCH` / `ATTESTATION_SCOPE_INSUFFICIENT` | The premise is missing or does not cover the current bytes | 3 |
+| `DEPENDENCY_HASH_MISMATCH` / `SOURCE_HASH_MISMATCH` / `BLOCKERS_PRESENT` / `COVERAGE_INSUFFICIENT_FOR_WRITE` | An apply invariant failed | 3 |
+| `NONCE_INVALID` | The approval challenge is absent, already consumed, or the plan was never approved | 5 |
+| `BACKUP_UNAVAILABLE` | The backup could not be stored; nothing was applied | 6 |
+| `CURRENT_BYTES_CHANGED` | Revert refused because the file no longer equals the applied result | 3 |
+| `BACKUP_HASH_MISMATCH` / `RESTORE_HASH_MISMATCH` / `RECOVERY_REQUIRED` | The journal and the bytes on disk need human review | 4 |
+| `WRITE_CONFLICT` | The path escapes the workspace, is a symlink, or the replacement failed | 3 |
+| `UNKNOWN_COMMAND` / `UNKNOWN_FLAG` / `MISSING_VALUE` / `INVALID_VALUE` / `UNKNOWN_RULE` | Usage error | 1 |
 
-Exit 0 means the command completed; it does not mean no findings. A successful
-partial analysis must include completeness and a cause in its JSON and exits 0.
-Only `--require-complete` turns an incomplete collection into exit 3. Cancellation
-is 130, and if a file replacement already started, the actual transaction state
-is recorded in the receipt first. `AppliedChange` records
-`(planId, planDigest, statusRevision)` so the applied approval revision can be
-recovered. The reason code table here and the apply invariant table in
-`patch-model.md` are maintained together.
+Exit 0 means the command completed; it does not mean no findings. A run that
+stops early because the window was truncated or a dimension is missing still
+exits 0 and records the cause in coverage: a successful partial analysis must
+include completeness and a cause in its JSON. Only `--require-complete` turns an
+incomplete collection into exit 3. Cancellation is 130, and if a file
+replacement already started, the actual transaction state is recorded in the
+receipt first. `AppliedChange` records `planId`, `planDigest`, the before and
+after hashes and byte counts, and the approval reference, so a revert can be
+matched to the exact bytes it must restore. The reason codes here, the apply
+invariant table in `patch-model.md`, and `ApplyReasonCode` in
+`src/core/patch/verify.ts` are maintained together.
 
 Synthetic records (`provenance=synthetic`) are rejected by every production
 writer: they can never become an Attestation, plan, or apply source.
