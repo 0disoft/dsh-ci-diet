@@ -150,7 +150,12 @@ new record, not an edit to the rationale.
   local action directories are hashed as a whole. The resulting
   `dependencyHash` is stored on both the premise and the plan, and a reference
   the scan cannot hash becomes an `UNRESOLVED_DEPENDENCY:<path>` blocker rather
-  than disappearing from the list.
+  than disappearing from the list. Interpreter flags are split between boolean
+  flags and flags that take a value (`--require`, `--loader`, `--import`,
+  `--env-file`); a value that names a repository file is hashed too. Hitting
+  the local-action file limit or failing to read a file or directory also
+  records an unresolved entry, because a partial directory hash must never
+  pass as complete.
 - Rationale: rule plus workflow path is not enough identity. Before this
   change, a 20-sample `build` cohort could justify a one-minute timeout on an
   untested `deploy` job, and a report made against older bytes could be planned

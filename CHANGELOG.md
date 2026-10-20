@@ -52,6 +52,11 @@ Keep a Changelog, and the project uses semantic versioning.
   arguments such as `node build.js`, honors step and job
   `working-directory`, hashes a local action directory as a whole, and reports
   references it cannot resolve as `UNRESOLVED_DEPENDENCY:<path>` blockers.
+  Boolean interpreter flags such as `--enable-source-maps` no longer consume
+  the script path, and flags that take a value (`--require`, `--loader`,
+  `--import`, `--env-file`) hash that value when it names a repository file. A
+  local action that hits the 500-file limit or contains an unreadable file or
+  directory now reports an unresolved entry instead of looking complete.
 - The semantic guard now reports added or removed empty mappings and sequences
   plus parent node type changes, so deleting `permissions: {}` or replacing
   `steps` with `null` can no longer ride along with a plan.

@@ -100,7 +100,11 @@ retrying against a changed workflow.
   to the step `working-directory`, and all files inside a local action
   directory. A reference the scan cannot hash becomes an
   `UNRESOLVED_DEPENDENCY:<path>` blocker, so apply refuses instead of trusting
-  an incomplete fingerprint.
+  an incomplete fingerprint. Boolean flags such as `--enable-source-maps` keep
+  the following token as the script, while `--require`, `--loader`, `--import`,
+  and `--env-file` consume a value that is hashed when it names a repository
+  file. A local action that hits the 500-file limit or an unreadable file or
+  directory is also reported as unresolved.
 - The working tree is authoritative: uncommitted changes are preserved, and a
   file that changed after the plan was built is refused.
 - Backups are never deleted automatically. If the store cannot hold another

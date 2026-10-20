@@ -118,9 +118,16 @@ configuration). The scan resolves a local action to every file in its directory
 interpreters (`node build.js`, `bash scripts/check.sh`), `./` and `../`
 executables, and slash-containing arguments relative to the step
 `working-directory` or the job/top-level `defaults.run.working-directory`.
-Local `uses: ./...` references resolve from the repository root. A reference
-that names a file but cannot be hashed inside the repository becomes an
-`UNRESOLVED_DEPENDENCY:<path>` blocker instead of being dropped silently.
+Local `uses: ./...` references resolve from the repository root. Interpreter
+flags are classified by kind: boolean flags such as `--enable-source-maps` do
+not consume the script path, while `--require`, `--loader`, `--import`, and
+`--env-file` do and their values are hashed when they name a repository file.
+A reference that names a file but cannot be hashed inside the repository
+becomes an `UNRESOLVED_DEPENDENCY:<path>` blocker instead of being dropped
+silently. Collection that hits the 500-file local-action limit, or cannot read
+a file or directory, is recorded the same way with `(file limit reached)`,
+`(unreadable file)`, or `(unreadable directory)`, so a partial fingerprint
+never looks complete.
 `dependencyHash` is the sha256 of the CDJ1 encoding of
 `{dependencies}`; an empty list has a defined hash too. If any dependency hash
 changes, both the premise and the plan are void. Any non-empty `blockers` list
