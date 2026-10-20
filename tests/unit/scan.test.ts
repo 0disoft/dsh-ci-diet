@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -47,6 +47,32 @@ test("marks workflow definitions partial when a file fails", () => {
   assert.equal(report.metrics.observedRunnerSeconds.status, "unknown");
   assert.equal(report.metrics.actualBilledUsd.status, "unknown");
 });
+
+for (const scenario of ["oversized", "all-oversized", "non-file"] as const) {
+  test("counts discovery skips in coverage: " + scenario, () => {
+    const root = mkdtempSync(join(tmpdir(), "ci-diet-discovery-"));
+    try {
+      const directory = join(root, ".github", "workflows");
+      mkdirSync(directory, { recursive: true });
+      if (scenario !== "all-oversized") {
+        writeFileSync(join(directory, "valid.yml"), "on: push\njobs: {}\n");
+      }
+      if (scenario === "non-file") mkdirSync(join(directory, "skipped.yml"));
+      else writeFileSync(join(directory, "skipped.yml"), "#".repeat(257));
+
+      const { report, skipped } = runStaticScan({ workspaceRoot: root, generatedAt, maxWorkflowBytes: 256 });
+      const coverage = report.coverage.workflowDefinitions;
+      const fetched = scenario === "all-oversized" ? 0 : 1;
+      assert.equal(coverage.status, "partial");
+      assert.equal(coverage.fetched, fetched);
+      assert.equal(coverage.expected, fetched + 1);
+      assert.deepEqual(coverage.missingScopes.map((scope) => scope.reason), [skipped[0]!.reason]);
+      assert.equal(skipped.length, 1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
 
 test("reports static matrix and retention candidates", () => {
   const { report } = scan();

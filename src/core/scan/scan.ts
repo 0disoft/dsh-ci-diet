@@ -100,7 +100,7 @@ export function runStaticScan(options: StaticScanOptions): StaticScanResult {
     }
   }
   const parsedCount = workflows.filter((workflow) => workflow.parseError === null && workflow.unsupported.length === 0).length;
-  const coverage = coverageFor(generatedAt, discovery.workflows.length, parsedCount, failures);
+  const coverage = coverageFor(generatedAt, discovery.workflows.length + discovery.skipped.length, parsedCount, failures);
 
   const identity: RuleIdentity = {
     bindingId: bindingResult.binding.bindingId,
