@@ -2,8 +2,9 @@
 
 낭비된 GitHub Actions 러너 시간을 찾고, 작고 검토 가능한 패치를 제안합니다.
 
-상태: **설계 단계**. 계약과 명세는 이 저장소에 있지만 분석 엔진, 패치 엔진,
-CLI, DSH Web 플러그인은 아직 구현되지 않았으므로 설치할 것이 없습니다.
+상태: **알파, 아직 배포되지 않음**. 계약, 명세, 분석 엔진, 패치 엔진, CLI, DSH
+플러그인 도구, 자체 완결형 HTML 보고서는 구현과 테스트를 마쳤습니다. DSH Web
+클라이언트 화면과 npm 배포는 아직 남아 있습니다.
 
 ## 앞으로 할 일
 
@@ -16,7 +17,7 @@ CI Diet는 두 가지를 읽고 비교합니다.
 있는지 보고합니다. 모든 발견에는 근거 수준(`observed`, `inferred`, `static`)과
 규칙별 coverage 상태가 붙습니다.
 
-| 규칙 | 찾는 것 | v0.1 계획 |
+| 규칙 | 찾는 것 | v0.1 패치 |
 | --- | --- | --- |
 | CD001 | 더 새 커밋에 밀린 PR 실행 | 패치: `concurrency` |
 | CD002 | 겹치는 트리거 | 설명만 |
@@ -26,21 +27,20 @@ CI Diet는 두 가지를 읽고 비교합니다.
 | CD008 | 긴 artifact 보존 기간 | 패치: `retention-days` |
 
 규칙 집합은 일부러 작습니다. 실제 저장소에서 품질 기준을 통과한 규칙만
-출시합니다. 잘못 짚는 규칙은 없는 규칙보다 나쁘기 때문입니다. CD003과
-CD005는 구현되어 있지만 그 기준을 통과할 때까지 기본으로 꺼져 있습니다
-(ADR-13 참고).
+출시합니다. 잘못 짚는 규칙은 없는 규칙보다 나쁘기 때문입니다. CD003과 CD005는
+구현되어 있지만 그 기준을 통과할 때까지 기본으로 꺼져 있습니다(ADR-13 참고).
 
 ## 하지 않는 일
 
 - 커밋, 푸시, PR, 병합을 하지 않습니다.
-- workflow를 실행하지 않고, 실행 중인 job을 취소하지 않으며, artifact나
-  캐시를 삭제하지 않습니다.
+- workflow를 실행하지 않고, 실행 중인 job을 취소하지 않으며, artifact나 캐시를
+  삭제하지 않습니다.
 - 브랜치 보호 설정을 바꾸지 않습니다.
-- GitHub 쓰기 권한이 필요 없습니다. 이력 조회는 읽기 전용이고, 네트워크가
-  없어도 정적 스캔은 동작합니다.
+- GitHub 쓰기 권한이 필요 없습니다. 이력 조회는 읽기 전용이고, 네트워크가 없어도
+  정적 스캔은 동작합니다.
 - job이 낭비인지 LLM으로 판정하지 않습니다.
-- 패치는 이미 가진 YAML의 바이트 범위 편집입니다. diff를 검토하고 직접
-  승인한 뒤 작업 폴더에 적용합니다.
+- 패치는 이미 가진 YAML의 바이트 범위 편집입니다. diff를 검토하고 직접 승인한 뒤
+  작업 폴더에 적용합니다.
 
 ## 숫자를 섞지 않습니다
 
@@ -56,17 +56,58 @@ CD005는 구현되어 있지만 그 기준을 통과할 때까지 기본으로 �
 모든 보고서는 사용한 가격 스냅샷을 해시와 함께 포함하므로 나중에 같은 숫자를
 재현할 수 있습니다. 스냅샷을 검증할 수 없으면 보고서를 내보내지 않습니다.
 
+## 설치
+
+```
+npm install --global dsh-ci-diet
+dsh plugin --profile web add dsh-ci-diet
+```
+
+플러그인은 기본으로 꺼진 로더 항목 하나를 추가합니다. 이력 동기화를 쓸 때만
+`networkEnabled`를 켜십시오. 첫 npm 배포 전에는 tarball로 설치합니다:
+`bun pm pack` 후 `dsh plugin --profile web add ./dsh-ci-diet-0.1.0.tgz`.
+
+## 실행
+
+```
+ci-diet scan --cwd .                     # 네트워크 없는 정적 스캔
+ci-diet sync --network                   # 이 체크아웃의 GitHub Actions 이력 조회
+ci-diet plan --rule CD001 --workflow .github/workflows/ci.yml \
+             --claims ci-only,replace-safe
+ci-diet approve --plan <planId> --confirm <digest tail>
+ci-diet apply --plan <planId>            # 계획된 바이트 범위만 다시 씀
+ci-diet revert --change <changeId>       # 백업한 바이트를 복원
+```
+
+`plan`은 발견이 패치 가능하지 않거나, coverage가 쓰기를 허용하지 않거나, 해당
+규칙이 의존하는 정책 스냅샷이 오래됐으면 계획을 만들지 않습니다. CD005는
+`--job`과 `--minutes`가, CD008은 `--job`과 `--step`, 그리고
+`--claims artifact-purpose:temporary,consumer-min-days:7`이 필요합니다. 명시적
+`approve` 없이는 아무것도 커밋·푸시·적용되지 않습니다.
+
+## 보고서 읽기
+
+```
+ci-diet report                 # 저장된 최신 보고서의 텍스트 요약
+ci-diet report --format html --out report.html
+ci-diet prune                  # 만료된 보고서, 계획, 캐시 정리
+```
+
+HTML 파일은 자체 완결형입니다. 인라인 CSS만 쓰고 스크립트와 외부 요청이 없습니다.
+읽기 전용이므로 승인은 digest와 nonce 검사가 있는 CLI에 남습니다.
+
 ## 요구 사항
 
 - Node `^22.19.0 || >=24.0.0`
 - `gh` CLI(선택): 실행 이력 조회에만 사용
-- DeepSeek Harness Web(선택): 플러그인 UI에만 사용
+- DSH `>=0.2.1-rc.2 <0.3.0`(선택): 플러그인 도구에만 사용
 
 ## 개발
 
 ```
 bun install
 node --test "tests/unit/*.test.ts"
+node scripts/gen-types.mjs --check
 node scripts/sync-contracts.mjs --check
 bun run typecheck
 bun run lint
@@ -93,9 +134,9 @@ tests/unit      네트워크가 필요 없는 빠른 검사
 
 ## 언어
 
-영어가 기본이며 메시지 키의 단일 소스입니다. 한국어는 전체 번역되어 있고,
-중국어 간체는 번역 슬롯으로만 두며 관리자가 생기기 전까지 영어로 대체됩니다.
-공개 문서는 영어이고 README만 한국어로 미러링합니다.
+영어가 기본이며 메시지 키의 단일 소스입니다. 한국어는 전체 번역되어 있고, 중국어
+간체는 번역 슬롯으로만 두며 관리자가 생기기 전까지 영어로 대체됩니다. 공개 문서는
+영어이고 README만 한국어로 미러링합니다.
 
 ## 문서
 
@@ -105,6 +146,7 @@ tests/unit      네트워크가 필요 없는 빠른 검사
 - 패치 모델: [docs/spec/patch-model.md](docs/spec/patch-model.md)
 - 저장·오류: [docs/spec/storage.md](docs/spec/storage.md)
 - 결정 기록: [docs/spec/decisions.md](docs/spec/decisions.md)
+- 측정: [docs/spikes/a0a-rules.md](docs/spikes/a0a-rules.md)
 - 플러그인·CLI 안내: [docs/guide/plugin.md](docs/guide/plugin.md)
 - 계약 출처: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
 - English: [README.md](README.md)

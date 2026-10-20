@@ -16,16 +16,34 @@ Keep a Changelog, and the project uses semantic versioning.
   budgets, retries, and ETag caching.
 - Patch engine: byte-range edits, plan lifecycle, attestation nonces, durable
   backups, apply, and revert.
+- Plan eligibility gate shared by the CLI and the DSH tool: a finding must be
+  patch-eligible, coverage must allow a write, and the rule's policy snapshot
+  must be fresh. Refusals return the remaining reason codes.
+- Attestation claims for CD001 (`ci-only`, `replace-safe`) and CD008 (artifact
+  purpose, consumer minimum days), passed with `--claims` and stored before a
+  plan is built.
 - CLI commands `scan`, `sync`, `plan`, `approve`, `apply`, `revert`,
   `changes`, `plans`, `report`, and `prune`.
 - Self-contained HTML report with inline CSS, escaped text, and no external
   references; text and JSON formats share the same stored record.
-- DSH bundle plugin with `ci_diet_scan`, `ci_diet_sync`, `ci_diet_report`,
-  and `ci_diet_plan`.
 - Sync progress line on interactive terminals, and coverage that records the
   negotiated GitHub API version and the `gh --version` used for an observed
   report.
+- DSH bundle plugin with `ci_diet_scan`, `ci_diet_sync`, `ci_diet_report`,
+  and `ci_diet_plan`.
 - English and Korean message catalogs; Simplified Chinese is a slot.
+
+### Fixed
+
+- The semantic guard now compares every step key, including `env`, `if`, and
+  each `with` entry. A digest-consistent payload that drifted outside its rule
+  can no longer be applied.
+- A plan resolves the binding for the current workspace root before choosing a
+  report, so a second repository in the same store never supplies evidence.
+- Policy freshness is checked per rule: an unrelated stale snapshot no longer
+  blocks a timeout plan.
+- Apply holds a writer lease; a concurrent apply fails with `WRITE_CONFLICT`
+  before touching the target.
 
 ### Known gaps
 

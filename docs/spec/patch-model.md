@@ -68,6 +68,13 @@ After applying edits, reparse and diff semantically: only allowed semantic paths
 may change, and the semantic diff must correspond exactly to `edits`, or the
 plan is not applied. A plan identical to the current value ends as a no-op.
 
+The semantic diff covers every field a rule must not touch, including keys that
+no rule ever edits: a step's `env`, `if`, `id`, `name`, `uses`, `run`, and each
+`with` entry are compared one by one. Adding, changing, or removing any of them
+outside the declared edits fails the plan even when the recomputed `planDigest`
+is consistent, because a digest proves what was signed, not that the edit stayed
+inside its rule.
+
 ## Plan state and dependencies
 
 `PatchPlan.status` is a separate record with `state`, `revision`,
@@ -108,6 +115,12 @@ revocation, Binding identity, current bytes, and policy freshness. A policy
 value that changed requires a new plan and preview; never silently rewrite the
 digest to a newer value. Relevant policy must be at most 600 seconds old, and a
 write stops if fresh data cannot be obtained.
+
+Freshness is per rule, not "the newest snapshot wins". CD001 needs a branch
+protection snapshot, CD008 needs the artifact retention policy, and CD005 needs
+neither: a timeout edit does not depend on account policy, so an unrelated stale
+snapshot must not block it. A rule with no required snapshot still fails on a
+missing attestation or incomplete coverage.
 
 ## Apply invariants
 

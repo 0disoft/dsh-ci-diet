@@ -69,6 +69,24 @@ The plugin adds one disabled loader entry; enable `networkEnabled` only if you
 want history sync. Until the first npm release, install from a packed tarball:
 `bun pm pack` then `dsh plugin --profile web add ./dsh-ci-diet-0.1.0.tgz`.
 
+## Run it
+
+```
+ci-diet scan --cwd .                     # static scan, no network
+ci-diet sync --network                   # read GitHub Actions history for this checkout
+ci-diet plan --rule CD001 --workflow .github/workflows/ci.yml \
+             --claims ci-only,replace-safe
+ci-diet approve --plan <planId> --confirm <digest tail>
+ci-diet apply --plan <planId>            # rewrites only the planned byte range
+ci-diet revert --change <changeId>       # restores the backed-up bytes
+```
+
+`plan` refuses to write when the finding is not patch-eligible, when coverage
+does not allow a write, or when the policy snapshot a rule depends on is stale.
+CD005 needs `--job` and `--minutes`; CD008 needs `--job` and `--step`, plus
+`--claims artifact-purpose:temporary,consumer-min-days:7`. Nothing is committed,
+pushed, or applied without the explicit `approve` step.
+
 ## Read a report
 
 ```

@@ -28,18 +28,23 @@ boot until you enable a switch.
 | `ci_diet_scan` | no | report | Static scan of `.github/workflows` in a checkout |
 | `ci_diet_sync` | yes | report | Read-only history sync with `gh` |
 | `ci_diet_report` | no | nothing | Summarize the latest stored report |
-| `ci_diet_plan` | no | plan | Build a patch plan; never approves or applies |
+| `ci_diet_plan` | no | plan | Evaluate patch eligibility and preview a plan; never approves or applies |
 
-`ci_diet_plan` has no approval argument on purpose. Approval is a separate,
-human step: the CLI prints a confirmation derived from the plan digest, and
-apply consumes a single-use nonce created by that approval.
+`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, `step`, and a
+`claims` list. It returns the edits, the plan digest, the coverage level, and
+the reasons that still block a write. It has no approval argument on purpose:
+approval is a separate, human step. The CLI prints a confirmation derived from
+the plan digest, and apply consumes a single-use nonce created by that approval.
 
 ## Command line
 
 ```
 ci-diet scan  --cwd <repo> [--json] [--out <file>] [--rules CD001,CD008]
 ci-diet sync  --network --repo <owner/name> [--days 7] [--json]
-ci-diet plan  --rule CD008 --workflow .github/workflows/ci.yml --job build --step upload
+ci-diet plan  --rule CD008 [--cwd <repo>] --workflow .github/workflows/ci.yml \
+              --job build --step upload --claims artifact-purpose:temporary,consumer-min-days:7
+ci-diet plan  --rule CD005 --workflow .github/workflows/ci.yml --job build --minutes 20
+ci-diet plan  --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
 ci-diet approve --plan <planId> --confirm <digestTail>
 ci-diet apply --plan <planId>
 ci-diet revert --change <changeId>
@@ -57,12 +62,32 @@ cancelled with Ctrl+C.
 
 Pass `--require-complete` to turn a partial coverage report into exit `3`.
 
+## What a plan needs before it can write
+
+A plan is only built when the rule's finding is patch-eligible in the latest
+report for this repository. A blocked finding never becomes a plan, and a plan
+whose evidence stops matching is refused with exit `3` and a reason code.
+
+| Requirement | CD001 | CD005 | CD008 |
+| --- | --- | --- | --- |
+| Observed history coverage that allows a write | yes | yes | yes |
+| Human claims in the attestation | `ci-only`, `replace-safe` | (none) | artifact purpose, consumer minimum days |
+| Fresh policy snapshot | branch protection | (none) | artifact retention |
+| Other blockers | PR-only trigger, no existing `concurrency`, no deploy job | a cohort of 20 samples, no existing timeout | literal retention above 7 days |
+
+Claims are recorded on a durable Attestation, not in the plan digest. If a claim
+is withdrawn, the plan cannot apply. Policy freshness is checked per rule, so an
+unrelated stale snapshot never blocks a timeout edit.
+
 ## Safety model
 
 - Patches are byte-range edits, one file per plan. The file is never
   re-serialized.
 - Apply requires an approved plan, a matching approval nonce, unchanged source
   hashes, unchanged dependency hashes, and a durable backup.
+- The semantic guard compares every step field, including `env`, `if`, and each
+  `with` entry. An edit that drifts outside its rule is refused even if the plan
+  digest is recomputed.
 - The working tree is authoritative: uncommitted changes are preserved, and a
   file that changed after the plan was built is refused.
 - Backups are never deleted automatically. If the store cannot hold another
@@ -95,4 +120,3 @@ document to a file instead of standard output.
 `ci-diet prune` deletes reports older than 90 days, plans older than 7 days,
 and cache entries older than the configured cache window. It never deletes
 backups, and it reports the freed byte count.
-

@@ -108,3 +108,30 @@ new record, not an edit to the rationale.
 - Reversal: replacing HTML with Web screens is additive, not a contract change,
   because both read `AnalysisReport` from the local store.
 
+## ADR-17: One eligibility gate decides whether a finding may become a plan
+
+- Scope: who decides that a finding is safe to plan, and what a plan proves.
+- Decision: the CLI and `ci_diet_plan` call the same
+  `evaluatePatchEligibility` function. It combines the finding's stored
+  `patchability`, the rule's coverage composition, the recorded Attestation
+  claims, policy freshness for the rules that read account policy, and the
+  finding's remaining blockers. Only a finding that passes can be planned, and
+  the plan stores whatever blockers remain so apply rechecks them.
+- Claims are evaluated, then stored as an Attestation before the plan is built.
+  The plan digest binds the attestation id and the policy snapshot hashes, so a
+  withdrawn claim or a changed policy voids the plan instead of silently
+  inheriting approval.
+- Policy freshness is per rule. CD001 depends on branch protection, CD008 on
+  artifact retention, and CD005 on neither; a stale unrelated snapshot must not
+  block a timeout edit.
+- Reports are read through a Binding. A plan resolves the binding for the
+  current workspace root and then the latest report for that binding only; it
+  never falls back to the newest report in the store.
+- Rationale: the previous split between "report says eligible" and "plan builds
+  anyway" let a blocked finding reach a draft plan, and the CLI version could
+  plan against another repository's report. One gate keeps the model tool and
+  the human CLI honest about the same evidence.
+- Consequence: a plan request can return exit `3` with named reasons instead of
+  a plan. That is the intended outcome, not a failure.
+- Reversal: widening the gate means adding an explicit claim or a new policy
+  dependency to a rule, never bypassing the gate for one entry point.

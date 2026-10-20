@@ -2,13 +2,14 @@
 
 ## Where state lives
 
-CI Diet does not assume a per-plugin data directory service exists. The default
-file root is the confirmed DSH helper `dshHomePath('ci-diet')` plus
-`profiles/<profileKey>`. `profileKey` is a hash of the real host profile
-root's canonical identity. If the profile root cannot be confirmed through a
-public API, the operator must supply an explicit `stateScope` and path. A
-browser-supplied name or the literal `web` never merges several hosts into one
-store.
+CI Diet does not assume a per-plugin data directory service exists; the
+installed DSH exposes none. Both entry points default to the same user-level
+root: `%LOCALAPPDATA%\CI-Diet\profiles\default` on Windows and
+`~/.local/state/ci-diet/profiles/default` elsewhere. The DSH plugin config
+`stateDir` and the CLI flag `--state-dir` override it, and an explicit value is
+the only way to point the CLI at a store the plugin created under a different
+root. A browser-supplied name or the literal `web` never merges several hosts
+into one store.
 
 | Path | Content |
 | --- | --- |
@@ -21,12 +22,22 @@ store.
 | `events/` | Local evaluation and usage summaries |
 | `cache/` | Re-fetchable responses and ETags |
 
-The CLI proposes `%LOCALAPPDATA%\CI-Diet` on Windows,
-`~/Library/Application Support/CI-Diet` on macOS, and `ci-diet` under the
-XDG data root on Linux. Continuing a DSH store from the CLI requires a
-human-specified `--state-dir` and a verified Binding. Only host configuration or
-a human CLI can override the root; model tool input never carries it. First use
-displays the actual path, account, and write status.
+Continuing a DSH store from the CLI requires an explicit `--state-dir` and a
+verified Binding. Only host configuration or a human CLI can override the root;
+model tool input never carries it. First use displays the actual path, account,
+and write status.
+
+Every report and plan belongs to a Binding, and a Binding records the workspace
+realpath it was created for. A plan never falls back to "the newest report in
+the store": it resolves the binding for the current root, then the latest report
+for that binding only. If another repository has a report and this one does not,
+the command stops and asks for `sync` instead of planning against foreign
+evidence.
+
+Only one writer may hold a file transaction at a time. Apply takes a lease file
+next to the target; a second concurrent apply, or a foreign lock left by another
+process, fails with `WRITE_CONFLICT` before any byte is written. Plan and
+approval records never take the lease; only apply and revert do.
 
 The store belongs to one user. Defaults are POSIX `0700` directories and
 `0600` backups; Windows ACLs and inheritance are confirmed in the Windows
