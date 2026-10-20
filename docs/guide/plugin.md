@@ -77,6 +77,7 @@ same layout under the DSH home. `--state-dir` overrides both.
 Bindings, reports, plans, attestations, backups, changes, and an append-only
 event log live in separate subdirectories. Report retention is 90 days; plans
 expire after 7 days.
+
 ## Reports
 
 `ci-diet report` prints the latest stored report, or the one named by
