@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "evaluationId": "fixture-eval",
+  "findingId": "fixture-finding-for-schema-only",
+  "fingerprint": "sha256:bebb6af73539d64ce7fe008bcfcdd4f1fac2822db5bd3d0fa0b8701867764558",
+  "bindingId": "fixture-binding",
+  "verdict": "deferred",
+  "reason": "Structural example; no real user evaluation exists.",
+  "at": "2026-10-20T00:00:00Z",
+  "source": "human-cli"
+}

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "bindingId": "fixture-binding",
+  "repositoryId": "synthetic-repository-id",
+  "repositoryFullName": "example/fixture",
+  "host": "github.com",
+  "workspaceRoot": "C:\\synthetic\\fixture",
+  "rootIdentityHash": "sha256:73921f3efa7b9d5a63ab496687981083fbce17e26b23f396a10deffd6e35222d",
+  "stateScope": "synthetic-profile",
+  "createdAt": "2026-10-20T00:00:00Z"
+}

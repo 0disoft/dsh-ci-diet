@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "operationId": "fixture-operation",
+  "bindingId": "fixture-binding",
+  "kind": "sync",
+  "phase": "finished",
+  "usedRequests": 400,
+  "inFlight": 0,
+  "fetchedRuns": 200,
+  "fetchedJobs": 173,
+  "bytesRead": 1048576,
+  "budget": {
+    "limit": 400,
+    "dispatchAttempts": 400,
+    "reserved": 0,
+    "inFlight": 0,
+    "remaining": 0,
+    "wireRequestCount": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "GitHub internal wire request count is not observed."
+    },
+    "families": {
+      "discovery": {
+        "initialQuota": 40,
+        "borrowed": 0,
+        "donated": 0,
+        "used": 40,
+        "reserved": 0,
+        "remaining": 0,
+        "state": "finished"
+      },
+      "jobs": {
+        "initialQuota": 220,
+        "borrowed": 0,
+        "donated": 0,
+        "used": 220,
+        "reserved": 0,
+        "remaining": 0,
+        "state": "finished"
+      },
+      "definitions": {
+        "initialQuota": 60,
+        "borrowed": 0,
+        "donated": 0,
+        "used": 60,
+        "reserved": 0,
+        "remaining": 0,
+        "state": "finished"
+      },
+      "policyAndFiles": {
+        "initialQuota": 80,
+        "borrowed": 0,
+        "donated": 0,
+        "used": 80,
+        "reserved": 0,
+        "remaining": 0,
+        "state": "finished"
+      }
+    }
+  },
+  "missingScopes": [
+    {
+      "family": "jobs",
+      "resource": "attempt-jobs-page",
+      "runId": "synthetic-run-101",
+      "attempt": 2,
+      "path": null,
+      "pullRequest": null,
+      "branch": null,
+      "from": "2026-10-20T00:00:00Z",
+      "to": "2026-10-20T00:00:00Z",
+      "reason": "REQUEST_BUDGET_EXHAUSTED",
+      "resumable": true
+    }
+  ],
+  "updatedAt": "2026-10-20T00:00:00Z",
+  "terminalStatus": "partial"
+}

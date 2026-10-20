@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "cases": [
+    {
+      "file": "examples/default-config.json",
+      "definition": "Config"
+    },
+    {
+      "file": "examples/binding.json",
+      "definition": "RepositoryBinding"
+    },
+    {
+      "file": "examples/attestation.json",
+      "definition": "Attestation"
+    },
+    {
+      "file": "examples/patch-plan.json",
+      "definition": "PatchPlan"
+    },
+    {
+      "file": "examples/analysis-report.json",
+      "definition": "AnalysisReport"
+    },
+    {
+      "file": "examples/finding-evaluation.json",
+      "definition": "FindingEvaluation"
+    },
+    {
+      "file": "examples/partial-progress.json",
+      "definition": "OperationProgress"
+    },
+    {
+      "file": "examples/prepared-change.json",
+      "definition": "AppliedChange"
+    },
+    {
+      "file": "evidence/capability-report.json",
+      "definition": "CapabilityReport"
+    },
+    {
+      "file": "evidence/release-scope.json",
+      "definition": "ReleaseScope"
+    }
+  ]
+}

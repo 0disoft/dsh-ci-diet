@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 2,
+  "pricingSnapshotId": "github-list-2026-10-20",
+  "observedAt": "2026-10-20T00:00:00Z",
+  "sourceUrl": "https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-actions/about-billing-for-github-actions",
+  "sourceRefs": [
+    "G10"
+  ],
+  "rows": [
+    {
+      "sku": "actions_linux_slim",
+      "target": "Linux x64 1 core",
+      "usdPerMinuteMicro": 2000,
+      "evidenceRef": "G10"
+    },
+    {
+      "sku": "actions_linux",
+      "target": "Linux x64 2 cores",
+      "usdPerMinuteMicro": 6000,
+      "evidenceRef": "G10"
+    },
+    {
+      "sku": "actions_linux_arm",
+      "target": "Linux arm64 2 cores",
+      "usdPerMinuteMicro": 5000,
+      "evidenceRef": "G10"
+    },
+    {
+      "sku": "actions_windows",
+      "target": "Windows x64 2 cores",
+      "usdPerMinuteMicro": 10000,
+      "evidenceRef": "G10"
+    },
+    {
+      "sku": "actions_windows_arm",
+      "target": "Windows arm64 2 cores",
+      "usdPerMinuteMicro": 10000,
+      "evidenceRef": "G10"
+    },
+    {
+      "sku": "actions_macos",
+      "target": "macOS M1 or Intel 3-4 cores",
+      "usdPerMinuteMicro": 62000,
+      "evidenceRef": "G10"
+    }
+  ],
+  "contentHash": "sha256:acc8d110d8f7fb00135ae8a908f82ad05c3a6d978fd427c73c28dec95e8fc3a9"
+}

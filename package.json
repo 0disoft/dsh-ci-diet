@@ -26,7 +26,8 @@
     "format": "oxfmt src tests",
     "test:core": "node --test \"tests/unit/*.test.ts\"",
     "build": "tsc -p tsconfig.build.json",
-    "smoke:node": "node dist/cli/index.js --version"
+    "smoke:node": "node dist/cli/index.js --version",
+    "check:contracts": "node scripts/sync-contracts.mjs --check"
   },
   "dependencies": {
     "ajv": "^8.17.1",

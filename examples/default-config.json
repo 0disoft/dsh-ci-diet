@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "networkEnabled": false,
+  "localApplyEnabled": false,
+  "history": {
+    "lookbackDays": 7,
+    "maxRuns": 100,
+    "maxRequests": 400,
+    "concurrentRequests": 4,
+    "requestTimeoutMs": 20000,
+    "additionalRetries": 2,
+    "quotas": {
+      "discovery": 40,
+      "jobs": 220,
+      "definitions": 60,
+      "policyAndFiles": 80
+    }
+  },
+  "apply": {
+    "maxFilesPerPlan": 1,
+    "allowedRules": [
+      "CD001",
+      "CD005",
+      "CD008"
+    ],
+    "approvalTtlSeconds": 600,
+    "policyMaxAgeSeconds": 600,
+    "attestationMaxAgeDays": 30
+  },
+  "storage": {
+    "storeMaxBytes": 268435456,
+    "warningPercent": 80,
+    "workflowMaxBytes": 524288,
+    "kvRecordMaxBytes": 16384,
+    "cacheMaxBytes": 67108864,
+    "cacheDays": 30,
+    "reportDays": 90,
+    "planDays": 7,
+    "pruneAppliedBackups": false
+  },
+  "ui": {
+    "languages": [
+      "en",
+      "ko"
+    ],
+    "progressPollMinMs": 500,
+    "modelResultMaxBytes": 65536
+  }
+}

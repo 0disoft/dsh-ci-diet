@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 2,
+  "requiredCurrentDefinition": "parsed",
+  "levels": {
+    "full": "A missing dimension adds no extra restriction for this rule. It does not waive any other condition.",
+    "subset": "Compute only within the declared subset and disclose the subset list, boundaries, and omissions in findings, reports, and plans. Show savings only for the observed subset and its n. Allow writes only when the edited job cohort has at least 20 samples and the premise and policy evidence are complete.",
+    "degrade": "Produce candidates or static findings only, and remove historical savings scenarios and write eligibility.",
+    "skip": "Keep only RuleResult and create no findings."
+  },
+  "compositionOrder": [
+    "full",
+    "subset",
+    "degrade",
+    "skip"
+  ],
+  "writeEligibility": {
+    "full": "always",
+    "subset": "requires-complete-edit-evidence",
+    "degrade": "never",
+    "skip": "never"
+  },
+  "axes": [
+    "history",
+    "workflowDefinitions",
+    "changedFiles",
+    "protectionRules",
+    "retentionPolicy"
+  ],
+  "rules": {
+    "CD001": {
+      "history": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "skip"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
+    },
+    "CD002": {
+      "history": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "skip"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
+    },
+    "CD003": {
+      "history": {
+        "complete": "full",
+        "partial": "subset",
+        "unavailable": "skip"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "subset",
+        "unavailable": "skip"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "subset",
+        "unavailable": "skip"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
+    },
+    "CD004": {
+      "history": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
+    },
+    "CD005": {
+      "history": {
+        "complete": "full",
+        "partial": "subset",
+        "unavailable": "skip"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "subset",
+        "unavailable": "degrade"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
+    },
+    "CD008": {
+      "history": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "degrade"
+      }
+    }
+  }
+}

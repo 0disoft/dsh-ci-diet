@@ -1,0 +1,251 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "reportId": "fixture-report",
+  "bindingId": "fixture-binding",
+  "engineVersion": "0.2.1-design",
+  "generatedAt": "2026-10-20T00:00:00Z",
+  "coverage": {
+    "apiVersion": "2026-03-10",
+    "ghVersion": "synthetic-not-collected",
+    "requestedFrom": "2026-10-13T00:00:00Z",
+    "requestedTo": "2026-10-20T00:00:00Z",
+    "history": {
+      "status": "unavailable",
+      "scope": "synthetic-fixture-only",
+      "fetched": 0,
+      "expected": null,
+      "reasons": [
+        "SYNTHETIC_NO_RUNTIME_COLLECTION"
+      ],
+      "missingScopes": []
+    },
+    "workflowDefinitions": {
+      "status": "complete",
+      "scope": "synthetic-fixture-only",
+      "fetched": 1,
+      "expected": 1,
+      "reasons": [],
+      "missingScopes": []
+    },
+    "changedFiles": {
+      "status": "unavailable",
+      "scope": "synthetic-fixture-only",
+      "fetched": 0,
+      "expected": null,
+      "reasons": [
+        "SYNTHETIC_NO_RUNTIME_COLLECTION"
+      ],
+      "missingScopes": []
+    },
+    "protectionRules": {
+      "status": "unavailable",
+      "scope": "synthetic-fixture-only",
+      "fetched": 0,
+      "expected": null,
+      "reasons": [
+        "SYNTHETIC_NO_RUNTIME_COLLECTION"
+      ],
+      "missingScopes": []
+    },
+    "retentionPolicy": {
+      "status": "unavailable",
+      "scope": "synthetic-fixture-only",
+      "fetched": 0,
+      "expected": null,
+      "reasons": [
+        "SYNTHETIC_NO_RUNTIME_COLLECTION"
+      ],
+      "missingScopes": []
+    }
+  },
+  "inputHashes": [
+    "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e"
+  ],
+  "findings": [],
+  "ruleResults": [
+    {
+      "ruleId": "CD001",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    },
+    {
+      "ruleId": "CD002",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    },
+    {
+      "ruleId": "CD003",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    },
+    {
+      "ruleId": "CD004",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    },
+    {
+      "ruleId": "CD005",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    },
+    {
+      "ruleId": "CD008",
+      "ruleVersion": "0.2.1-design",
+      "inputHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+      "outcome": "skipped",
+      "reasons": [
+        "RELEASE_SCOPE_UNVERIFIED",
+        "SYNTHETIC_INPUT"
+      ],
+      "findingIds": []
+    }
+  ],
+  "normalizedInputs": {
+    "jobs": [],
+    "sourceRefs": [
+      "synthetic:workflow-before.yml"
+    ]
+  },
+  "metrics": {
+    "observedRunnerSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "candidateRemovableSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "modeledRoundedMinutes": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "listPriceUsd": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "estimatedMarginalUsd": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "actualBilledUsd": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "queueSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "executionSpanSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "criticalPathWorkSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    },
+    "estimatedUserWaitReductionSeconds": {
+      "status": "unknown",
+      "value": null,
+      "basis": "not_observed",
+      "reason": "SYNTHETIC_NO_RUNTIME_COLLECTION"
+    }
+  },
+  "parentReportId": null,
+  "pricingSnapshot": {
+    "schemaVersion": 2,
+    "pricingSnapshotId": "github-list-2026-10-20",
+    "observedAt": "2026-10-20T00:00:00Z",
+    "sourceUrl": "https://docs.github.com/en/billing/managing-billing-for-your-products/managing-billing-for-github-actions/about-billing-for-github-actions",
+    "sourceRefs": [
+      "G10"
+    ],
+    "rows": [
+      {
+        "sku": "actions_linux_slim",
+        "target": "Linux x64 1 core",
+        "usdPerMinuteMicro": 2000,
+        "evidenceRef": "G10"
+      },
+      {
+        "sku": "actions_linux",
+        "target": "Linux x64 2 cores",
+        "usdPerMinuteMicro": 6000,
+        "evidenceRef": "G10"
+      },
+      {
+        "sku": "actions_linux_arm",
+        "target": "Linux arm64 2 cores",
+        "usdPerMinuteMicro": 5000,
+        "evidenceRef": "G10"
+      },
+      {
+        "sku": "actions_windows",
+        "target": "Windows x64 2 cores",
+        "usdPerMinuteMicro": 10000,
+        "evidenceRef": "G10"
+      },
+      {
+        "sku": "actions_windows_arm",
+        "target": "Windows arm64 2 cores",
+        "usdPerMinuteMicro": 10000,
+        "evidenceRef": "G10"
+      },
+      {
+        "sku": "actions_macos",
+        "target": "macOS M1 or Intel 3-4 cores",
+        "usdPerMinuteMicro": 62000,
+        "evidenceRef": "G10"
+      }
+    ],
+    "contentHash": "sha256:acc8d110d8f7fb00135ae8a908f82ad05c3a6d978fd427c73c28dec95e8fc3a9"
+  }
+}

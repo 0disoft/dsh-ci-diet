@@ -1,0 +1,269 @@
+{
+  "provenance": "synthetic",
+  "cases": [
+    {
+      "id": "original-three-jobs",
+      "jobs": [
+        {
+          "duration": 125,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              70,
+              125
+            ]
+          ]
+        },
+        {
+          "duration": 59,
+          "rateMicroUsdPerMinute": 10000,
+          "intervals": [
+            [
+              10,
+              59
+            ]
+          ]
+        },
+        {
+          "duration": 120,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              0,
+              120
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "beforeSeconds": 304,
+        "afterSeconds": 80,
+        "removedSeconds": 224,
+        "beforeMinutes": 6,
+        "afterMinutes": 3,
+        "savedMicroUsd": 18000
+      }
+    },
+    {
+      "id": "overlap-union",
+      "jobs": [
+        {
+          "duration": 300,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              0,
+              100
+            ],
+            [
+              60,
+              160
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "beforeSeconds": 300,
+        "afterSeconds": 140,
+        "removedSeconds": 160,
+        "beforeMinutes": 5,
+        "afterMinutes": 3,
+        "savedMicroUsd": 12000
+      }
+    },
+    {
+      "id": "rounding-edge",
+      "jobs": [
+        {
+          "duration": 59,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": []
+        },
+        {
+          "duration": 61,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              60,
+              61
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "beforeSeconds": 120,
+        "afterSeconds": 119,
+        "removedSeconds": 1,
+        "beforeMinutes": 3,
+        "afterMinutes": 2,
+        "savedMicroUsd": 6000
+      }
+    },
+    {
+      "id": "clipped-and-nested",
+      "jobs": [
+        {
+          "duration": 60,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              -5,
+              20
+            ],
+            [
+              5,
+              10
+            ],
+            [
+              20,
+              100
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "beforeSeconds": 60,
+        "afterSeconds": 0,
+        "removedSeconds": 60,
+        "beforeMinutes": 1,
+        "afterMinutes": 0,
+        "savedMicroUsd": 6000
+      }
+    },
+    {
+      "id": "zero-job",
+      "jobs": [
+        {
+          "duration": 0,
+          "rateMicroUsdPerMinute": 6000,
+          "intervals": [
+            [
+              0,
+              0
+            ]
+          ]
+        }
+      ],
+      "expected": {
+        "beforeSeconds": 0,
+        "afterSeconds": 0,
+        "removedSeconds": 0,
+        "beforeMinutes": 0,
+        "afterMinutes": 0,
+        "savedMicroUsd": 0
+      }
+    }
+  ],
+  "dag": {
+    "createdAtSeconds": 0,
+    "runStartedAtSeconds": 20,
+    "jobs": [
+      {
+        "id": "A",
+        "duration": 60,
+        "start": 20,
+        "end": 80,
+        "needs": []
+      },
+      {
+        "id": "B",
+        "duration": 120,
+        "start": 80,
+        "end": 200,
+        "needs": [
+          "A"
+        ]
+      },
+      {
+        "id": "D",
+        "duration": 100,
+        "start": 80,
+        "end": 180,
+        "needs": [
+          "A"
+        ]
+      },
+      {
+        "id": "C",
+        "duration": 30,
+        "start": 230,
+        "end": 260,
+        "needs": [
+          "B",
+          "D"
+        ]
+      }
+    ],
+    "expected": {
+      "jobSum": 310,
+      "queue": 20,
+      "span": 240,
+      "completion": 260,
+      "criticalPathWork": 210,
+      "scenarioCriticalPathWork": 190
+    },
+    "scenarioDurations": {
+      "B": 90
+    }
+  },
+  "timeoutCases": [
+    {
+      "id": "p95-nearest-rank",
+      "successDurationsSeconds": [
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        30,
+        45,
+        60
+      ],
+      "sampleCount": 20,
+      "expectedP95Seconds": 45,
+      "expectedMinutes": 6,
+      "expectedLongSuccessBlock": false
+    },
+    {
+      "id": "long-success-outlier",
+      "successDurationsSeconds": [
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        60,
+        1000
+      ],
+      "sampleCount": 20,
+      "expectedP95Seconds": 60,
+      "expectedMinutes": 6,
+      "expectedLongSuccessBlock": true
+    }
+  ]
+}

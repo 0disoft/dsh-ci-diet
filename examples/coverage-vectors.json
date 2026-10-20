@@ -1,0 +1,522 @@
+{
+  "schemaVersion": 2,
+  "note": "Generated from contracts/coverage-policy.json: 6 rules x 5 axes x 2 shortage states, plus 4 combination vectors. Regenerate instead of hand-editing.",
+  "cases": [
+    {
+      "id": "CD001-history-partial",
+      "ruleId": "CD001",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD001-history-unavailable",
+      "ruleId": "CD001",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD001-workflowDefinitions-partial",
+      "ruleId": "CD001",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD001-workflowDefinitions-unavailable",
+      "ruleId": "CD001",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD001-changedFiles-partial",
+      "ruleId": "CD001",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD001-changedFiles-unavailable",
+      "ruleId": "CD001",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD001-protectionRules-partial",
+      "ruleId": "CD001",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD001-protectionRules-unavailable",
+      "ruleId": "CD001",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD001-retentionPolicy-partial",
+      "ruleId": "CD001",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD001-retentionPolicy-unavailable",
+      "ruleId": "CD001",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-history-partial",
+      "ruleId": "CD002",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD002-history-unavailable",
+      "ruleId": "CD002",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD002-workflowDefinitions-partial",
+      "ruleId": "CD002",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD002-workflowDefinitions-unavailable",
+      "ruleId": "CD002",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD002-changedFiles-partial",
+      "ruleId": "CD002",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-changedFiles-unavailable",
+      "ruleId": "CD002",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-protectionRules-partial",
+      "ruleId": "CD002",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-protectionRules-unavailable",
+      "ruleId": "CD002",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-retentionPolicy-partial",
+      "ruleId": "CD002",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD002-retentionPolicy-unavailable",
+      "ruleId": "CD002",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD003-history-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "CD003-history-unavailable",
+      "ruleId": "CD003",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD003-workflowDefinitions-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "CD003-workflowDefinitions-unavailable",
+      "ruleId": "CD003",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD003-changedFiles-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "CD003-changedFiles-unavailable",
+      "ruleId": "CD003",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD003-protectionRules-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD003-protectionRules-unavailable",
+      "ruleId": "CD003",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD003-retentionPolicy-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD003-retentionPolicy-unavailable",
+      "ruleId": "CD003",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-history-partial",
+      "ruleId": "CD004",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD004-history-unavailable",
+      "ruleId": "CD004",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD004-workflowDefinitions-partial",
+      "ruleId": "CD004",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD004-workflowDefinitions-unavailable",
+      "ruleId": "CD004",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD004-changedFiles-partial",
+      "ruleId": "CD004",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-changedFiles-unavailable",
+      "ruleId": "CD004",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-protectionRules-partial",
+      "ruleId": "CD004",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-protectionRules-unavailable",
+      "ruleId": "CD004",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-retentionPolicy-partial",
+      "ruleId": "CD004",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD004-retentionPolicy-unavailable",
+      "ruleId": "CD004",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-history-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "CD005-history-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "skip"
+    },
+    {
+      "id": "CD005-workflowDefinitions-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "CD005-workflowDefinitions-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD005-changedFiles-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-changedFiles-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-protectionRules-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-protectionRules-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-retentionPolicy-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD005-retentionPolicy-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-history-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "history": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-history-unavailable",
+      "ruleId": "CD008",
+      "dimensions": {
+        "history": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-workflowDefinitions-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "workflowDefinitions": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-workflowDefinitions-unavailable",
+      "ruleId": "CD008",
+      "dimensions": {
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-changedFiles-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "changedFiles": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-changedFiles-unavailable",
+      "ruleId": "CD008",
+      "dimensions": {
+        "changedFiles": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-protectionRules-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "protectionRules": "partial"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-protectionRules-unavailable",
+      "ruleId": "CD008",
+      "dimensions": {
+        "protectionRules": "unavailable"
+      },
+      "expected": "full"
+    },
+    {
+      "id": "CD008-retentionPolicy-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "retentionPolicy": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "CD008-retentionPolicy-unavailable",
+      "ruleId": "CD008",
+      "dimensions": {
+        "retentionPolicy": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "combination-CD005-history-partial-definitions-partial",
+      "ruleId": "CD005",
+      "dimensions": {
+        "history": "partial",
+        "workflowDefinitions": "partial"
+      },
+      "expected": "subset"
+    },
+    {
+      "id": "combination-CD005-history-partial-definitions-unavailable",
+      "ruleId": "CD005",
+      "dimensions": {
+        "history": "partial",
+        "workflowDefinitions": "unavailable"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "combination-CD003-files-partial-protection-partial",
+      "ruleId": "CD003",
+      "dimensions": {
+        "changedFiles": "partial",
+        "protectionRules": "partial"
+      },
+      "expected": "degrade"
+    },
+    {
+      "id": "combination-CD008-retention-partial-definitions-partial",
+      "ruleId": "CD008",
+      "dimensions": {
+        "retentionPolicy": "partial",
+        "workflowDefinitions": "partial"
+      },
+      "expected": "degrade"
+    }
+  ]
+}

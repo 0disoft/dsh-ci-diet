@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "changeId": "fixture-change",
+  "bindingId": "fixture-binding",
+  "planId": "fixture-plan",
+  "planDigest": "sha256:1136ee8fd9c57740d3daaaa0c42e558f79173ace74d2a7833597ff71db226a95",
+  "workflowPath": ".github/workflows/fixture.yml",
+  "state": "PREPARED",
+  "before": {
+    "path": "examples/workflow-before.yml",
+    "hash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+    "bytes": 172
+  },
+  "after": {
+    "path": "examples/workflow-after.yml",
+    "hash": "sha256:b5a4c8e20cc97e074291f5f1077302f50b9bac34a97e2fa38019cfea5fde7013",
+    "bytes": 195
+  },
+  "approvalChannel": "human-cli",
+  "approvalReference": "synthetic-not-authorized",
+  "updatedAt": "2026-10-20T00:00:00Z"
+}

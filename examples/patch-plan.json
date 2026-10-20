@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 2,
+  "provenance": "synthetic",
+  "planId": "fixture-plan",
+  "planDigest": "sha256:d8984479190b5dd011bdce7017bcd340b848d54332817b5ee9501c107214d775",
+  "payload": {
+    "bindingId": "fixture-binding",
+    "rootIdentityHash": "sha256:73921f3efa7b9d5a63ab496687981083fbce17e26b23f396a10deffd6e35222d",
+    "workflowPath": ".github/workflows/fixture.yml",
+    "engineVersion": "0.2.1-design",
+    "ruleIds": [
+      "CD005"
+    ],
+    "sourceHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+    "resultHash": "sha256:b5a4c8e20cc97e074291f5f1077302f50b9bac34a97e2fa38019cfea5fde7013",
+    "dependencyHash": "sha256:81059fe6210ccee4e3349c0f34c12d180f995150128a913d63b65b7937c6b152",
+    "edits": [
+      {
+        "kind": "insertScalar",
+        "startByte": 135,
+        "endByte": 135,
+        "replacementUtf8": "    timeout-minutes: 6\n",
+        "semanticPath": "jobs.unit.timeout-minutes",
+        "ruleId": "CD005"
+      }
+    ],
+    "attestations": [
+      {
+        "schemaVersion": 2,
+        "provenance": "synthetic",
+        "attestationId": "fixture-attestation",
+        "revision": 1,
+        "bindingId": "fixture-binding",
+        "workflowPath": ".github/workflows/fixture.yml",
+        "scope": "job",
+        "jobKey": "unit",
+        "stepKey": null,
+        "workflowHash": "sha256:7df6c28e1ce4ab7a02d4400ace90f09e2aa785edaecb131924cd6abfd620a16e",
+        "dependencyHash": "sha256:81059fe6210ccee4e3349c0f34c12d180f995150128a913d63b65b7937c6b152",
+        "claims": {
+          "ciOnly": true,
+          "replaceSafe": false,
+          "artifactPurpose": "unknown",
+          "consumerMinDays": null,
+          "reviewedOpaqueNodes": []
+        },
+        "evidenceRefs": [
+          "synthetic:fixture-only"
+        ],
+        "issuedBy": {
+          "channel": "human-cli",
+          "subjectId": "synthetic-subject-not-a-user"
+        },
+        "attestedAt": "2026-10-20T00:00:00Z",
+        "expiresAt": "2026-11-19T00:00:00Z",
+        "revokedAt": null,
+        "dependencies": []
+      }
+    ],
+    "policies": [
+      {
+        "kind": "protection",
+        "bindingId": "fixture-binding",
+        "status": "unknown",
+        "observedAt": "2026-10-20T00:00:00Z",
+        "policyHash": "sha256:7952e9432fcaaae89511fea95fe2581345339b22b15e429a8481a89c870a4f60",
+        "effectiveMaxDays": null,
+        "requiredCheckNames": [],
+        "sourceRef": "synthetic:no-protection-read"
+      }
+    ],
+    "blockers": [
+      "SYNTHETIC_INPUT",
+      "RELEASE_SCOPE_UNVERIFIED"
+    ],
+    "createdAt": "2026-10-20T00:00:00Z",
+    "expiresAt": "2026-10-20T00:10:00Z",
+    "dependencies": []
+  },
+  "status": {
+    "state": "draft",
+    "revision": 1,
+    "previewedAt": null,
+    "approvedAt": null,
+    "approvalNonceId": null
+  }
+}
