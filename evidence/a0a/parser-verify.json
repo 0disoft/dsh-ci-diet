@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-10-20T13:16:07.602Z",
+  "totals": {
+    "jobs": 1298,
+    "single": 122,
+    "keyEqualsName": 78,
+    "nameLiteral": 213,
+    "matrix": 157,
+    "unmapped": 728,
+    "unsupportedWorkflows": 0,
+    "matched": 570,
+    "matchRate": 0.4391
+  },
+  "cohorts": {
+    "count": 165,
+    "withAtLeast5": 17,
+    "withAtLeast20": 3
+  }
+}

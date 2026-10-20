@@ -114,6 +114,29 @@ roughly four per variant. **At the default 100-run budget the 20-sample write ga
 is effectively unreachable for matrix workflows, and no cohort both reached 20
 samples and lacked a timeout.**
 
+### Production port
+
+`src/core/workflow` now implements the same two pieces: a yaml CST parse that
+keeps UTF-8 byte ranges and reports unsupported shapes, and the four-step recovery
+above. `scripts/spikes/a0a-parser-verify.mjs` replays it over the same 1,298 job
+rows (evidence in `evidence/a0a/parser-verify.json`):
+
+| Rule | Jobs |
+| --- | --- |
+| Single-job workflow | 122 |
+| Display name equals key | 78 |
+| Display name equals `name:` literal | 213 |
+| Matrix-expanded `name:` match | 157 |
+| Unmatched | 728 |
+| Match rate | 43.9% |
+
+The 3.2 point gain over the prototype comes from honoring `matrix.include` and
+`matrix.exclude`, which adds combinations the prototype dropped. Cohorts: 165
+total, 17 reach five samples, three reach twenty. None of the sampled definitions
+needed an unsupported-shape fallback. The parser is still the gate: when a
+definition is unparsable or its shape is unsupported, the rule that needs it skips
+instead of guessing.
+
 ## Gate decisions
 
 | Rule | Gate | Decision |

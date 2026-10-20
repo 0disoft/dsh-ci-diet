@@ -1,0 +1,5 @@
+name: Tagged
+on: push
+jobs:
+  a:
+    runs-on: !custom ubuntu-latest

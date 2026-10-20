@@ -1,0 +1,6 @@
+name: Alias
+on: push
+jobs:
+  a: &job
+    runs-on: ubuntu-latest
+  b: *job

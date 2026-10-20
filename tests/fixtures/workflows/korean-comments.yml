@@ -1,0 +1,9 @@
+# 워크플로 설명: 한국어 주석이 UTF-8 바이트 오프셋에 영향을 준다
+name: 한글 테스트
+on: push
+jobs:
+  빌드:
+    name: 테스트 실행
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - name: Windows
+            os: windows-latest
+          - name: Linux
+            os: namespace-profile-default
+          - name: macOS
+            os: macos-15
+        run-all:
+          - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          - run-all: false
+            runner:
+              name: Windows
+    runs-on: ${{ matrix.runner.os }}
+    timeout-minutes: 30
+    name: ${{ matrix.runner.name }}
+    steps:
+      - run: echo ok
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ok

@@ -37,6 +37,10 @@ new record, not an edit to the rationale.
 - ADR-13 also rests on `evidence/a0a/jobkey.json`: best-effort key recovery
   matched 40.7% of sampled jobs, and the only key-level cohort with 20 samples
   already carried a timeout. Per-matrix cohorting makes the gate rarer still.
+- The `src/core/workflow` port replays the same sample at 43.9%
+  (`evidence/a0a/parser-verify.json`). Honoring `matrix.include` and `exclude`
+  explains the gain; computed matrices still resolve to nothing, so the
+  key-recovery ceiling is a data property, not an implementation gap.
 - CD005 is revisited only with real history, not with a lowered threshold: after
   five or more users sync 90 days of history, if at least half of those
   repositories produce one or more candidates with no timeout, a cohort of five

@@ -1,0 +1,7 @@
+name: One
+on: push
+jobs:
+  a:
+    runs-on: ubuntu-latest
+---
+name: Two
