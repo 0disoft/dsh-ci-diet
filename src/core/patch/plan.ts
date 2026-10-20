@@ -57,7 +57,7 @@ export function previewEdits(
   }
   const applied = applyEdits(text, edits);
   if (applied.hash === sourceHash) throw new Error("NO_OP_PLAN: edits do not change the bytes");
-  const problems = semanticProblems(workflow, applied.text, edits);
+  const problems = semanticProblems({ original: workflow, originalText: text, resultText: applied.text, edits });
   if (problems.length > 0) throw new Error("EDIT_OUT_OF_SCOPE: " + problems.join("; "));
   for (const edit of edits) {
     const problem = semanticCheck(workflow, applied.text, edit, expected);

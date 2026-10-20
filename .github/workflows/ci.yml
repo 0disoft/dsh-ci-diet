@@ -24,3 +24,5 @@ jobs:
       - run: bun run test:core
       - run: bun run test:docs
       - run: bun run check:contracts
+      - run: bun run build
+      - run: bun run smoke:node

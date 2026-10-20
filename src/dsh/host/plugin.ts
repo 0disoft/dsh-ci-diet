@@ -14,6 +14,9 @@ import { claimsFromTokens, evaluatePatchEligibility } from "../../core/patch/eli
 import type { PatchRule } from "../../core/patch/eligibility.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../../core/patch/plan.ts";
 import { createAttestation } from "../../core/patch/attestation.ts";
+import { collectDependencies } from "../../core/patch/dependencies.ts";
+import { findFindingForRequest, targetReasons } from "../../core/patch/target.ts";
+import type { PlanRequest } from "../../core/patch/target.ts";
 import { createLocalBinding, readGithubRemote } from "../../core/scan/binding.ts";
 import { discoverWorkflows } from "../../core/scan/discover.ts";
 import { runStaticScan } from "../../core/scan/scan.ts";
@@ -309,13 +312,26 @@ export function apply(ctx: Context, config: Config) {
       const workflow = parseWorkflow(file.path, file.text);
       if (workflow.parseError !== null || workflow.unsupported.length > 0) throw new Error("workflow cannot be edited safely: " + file.path);
 
+      const request: PlanRequest = {
+        rule,
+        jobKey: args.job ?? null,
+        stepIndex: rule === "CD008" ? (args.step ?? null) : null,
+        minutes: args.minutes ?? null,
+        retentionDays: PROPOSED_RETENTION_DAYS,
+      };
+      const jobs = workflow.jobs;
+      const job: WorkflowJob | undefined = request.jobKey === null ? undefined : jobs.find((entry) => entry.key === request.jobKey);
+      const findings = report.findings.filter((finding) => finding.ruleId === rule && finding.workflowPath === workflowPath);
+      const chosenFinding = findFindingForRequest(findings, request);
       const blockers: string[] = [];
+      if (chosenFinding === null) blockers.push("FINDING_NOT_FOUND");
+      else blockers.push(...targetReasons({ finding: chosenFinding, request, history, workflowText: file.text, workflow }));
+
       const edits: ByteEdit[] = [];
       let scope: "workflow" | "job" | "step" = "workflow";
       let jobKey: string | null = null;
       let stepKey: string | null = null;
       let expected: { group?: string; minutes?: number; days?: number } = {};
-      const job: WorkflowJob | undefined = args.job === undefined ? undefined : workflow.jobs.find((entry) => entry.key === args.job);
       if (rule === "CD001") {
         if (workflow.concurrency !== null) blockers.push("EXISTING_CONCURRENCY");
         else {
@@ -327,21 +343,21 @@ export function apply(ctx: Context, config: Config) {
           }
         }
       } else if (rule === "CD005") {
-        if (job === undefined || args.minutes === undefined) blockers.push("JOB_AND_MINUTES_REQUIRED");
+        if (job === undefined || request.minutes === null) blockers.push("JOB_AND_MINUTES_REQUIRED");
         else {
-          const result = planTimeoutEdit(file.text, workflow, job, args.minutes);
+          const result = planTimeoutEdit(file.text, workflow, job, request.minutes);
           if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
           else {
             edits.push(result.edit);
             scope = "job";
             jobKey = job.key;
-            expected = { minutes: args.minutes };
+            expected = { minutes: request.minutes };
           }
         }
       } else {
-        if (job === undefined || args.step === undefined) blockers.push("JOB_AND_STEP_REQUIRED");
+        if (job === undefined || request.stepIndex === null) blockers.push("JOB_AND_STEP_REQUIRED");
         else {
-          const step = job.steps[args.step];
+          const step = job.steps[request.stepIndex];
           if (step === undefined) blockers.push("STEP_NOT_FOUND");
           else {
             const result = planRetentionEdit(file.text, job, step, PROPOSED_RETENTION_DAYS);
@@ -350,7 +366,7 @@ export function apply(ctx: Context, config: Config) {
               edits.push(result.edit);
               scope = "step";
               jobKey = job.key;
-              stepKey = "steps[" + args.step + "]";
+              stepKey = "steps[" + request.stepIndex + "]";
               expected = { days: PROPOSED_RETENTION_DAYS };
             }
           }
@@ -358,23 +374,21 @@ export function apply(ctx: Context, config: Config) {
       }
 
       const claims = claimsFromTokens((args.claims ?? []) as string[]);
-      const findings = report.findings.filter((finding) => finding.ruleId === rule && finding.workflowPath === workflowPath);
-      const evaluated = findings.map((finding) => ({
-        finding,
-        eligibility: evaluatePatchEligibility({
-          rule,
-          finding,
-          coverage: report.coverage,
-          claims,
-          history,
-          currentDefinitionParsed: true,
-          editedJobEvidenceComplete: true,
-          now,
-        }),
-      }));
-      const chosen = evaluated.find((entry) => entry.eligibility.allowed) ?? evaluated[0];
-      if (chosen === undefined) blockers.push("FINDING_NOT_FOUND");
-      else if (!chosen.eligibility.allowed) blockers.push(...chosen.eligibility.reasons);
+      const eligibility = chosenFinding === null
+        ? null
+        : evaluatePatchEligibility({
+            rule,
+            finding: chosenFinding,
+            coverage: report.coverage,
+            claims,
+            history,
+            currentDefinitionParsed: true,
+            editedJobEvidenceComplete: true,
+            now,
+          });
+      if (eligibility !== null && !eligibility.allowed) blockers.push(...eligibility.reasons);
+
+      const dependencies = collectDependencies(binding.workspaceRoot, workflow);
 
       let planDigest: string | null = null;
       if (blockers.length === 0 && history !== null) {
@@ -382,7 +396,7 @@ export function apply(ctx: Context, config: Config) {
           bindingId: binding.bindingId,
           workflowPath: file.path,
           workflowHash: workflow.sha256,
-          dependencyHash: dependencyHashOf([]),
+          dependencyHash: dependencyHashOf(dependencies),
           scope,
           jobKey,
           stepKey,
@@ -400,9 +414,10 @@ export function apply(ctx: Context, config: Config) {
             edits,
             attestations: [attestation],
             policies,
-            blockers: chosen === undefined ? [] : chosen.eligibility.remainingBlockers,
+            blockers: eligibility === null ? [] : eligibility.remainingBlockers,
             coverageWriteAllowed: true,
             now,
+            dependencies,
             expected,
           });
           planDigest = built.plan.planDigest;
@@ -410,7 +425,6 @@ export function apply(ctx: Context, config: Config) {
           blockers.push(error instanceof Error ? error.message : "PLAN_REJECTED");
         }
       }
-
       const nextCommand = "ci-diet plan --rule " + rule + " --workflow " + workflowPath +
         (args.job === undefined ? "" : " --job " + args.job) +
         (args.step === undefined ? "" : " --step " + args.step) +
@@ -421,7 +435,7 @@ export function apply(ctx: Context, config: Config) {
         edits,
         planDigest: planDigest ?? "",
         writeAllowed: blockers.length === 0,
-        coverageLevel: chosen === undefined ? "skip" : chosen.eligibility.coverageLevel,
+        coverageLevel: eligibility === null ? "skip" : eligibility.coverageLevel,
         blockers,
         nextCommand,
       };

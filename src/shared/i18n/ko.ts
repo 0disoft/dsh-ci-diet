@@ -65,6 +65,8 @@ export const ko: Record<MessageKey, string> = {
   "cli.plan.workflowTooLarge": "워크플로 파일이 분석 한도 512KiB를 넘습니다.",
   "cli.plan.writeBlocked": "{rule}은(는) 수집 범위 {level}에서 파일을 쓸 수 없습니다.",
   "cli.plan.notEligible": "최근 보고서에 이 워크플로에 대한 {rule}의 쓸 수 있는 발견이 없습니다.",
+  "cli.plan.notTarget": "최근 보고서의 {rule} 발견 중 {target}을(를) 측정한 것이 없습니다.",
+  "cli.plan.staleEvidence": "보고서를 만든 뒤 워크플로 파일이 바뀌었습니다. ci-diet sync를 다시 실행한 뒤 새 계획을 만드세요.",
   "cli.plan.created": "{workflow}에 대한 계획 {plan}을(를) 만들었습니다 ({rule}).",
   "cli.plan.target": "대상 파일: {path}",
   "cli.plan.digest": "계획 다이제스트: {digest}",

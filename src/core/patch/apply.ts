@@ -212,7 +212,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
       return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null };
     }
     const original = parseWorkflow(plan.payload.workflowPath, beforeText);
-    const problems = semanticProblems(original, applied.text, plan.payload.edits);
+    const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
     if (problems.length > 0) {
       options.store.appendEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
       return { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null };

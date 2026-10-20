@@ -22,6 +22,9 @@ import { ENGINE_VERSION } from "../core/version.ts";
 import { PatchStore } from "../core/patch/store.ts";
 import type { PlanMeta } from "../core/patch/store.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../core/patch/plan.ts";
+import { collectDependencies } from "../core/patch/dependencies.ts";
+import { findFindingForRequest, targetReasons } from "../core/patch/target.ts";
+import type { PlanRequest } from "../core/patch/target.ts";
 import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../core/patch/edits.ts";
 import type { EditResult } from "../core/patch/edits.ts";
 import type { ByteEdit } from "../core/contracts/schema.ts";
@@ -485,6 +488,40 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     return EXIT_USAGE;
   }
 
+  const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
+  if (historyJson === null) {
+    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+
+  const request: PlanRequest = {
+    rule,
+    jobKey: options.job,
+    stepIndex: rule === "CD008" ? options.step : null,
+    minutes: options.minutes,
+    retentionDays: PROPOSED_RETENTION_DAYS,
+  };
+  const candidates = report.findings.filter((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
+  const chosenFinding = findFindingForRequest(candidates, request);
+  if (chosenFinding === null) {
+    process.stderr.write(t("cli.plan.notTarget", { rule, target: options.job ?? "workflow" }) + "\n");
+    process.stderr.write("  - FINDING_NOT_FOUND\n");
+    return EXIT_INCOMPLETE;
+  }
+  const targetProblems = targetReasons({
+    finding: chosenFinding,
+    request,
+    history: historyJson,
+    workflowText: file.text,
+    workflow,
+  });
+  if (targetProblems.length > 0) {
+    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
+    for (const problem of targetProblems) process.stderr.write("  - " + problem + "\n");
+    if (targetProblems.includes("WORKFLOW_HASH_MISMATCH")) process.stderr.write(t("cli.plan.staleEvidence") + "\n");
+    return EXIT_INCOMPLETE;
+  }
+
   let edits: ByteEdit[] = [];
   let scope: "workflow" | "job" | "step" = "workflow";
   let jobKey: string | null = null;
@@ -523,11 +560,12 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     expected = { days };
   }
 
+  const dependencies = collectDependencies(binding.workspaceRoot, workflow);
   const attestation = createAttestation({
     bindingId: binding.bindingId,
     workflowPath: file.path,
     workflowHash: workflow.sha256,
-    dependencyHash: dependencyHashOf([]),
+    dependencyHash: dependencyHashOf(dependencies),
     scope,
     jobKey,
     stepKey,
@@ -537,36 +575,19 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     now,
   });
 
-  const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
-  if (historyJson === null) {
-    process.stderr.write(t("cli.plan.syncRequired") + "\n");
-    return EXIT_USAGE;
-  }
-
-  const candidates = report.findings.filter((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
-  if (candidates.length === 0) {
+  const eligibility = evaluatePatchEligibility({
+    rule,
+    finding: chosenFinding,
+    coverage: report.coverage,
+    claims: attestation.claims,
+    history: historyJson,
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+    now,
+  });
+  if (!eligibility.allowed) {
     process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
-    process.stderr.write("  - FINDING_NOT_FOUND\n");
-    return EXIT_INCOMPLETE;
-  }
-  const evaluated = candidates.map((finding) => ({
-    finding,
-    eligibility: evaluatePatchEligibility({
-      rule,
-      finding,
-      coverage: report.coverage,
-      claims: attestation.claims,
-      history: historyJson,
-      currentDefinitionParsed: true,
-      editedJobEvidenceComplete: true,
-      now,
-    }),
-  }));
-  const chosen = evaluated.find((entry) => entry.eligibility.allowed) ?? evaluated[0];
-  if (chosen === undefined) return EXIT_INCOMPLETE;
-  if (!chosen.eligibility.allowed) {
-    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
-    for (const reason of chosen.eligibility.reasons) process.stderr.write("  - " + reason + "\n");
+    for (const reason of eligibility.reasons) process.stderr.write("  - " + reason + "\n");
     return EXIT_INCOMPLETE;
   }
   store.saveAttestation(attestation);
@@ -585,11 +606,13 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     edits,
     attestations: [attestation],
     policies,
-    blockers: chosen.eligibility.remainingBlockers,
+    blockers: eligibility.remainingBlockers,
     coverageWriteAllowed: true,
     now,
+    dependencies,
     expected,
   });
+
   const plan = built.plan;
   const meta: PlanMeta = { coverageWriteAllowed: true, reportId: report.reportId };
   store.savePlan(plan, meta);

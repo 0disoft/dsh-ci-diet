@@ -255,6 +255,9 @@ export function semanticCheck(
     if (expected.group !== undefined && reparsed.concurrency.group !== expected.group) {
       return "EDIT_RESULT_INVALID: concurrency group mismatch";
     }
+    if (reparsed.concurrency.cancelInProgress !== true) {
+      return "EDIT_RESULT_INVALID: cancel-in-progress must be true";
+    }
     return null;
   }
   const jobKey = /^jobs\.([^.]+)\./.exec(edit.semanticPath);

@@ -1,5 +1,6 @@
 import type { Finding } from "../contracts/schema.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
+import type { HistoryBundle } from "../history/model.ts";
 import { notApplicableSeconds, unknownSeconds } from "../savings/metrics.ts";
 import { isAnalyzable, recoverJobKey } from "../workflow/index.ts";
 import { RULE_VERSION } from "../version.ts";
@@ -39,20 +40,22 @@ interface JobState {
   readonly risky: boolean;
 }
 
-function recommendedMinutes(p95Seconds: number): number {
+export function recommendedMinutes(p95Seconds: number): number {
   return Math.ceil(Math.max(2 * p95Seconds, p95Seconds + 300) / 60);
 }
 
-function evaluateCd005(context: RuleContext): RuleEvaluation {
-  const inputHash = historyInputHash(context, RULE_ID);
-  if (context.history === undefined || context.mode !== "history") {
-    return skipped(inputHash, ["HISTORY_NOT_SYNCED"]);
-  }
-  const composition = composeCoverage(context.coverage, RULE_ID);
-  if (composition.level === "skip") return skipped(inputHash, composition.reasons);
+/** One p95 cohort of a job, exactly as evaluateCd005 groups it. */
+export interface Cd005Evidence {
+  readonly sampleCount: number;
+  readonly p95Seconds: number;
+  readonly recommendedMinutes: number;
+  readonly runnerKey: string;
+  readonly event: string;
+}
 
+function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
   const cohorts = new Map<string, Cohort>();
-  for (const { run, definition } of analyzableRuns(context.history)) {
+  for (const { run, definition } of analyzableRuns(history)) {
     for (const job of run.jobs) {
       if (job.conclusion !== "success") continue;
       const seconds = jobSeconds(job);
@@ -85,6 +88,48 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
       }
     }
   }
+  return cohorts;
+}
+
+/**
+ * The recommendations that back any CD005 finding for this job. A plan may
+ * only write one of these values: picking a job or a number that no finding
+ * measured is exactly the mistake this function exists to prevent.
+ */
+export function cd005Recommendations(
+  history: HistoryBundle,
+  workflowPath: string,
+  workflowHash: string,
+  jobKey: string,
+): Cd005Evidence[] {
+  const out: Cd005Evidence[] = [];
+  for (const cohort of collectCohorts(history).values()) {
+    if (cohort.workflowPath !== workflowPath) continue;
+    if (cohort.workflowHash !== workflowHash) continue;
+    if (cohort.jobKey !== jobKey) continue;
+    if (cohort.samples.length < CD005_CANDIDATE_COHORT) continue;
+    const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
+    if (p95 === null) continue;
+    out.push({
+      sampleCount: cohort.samples.length,
+      p95Seconds: p95,
+      recommendedMinutes: recommendedMinutes(p95),
+      runnerKey: cohort.runnerKey,
+      event: cohort.event,
+    });
+  }
+  return out;
+}
+
+function evaluateCd005(context: RuleContext): RuleEvaluation {
+  const inputHash = historyInputHash(context, RULE_ID);
+  if (context.history === undefined || context.mode !== "history") {
+    return skipped(inputHash, ["HISTORY_NOT_SYNCED"]);
+  }
+  const composition = composeCoverage(context.coverage, RULE_ID);
+  if (composition.level === "skip") return skipped(inputHash, composition.reasons);
+
+  const cohorts = collectCohorts(context.history);
 
   const findings: Finding[] = [];
   for (const cohort of cohorts.values()) {
@@ -99,16 +144,11 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
       timeoutPresent: job.timeoutRange !== null,
       risky: jobLooksRisky(job),
     };
-    if (state.timeoutMinutes !== null && state.timeoutMinutes >= 1) {
-      const p95AtLeast = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
-      if (p95AtLeast === null) continue;
-      const recommendation = recommendedMinutes(p95AtLeast);
-      if (state.timeoutMinutes >= recommendation) continue;
-    }
-
     const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
     if (p95 === null) continue;
     const recommendation = recommendedMinutes(p95);
+    if (state.timeoutMinutes !== null && state.timeoutMinutes >= 1 && state.timeoutMinutes >= recommendation) continue;
+
     const cohortReady = n >= CD005_MIN_COHORT;
     const excess = cohort.samples.some((sample) => sample.seconds > recommendation * 60);
 

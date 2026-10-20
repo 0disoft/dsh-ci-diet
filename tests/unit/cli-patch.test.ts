@@ -156,3 +156,12 @@ test("CLI plan refuses to reuse another repository's report", () => {
   assert.equal(planned.status, 1);
   assert.match(planned.stderr, /sync/i);
 });
+test("CLI plan refuses findings for workflow bytes that changed", () => {
+  const { root, file } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  writeFileSync(file, WORKFLOW + "# changed\n", "utf8");
+  const planned = cli(["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe"], root);
+  assert.equal(planned.status, 3, planned.stderr);
+  assert.match(planned.stderr, /WORKFLOW_HASH_MISMATCH/);
+});
