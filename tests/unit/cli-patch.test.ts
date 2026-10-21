@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -252,6 +252,34 @@ test("CLI reports successful committed actions with a warning when the event log
   assert.match(reverted.stderr, /EVENT_LOG_UNAVAILABLE/);
   assert.equal((JSON.parse(reverted.stdout) as { state: string }).state, "REVERTED");
   assert.equal(readFileSync(file, "utf8"), WORKFLOW);
+});
+
+test("CLI apply retains refusal exit code and JSON when the event log is unavailable", (t) => {
+  const { root, file } = makeRepo();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
+  const approved = cli(["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir], root);
+  assert.equal(approved.status, 0, approved.stderr);
+  const nonceFile = join(stateDir, "plans", plan.planId + ".nonce.json");
+  const nonce = readFileSync(nonceFile, "utf8");
+  const changed = WORKFLOW + "# user edit\n";
+  writeFileSync(file, changed);
+  const eventFile = join(stateDir, "events", "events.jsonl");
+  rmSync(eventFile);
+  mkdirSync(eventFile);
+  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  assert.equal(applied.status, 3, applied.stderr);
+  assert.match(applied.stderr, /EVENT_LOG_UNAVAILABLE/);
+  assert.deepEqual(JSON.parse(applied.stdout), { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null });
+  assert.equal(readFileSync(file, "utf8"), changed);
+  assert.equal(readFileSync(nonceFile, "utf8"), nonce);
+  assert.equal(PatchStore.open(stateDir).listChanges().length, 0);
 });
 
 test("CLI apply rejects a corrupt approved plan without consuming approval or writing workflows", () => {

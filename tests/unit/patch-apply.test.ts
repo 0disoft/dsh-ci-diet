@@ -7,7 +7,8 @@ import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { PatchStore } from "../../src/core/patch/store.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../../src/core/patch/plan.ts";
-import { planConcurrencyEdit, planTimeoutEdit } from "../../src/core/patch/edits.ts";
+import { applyEdits, planConcurrencyEdit, planTimeoutEdit } from "../../src/core/patch/edits.ts";
+import { digestOf } from "../../src/shared/cdj1.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
 import { applyPlan, revertChange } from "../../src/core/patch/apply.ts";
@@ -110,6 +111,42 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(backup?.afterText, after);
   assert.equal(approved.plan.status.state, "approved");
 });
+
+for (const refusal of ["changed source", "out of scope", "changed before replace"] as const) {
+  test("apply preserves " + refusal + " refusal when the summary event fails", async (t) => {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    let plan = f.plan;
+    if (refusal === "out of scope") {
+      const edit = { ...plan.payload.edits[0]!, replacementUtf8: plan.payload.edits[0]!.replacementUtf8 + "permissions: {}\n" };
+      const payload = { ...plan.payload, edits: [edit], resultHash: applyEdits(f.text, [edit]).hash };
+      plan = { ...plan, payload, planDigest: digestOf(payload) };
+      f.store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+    }
+    approvePlan({ store: f.store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const nonce = f.store.readNonce(plan.planId);
+    const concurrentText = f.text + "# user edit\n";
+    if (refusal === "changed source") writeFileSync(f.file, concurrentText);
+    if (refusal === "changed before replace") {
+      const saveChange = f.store.saveChange.bind(f.store);
+      t.mock.method(f.store, "saveChange", (change: Parameters<PatchStore["saveChange"]>[0]) => {
+        saveChange(change);
+        if (change.state === "PREPARED") writeFileSync(f.file, concurrentText);
+      });
+    }
+    t.mock.method(f.store, "appendEvent", () => { throw new Error("private log error details"); });
+    const result = await applyPlan({ store: f.store, planId: plan.planId, now: f.now, subjectId: "tester" });
+    assert.equal(result.state, "not_applied");
+    assert.deepEqual(result.reasons, [refusal === "out of scope" ? "EDIT_OUT_OF_SCOPE" : "SOURCE_HASH_MISMATCH"]);
+    assert.deepEqual(result.warnings, ["EVENT_LOG_UNAVAILABLE"]);
+    assert.equal(result.change, null);
+    assert.equal(result.resultText, null);
+    assert.equal(readFileSync(f.file, "utf8"), refusal === "out of scope" ? f.text : concurrentText);
+    assert.deepEqual(f.store.readNonce(plan.planId), nonce);
+    assert.deepEqual(f.store.listChanges().map((change) => change.state), refusal === "changed before replace" ? ["NOT_APPLIED"] : []);
+  });
+}
 
 for (const failingWrite of ["saveNonce", "savePlan"] as const) {
   test("approval can retry after " + failingWrite + " fails without permitting an unapproved apply", async (t) => {

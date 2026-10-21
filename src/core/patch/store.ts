@@ -365,7 +365,7 @@ export class PatchStore {
     writeFileSync(path, line, { encoding: "utf8", flag: "a" });
   }
 
-  /** Call after authoritative records are saved; a summary failure cannot undo them. */
+  /** Auxiliary summaries must not replace an authoritative success or refusal. */
   appendSummaryEvent(event: Record<string, unknown>, now: Date): readonly string[] {
     try {
       this.appendEvent(event, now);

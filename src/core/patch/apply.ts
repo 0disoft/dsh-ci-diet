@@ -206,8 +206,8 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
       currentPolicies: currentPolicies(options.store, binding, options.now),
     });
     if (reasons.length > 0) {
-      options.store.appendEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
-      return { state: "not_applied", reasons, change: null, resultText: null };
+      const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
+      return { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
     }
 
     // Recompute the edited bytes now: never trust a preview file that may be stale.
@@ -219,8 +219,8 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
     const original = parseWorkflow(plan.payload.workflowPath, beforeText);
     const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
     if (problems.length > 0) {
-      options.store.appendEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
-      return { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null };
+      const warnings = options.store.appendSummaryEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
+      return { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
     }
 
     const changeId = options.store.changeIdFor(plan.planId, options.now);
@@ -242,8 +242,8 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
     const recheck = readFileSync(target, "utf8");
     if (textHash(recheck) !== textHash(beforeText)) {
       options.store.saveChange({ ...prepared, state: "NOT_APPLIED", updatedAt: iso(options.now) });
-      options.store.appendEvent({ type: "source_changed_before_replace", planId: plan.planId, changeId }, options.now);
-      return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null };
+      const warnings = options.store.appendSummaryEvent({ type: "source_changed_before_replace", planId: plan.planId, changeId }, options.now);
+      return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
     }
 
     if (!options.store.consumeNonce(plan.planId, reference)) {
