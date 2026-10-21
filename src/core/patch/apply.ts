@@ -35,6 +35,32 @@ const WRITER_LEASE_STALE_MS = 10 * 60_000;
 const DEFAULT_APPROVAL_TTL_SECONDS = 600;
 const LEASE_TOKEN_FILE = "owner";
 
+/** Tokens are lease_<pid base36>_<created base36>_<random>. */
+function leaseOwnerPid(owner: string): number | null {
+  const match = /^lease_([0-9a-z]+)_/.exec(owner);
+  if (match === null) return null;
+  const pid = Number.parseInt(match[1]!, 36);
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
+/**
+ * A stale mtime is not proof that the owner stopped: a long apply can run past
+ * the threshold. Ask the operating system whether the recorded process still
+ * exists and fail closed when the token cannot be parsed, because moving a
+ * live owner outside the lease path would let a third writer start next to it.
+ */
+function leaseOwnerAlive(owner: string): boolean {
+  const pid = leaseOwnerPid(owner);
+  if (pid === null) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM means the process exists but belongs to another user.
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 function iso(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
@@ -88,9 +114,10 @@ export interface LeaseObservation {
  * on platform file locking. A stale lease (a crashed process) expires by mtime.
  * The lease carries a unique owner token so a release only removes its own
  * lease, and a stale lease is taken over with rename, never remove-then-create.
- * A rename alone is not enough: the lease can be released and re-created by a
- * live writer between the staleness check and the rename, so takeover verifies
- * the moved token and restores the lease instead of stealing it.
+ * A stale mtime only means the lease might be abandoned; the takeover first
+ * checks that the recorded owner process is gone, so a live long-running writer
+ * is never moved out of the lease path. After the rename it verifies the moved
+ * token again and restores the lease instead of stealing a live one.
  */
 function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T> {
   const lockRoot = join(store.root, "locks");
@@ -128,6 +155,9 @@ function acquireWriterLease(lease: string, token: string): void {
   if (Date.now() - observed.mtimeMs <= WRITER_LEASE_STALE_MS) {
     throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
   }
+  if (leaseOwnerAlive(observed.owner)) {
+    throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
+  }
   takeOverWriterLease(lease, token, observed);
 }
 
@@ -146,6 +176,11 @@ function readLeaseObservation(lease: string): LeaseObservation | null {
 
 /** Exported so the lease-race test can replay the takeover decision directly. */
 export function takeOverWriterLease(lease: string, token: string, observed: LeaseObservation): void {
+  // Never move a lease whose owner process is still alive, even if its mtime
+  // looks stale: the owner may simply be in a long apply.
+  if (leaseOwnerAlive(observed.owner)) {
+    throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
+  }
   // rename is the atomic primitive: exactly one process can move the stale
   // directory aside, so two takeovers cannot both become the writer. The moved
   // directory is then checked against what was observed: a live writer may have
@@ -167,7 +202,7 @@ export function takeOverWriterLease(lease: string, token: string, observed: Leas
     throw new Error("WRITE_CONFLICT: another ci-diet writer is taking over the lease");
   }
   const moved = readLeaseObservation(trash);
-  if (moved === null || moved.owner !== observed.owner) {
+  if (moved === null || moved.owner !== observed.owner || leaseOwnerAlive(moved.owner)) {
     // The lease we moved is not the stale one we observed. Put the live lease
     // back so its owner keeps serialization; never delete another token.
     restoreWriterLease(trash, lease);
@@ -204,8 +239,12 @@ function createWriterLease(lease: string, token: string): void {
 }
 
 function releaseWriterLease(lease: string, token: string): void {
-  // Move first and inspect the moved directory, so a lease that changed owners
-  // between the token read and the delete is restored instead of removed.
+  // Never move a lease that is not ours: if the owner token changed, the path
+  // belongs to someone else and must stay where other writers can see it.
+  const current = readLeaseObservation(lease);
+  if (current === null || current.owner !== token) return;
+  // Move our own lease aside and inspect it once more, so a lease that changed
+  // owners between the token read and the delete is restored instead of removed.
   const trash = lease + ".release-" + token;
   try {
     renameSync(lease, trash);

@@ -1,5 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,6 +45,17 @@ const WORKFLOW = [
   "      - run: echo deploy",
   "",
 ].join("\n");
+
+/** A real process id that is no longer running, for the crashed-owner case. */
+async function deadPid(): Promise<number> {
+  const child = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  await once(child, "exit");
+  return child.pid!;
+}
+
+function leaseToken(pid: number, suffix = "test"): string {
+  return "lease_" + pid.toString(36) + "_" + Date.now().toString(36) + "_" + suffix;
+}
 
 function workspace(): { root: string; file: string } {
   const root = mkdtempSync(join(tmpdir(), "ci-diet-safety-"));
@@ -435,32 +448,51 @@ test("a blocked finding is never planned", () => {
   assert.ok(blocked.reasons.includes("DEPLOY_OR_RELEASE_JOB"));
 });
 
-test("a lease replaced while it is inspected is restored, never stolen", (t) => {
+test("a lease replaced while it is inspected is restored, never stolen", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "ci-diet-lease-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const lease = join(root, "writer");
   mkdirSync(lease, { recursive: true });
-  writeFileSync(join(lease, "owner"), "live-owner", "utf8");
-  // The takeover observed the old, stale token, but a live writer released it
-  // and created a fresh lease before the rename.
-  const observed = { owner: "stale-owner", mtimeMs: Date.now() - 11 * 60_000 };
+  const live = leaseToken(process.pid, "live");
+  writeFileSync(join(lease, "owner"), live, "utf8");
+  // The takeover observed a dead owner token, but a live writer had already
+  // replaced it before the rename.
+  const observed = { owner: leaseToken(await deadPid(), "dead"), mtimeMs: Date.now() - 11 * 60_000 };
   assert.throws(() => takeOverWriterLease(lease, "takeover-token", observed), /WRITE_CONFLICT/);
-  assert.equal(readFileSync(join(lease, "owner"), "utf8"), "live-owner");
+  assert.equal(readFileSync(join(lease, "owner"), "utf8"), live);
 });
 
-test("a stale writer lease is taken over and cleaned up", async (t) => {
+test("a stale writer lease is taken over when its owner process is gone", async (t) => {
   const f = fixture();
   t.after(() => rmSync(f.root, { recursive: true, force: true }));
   approve(f.store, f.plan);
   const lease = join(f.store.root, "locks", "writer");
   mkdirSync(lease, { recursive: true });
-  writeFileSync(join(lease, "owner"), "stale-owner", "utf8");
+  writeFileSync(join(lease, "owner"), leaseToken(await deadPid()), "utf8");
   const old = new Date(Date.now() - 11 * 60_000);
   utimesSync(lease, old, old);
   const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" });
   assert.equal(result.state, "applied");
   assert.equal(existsSync(lease), false);
   assert.deepEqual(readdirSync(join(f.store.root, "locks")), []);
+});
+
+test("a live owner is never moved, so a third writer cannot start beside it", async (t) => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  approve(f.store, f.plan);
+  const lease = join(f.store.root, "locks", "writer");
+  mkdirSync(lease, { recursive: true });
+  const owner = leaseToken(process.pid, "AAA");
+  writeFileSync(join(lease, "owner"), owner, "utf8");
+  const old = new Date(Date.now() - 11 * 60_000);
+  utimesSync(lease, old, old);
+  // B observes a stale lease, but A is still running. B must not move the path,
+  // otherwise C can create a fresh lease there and apply concurrently with A.
+  await assert.rejects(applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" }), /WRITE_CONFLICT/);
+  await assert.rejects(applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" }), /WRITE_CONFLICT/);
+  assert.equal(readFileSync(join(lease, "owner"), "utf8"), owner);
+  assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
 });
 
 test("releasing the lease never removes a lease owned by another writer", async (t) => {
