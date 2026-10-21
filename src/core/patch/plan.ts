@@ -2,6 +2,7 @@ import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
 import type { Attestation, ByteEdit, PatchPlan, PatchPayload, PolicySnapshot, RepositoryBinding } from "../contracts/schema.ts";
 import type { ProtectionSnapshot, RetentionSnapshot } from "../history/model.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
+import { ENGINE_VERSION } from "../version.ts";
 import { applyEdits, semanticCheck } from "./edits.ts";
 import { semanticProblems } from "./semantic.ts";
 
@@ -94,7 +95,7 @@ export function buildPatchPlan(input: PlanInput): BuiltPlan {
     bindingId: input.binding.bindingId,
     rootIdentityHash: input.binding.rootIdentityHash,
     workflowPath: input.workflow.path,
-    engineVersion: "0.1.0",
+    engineVersion: ENGINE_VERSION,
     ruleIds: ruleIds as PatchPayload["ruleIds"],
     sourceHash: preview.sourceHash,
     resultHash: preview.resultHash,

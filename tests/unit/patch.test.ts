@@ -5,6 +5,8 @@ import { applyEdits, concurrencyGroup, planConcurrencyEdit, planRetentionEdit, p
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf, previewEdits } from "../../src/core/patch/plan.ts";
 import { checkApply } from "../../src/core/patch/verify.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
+import { semanticProblems } from "../../src/core/patch/semantic.ts";
+import { ENGINE_VERSION } from "../../src/core/version.ts";
 import { assertValidDocument } from "../../src/core/contracts/validate.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import type { RepositoryBinding } from "../../src/core/contracts/schema.ts";
@@ -122,6 +124,34 @@ describe("patch edits", () => {
     assert.equal(reparsed.jobs[0]?.steps.length, 2);
   });
 
+  it("adds a parent with mapping when uses is not the first step key", () => {
+    const text = [
+      "on: push",
+      "jobs:",
+      "  upload:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - name: Upload coverage",
+      "        uses: actions/upload-artifact@v4",
+      "      - run: echo done",
+      "",
+    ].join("\n");
+    const definition = parseWorkflow(".github/workflows/ci.yml", text);
+    const job = definition.jobs[0];
+    const step = job?.steps[0];
+    assert.ok(job && step);
+    const result = planRetentionEdit(text, job, step, 7);
+    assert.ok(result.edit);
+    const applied = applyEdits(text, [result.edit]);
+    const reparsed = parseWorkflow(".github/workflows/ci.yml", applied.text);
+    assert.equal(reparsed.parseError, null);
+    assert.equal(reparsed.jobs[0]?.steps[0]?.withEntries.find((entry) => entry.key === "retention-days")?.literal, "7");
+    assert.deepEqual(
+      semanticProblems({ original: definition, originalText: text, resultText: applied.text, edits: [result.edit] }),
+      [],
+    );
+  });
+
   it("rejects overlapping edits", () => {
     const definition = workflow();
     const job = definition.jobs[0];
@@ -177,6 +207,7 @@ describe("patch plan", () => {
     assertValidDocument("PatchPlan", built.plan);
     assert.equal(built.plan.status.state, "draft");
     assert.equal(built.plan.payload.ruleIds[0], "CD005");
+    assert.equal(built.plan.payload.engineVersion, ENGINE_VERSION);
     assert.match(built.plan.planDigest, /^sha256:[0-9a-f]{64}$/);
     const again = buildPatchPlan({
       binding: b,

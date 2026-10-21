@@ -49,6 +49,23 @@ function indentAt(buffer: Buffer, offset: number): string {
   return " ".repeat(index - start);
 }
 
+/** Indentation of a step's mapping keys, derived from the enclosing sequence entry line. */
+function stepKeyIndent(buffer: Buffer, step: WorkflowStep): string {
+  const anchor = step.range?.startByte ?? step.usesRange?.startByte ?? null;
+  if (anchor !== null) {
+    let lineStart = lineStartOf(buffer, anchor);
+    for (let hops = 0; hops < 8; hops += 1) {
+      const line = buffer.subarray(lineStart, lineEndOf(buffer, lineStart)).toString("utf8");
+      const entry = /^([ ]*)-([ \t]|$)/.exec(line);
+      if (entry !== null) return (entry[1] ?? "") + "  ";
+      if (lineStart === 0) break;
+      lineStart = lineStartOf(buffer, Math.max(0, lineStart - 2));
+    }
+  }
+  if (step.usesRange !== null) return indentAt(buffer, step.usesRange.startByte) + "  ";
+  return "  ";
+}
+
 function newlineStyle(text: string): string {
   const lf = (text.match(/\n/g) ?? []).length;
   const crlf = (text.match(/\r\n/g) ?? []).length;
@@ -193,7 +210,7 @@ export function planRetentionEdit(text: string, job: WorkflowJob, step: Workflow
   if (step.usesRange === null) {
     return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "upload step has no uses line" } };
   }
-  const indent = indentAt(buffer, step.usesRange.startByte) + "  ";
+  const indent = stepKeyIndent(buffer, step);
   const end = lineEndOf(buffer, step.usesRange.endByte);
   const replacement =
     newline + indent + "with:" + newline + indent + "  retention-days: " + String(days);
