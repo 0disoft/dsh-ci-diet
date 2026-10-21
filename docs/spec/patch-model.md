@@ -174,7 +174,7 @@ closed and is exactly this table.
 | `blockers` is empty | `BLOCKERS_PRESENT` |
 | Coverage allows writes (`full`, or `subset` plus complete edit evidence) | `COVERAGE_INSUFFICIENT_FOR_WRITE` |
 | Current bytes hash equals `sourceHash` | `SOURCE_HASH_MISMATCH` |
-| Nonce is valid, unused, and from the same peer | `NONCE_INVALID` |
+| Nonce is valid, unused, from the same peer, and younger than the approval TTL (600 s by default) | `NONCE_INVALID` |
 | Policy snapshot is at most 600 seconds old | `POLICY_STALE` |
 | Backup is durably stored | `BACKUP_UNAVAILABLE` |
 
@@ -193,10 +193,11 @@ reuse it rather than reimplement the transaction.
 | prepare | Current bytes, Binding, premise, policy, allowed paths | Project file untouched |
 | reserve | Reserve backup before/after/manifest and temp space | `BACKUP_UNAVAILABLE` or storage error, untouched |
 | durable prepare | Write before and after as immutable files, re-read hashes, flush, journal PREPARED | Untouched; a completed orphan backup is diagnosable |
-| approve | Consume the nonce atomically, or confirm purpose and digest in a separate terminal | Untouched; no approval reuse |
+| approve | Confirm purpose and digest in a separate terminal; the nonce stays pending until confirm | Untouched; no approval reuse |
 | recheck | File hash, identity, premise, quota | `SOURCE_HASH_MISMATCH`, apply cancelled |
-| replace | Write the result to a temp file on the same volume, replace atomically, preserve mode | Never delete the original; record the failure |
-| confirm | Verify target after-hash, journal APPLIED | `RECOVERY_REQUIRED`; never a normal success response |
+| in doubt | Journal APPLYING before touching the target | Untouched; recovery reads it as in-doubt |
+| replace | Write the result to a temp file on the same volume, replace atomically, preserve mode | Re-hash the target: unchanged marks NOT_APPLIED with the nonce intact; the planned bytes converge to APPLIED; anything else is `RECOVERY_REQUIRED` |
+| confirm | Verify target after-hash, journal APPLIED, then consume the nonce | `RECOVERY_REQUIRED`; never a normal success response |
 
 There is no mode that warns and continues when the backup cannot be written: the
 user must choose a new durable location and create a new plan. CI Diet uses a
@@ -216,7 +217,7 @@ equivalent power-loss durability is claimed.
 
 | Journal and target | Next action |
 | --- | --- |
-| PREPARED and target equals before | Mark as not applied. Do not reapply without a new approval |
+| PREPARED and target equals before | Mark as not applied; the unconsumed approval nonce stays valid for a retry |
 | APPLYING/PREPARED and target equals after | Recover the receipt from the stored result; write no extra bytes |
 | APPLIED and target equals after | Revert is available |
 | Any state, target differs from both before and after | `CONFLICT`; never overwrite the current file |

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
@@ -433,6 +433,37 @@ test("a blocked finding is never planned", () => {
   assert.equal(blocked.allowed, false);
   assert.ok(blocked.reasons.includes("FINDING_BLOCKED"));
   assert.ok(blocked.reasons.includes("DEPLOY_OR_RELEASE_JOB"));
+});
+
+test("a stale writer lease is taken over and cleaned up", async (t) => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  approve(f.store, f.plan);
+  const lease = join(f.store.root, "locks", "writer");
+  mkdirSync(lease, { recursive: true });
+  writeFileSync(join(lease, "owner"), "stale-owner", "utf8");
+  const old = new Date(Date.now() - 11 * 60_000);
+  utimesSync(lease, old, old);
+  const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" });
+  assert.equal(result.state, "applied");
+  assert.equal(existsSync(lease), false);
+  assert.deepEqual(readdirSync(join(f.store.root, "locks")), []);
+});
+
+test("releasing the lease never removes a lease owned by another writer", async (t) => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  approve(f.store, f.plan);
+  const lease = join(f.store.root, "locks", "writer");
+  const saveChange = f.store.saveChange.bind(f.store);
+  t.mock.method(f.store, "saveChange", (change: Parameters<PatchStore["saveChange"]>[0]) => {
+    saveChange(change);
+    if (change.state === "APPLYING") writeFileSync(join(lease, "owner"), "foreign-owner", "utf8");
+  });
+  const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" });
+  assert.equal(result.state, "applied");
+  assert.equal(existsSync(lease), true);
+  assert.equal(readFileSync(join(lease, "owner"), "utf8"), "foreign-owner");
 });
 
 test("CD008 eligibility needs an attested purpose and a consumer floor", () => {

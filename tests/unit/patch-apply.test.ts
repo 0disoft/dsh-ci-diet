@@ -408,6 +408,166 @@ test("revert refuses when the working tree changed after apply", async () => {
   assert.equal(reverted.state, "CONFLICT");
 });
 
+function blockReplacement(root: string, file: string): () => void {
+  if (process.platform === "win32") {
+    // A read-only target makes the rename fail with EPERM after the retries.
+    chmodSync(file, 0o444);
+    return () => chmodSync(file, 0o666);
+  }
+  // A non-writable directory makes the temporary write fail before the rename.
+  const dir = join(root, ".github", "workflows");
+  chmodSync(dir, 0o555);
+  return () => chmodSync(dir, 0o755);
+}
+
+test("a failed replacement leaves the change not applied and keeps the approval retryable", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const nonce = fixture.store.readNonce(fixture.plan.planId);
+  const restore = blockReplacement(fixture.root, fixture.file);
+  try {
+    await assert.rejects(
+      applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" }),
+      /WRITE_CONFLICT/,
+    );
+  } finally {
+    restore();
+  }
+  assert.equal(fixture.store.listChanges().at(-1)?.state, "NOT_APPLIED");
+  assert.deepEqual(fixture.store.readNonce(fixture.plan.planId), nonce);
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  const retried = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(retried.state, "applied");
+  assert.notEqual(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
+test("a crash between the replacement and the APPLIED journal converges on the next apply", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(applied.state, "applied");
+  const patched = readFileSync(fixture.file, "utf8");
+  const changeId = applied.change?.changeId ?? "";
+  // Simulate the crash: the bytes are written, the journal still says PREPARED.
+  fixture.store.saveChange({ ...applied.change!, state: "PREPARED" });
+  const converged = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(converged.state, "applied");
+  assert.equal(converged.change?.state, "APPLIED");
+  assert.equal(readFileSync(fixture.file, "utf8"), patched);
+  assert.equal(fixture.store.readChange(changeId)?.state, "APPLIED");
+  assert.equal(fixture.store.readNonce(fixture.plan.planId), null);
+  // The interrupted change can still be reverted.
+  fixture.store.saveChange({ ...applied.change!, state: "PREPARED" });
+  const reverted = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(reverted.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
+test("revert of an interrupted change whose replacement never landed marks it not applied", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const changeId = applied.change?.changeId ?? "";
+  writeFileSync(fixture.file, fixture.text, "utf8");
+  fixture.store.saveChange({ ...applied.change!, state: "PREPARED" });
+  const reverted = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(reverted.state, "NOT_APPLIED");
+  assert.equal(reverted.reason, "TARGET_UNCHANGED");
+  assert.equal(fixture.store.readChange(changeId)?.state, "NOT_APPLIED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
+test("apply rejects an approval nonce older than the TTL", async (t) => {
+  const fixture = setup(WORKFLOW, "CD005");
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const later = new Date(fixture.now.getTime() + 601_000);
+  const expired = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: later, subjectId: "tester" });
+  assert.equal(expired.state, "not_applied");
+  assert.deepEqual(expired.reasons, ["NONCE_INVALID"]);
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  const widened = await applyPlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    now: later,
+    subjectId: "tester",
+    approvalTtlSeconds: 1_000,
+  });
+  assert.equal(widened.state, "applied");
+});
+
+test("apply rejects a nonce approved for a different subject", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "alice",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const foreign = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "bob" });
+  assert.equal(foreign.state, "not_applied");
+  assert.deepEqual(foreign.reasons, ["NONCE_INVALID"]);
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  const owner = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "alice" });
+  assert.equal(owner.state, "applied");
+});
+
+test("a nonce cleanup failure after a successful replacement keeps the change applied", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  t.mock.method(fixture.store, "consumeNonce", () => {
+    throw new Error("injected nonce cleanup failure");
+  });
+  const result = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(result.state, "applied");
+  assert.equal(result.change?.state, "APPLIED");
+  assert.deepEqual(result.warnings, ["NONCE_NOT_CONSUMED"]);
+  assert.notEqual(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
+});
+
 test("wrong confirmation never approves", () => {
   const fixture = setup();
   assert.throws(
