@@ -202,10 +202,14 @@ reuse it rather than reimplement the transaction.
 There is no mode that warns and continues when the backup cannot be written: the
 user must choose a new durable location and create a new plan. CI Diet uses a
 single-writer lease per repository and path to serialize its own CLI and Web
-applies. External editors are not part of that lease; POSIX rename and Node
-filesystem calls do not provide atomic compare-and-swap against other writers,
-so the product promises detection through pre/post rechecks, not lossless
-concurrent editing.
+applies. A stale lease is taken over by renaming it aside and comparing the
+moved owner token with the token that was inspected; when a live writer replaced
+the lease after that inspection, the moved lease is restored and the takeover is
+refused. Release uses the same move-and-verify order, so neither path deletes a
+token it does not own. External editors are not part of that lease; POSIX rename
+and Node filesystem calls do not provide atomic compare-and-swap against other
+writers, so the product promises detection through pre/post rechecks, not
+lossless concurrent editing.
 
 On Windows, a replacement blocked by an open handle, antivirus, or permissions
 fails after limited retries. Deleting the target and renaming over it is

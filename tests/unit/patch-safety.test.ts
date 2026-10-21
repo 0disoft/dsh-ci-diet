@@ -10,7 +10,7 @@ import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../../sr
 import { applyEdits, planRetentionEdit, planTimeoutEdit } from "../../src/core/patch/edits.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
-import { applyPlan } from "../../src/core/patch/apply.ts";
+import { applyPlan, takeOverWriterLease } from "../../src/core/patch/apply.ts";
 import { checkApply } from "../../src/core/patch/verify.ts";
 import { claimsFromTokens, evaluatePatchEligibility } from "../../src/core/patch/eligibility.ts";
 import { skuForLabels } from "../../src/core/history/model.ts";
@@ -433,6 +433,19 @@ test("a blocked finding is never planned", () => {
   assert.equal(blocked.allowed, false);
   assert.ok(blocked.reasons.includes("FINDING_BLOCKED"));
   assert.ok(blocked.reasons.includes("DEPLOY_OR_RELEASE_JOB"));
+});
+
+test("a lease replaced while it is inspected is restored, never stolen", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-lease-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lease = join(root, "writer");
+  mkdirSync(lease, { recursive: true });
+  writeFileSync(join(lease, "owner"), "live-owner", "utf8");
+  // The takeover observed the old, stale token, but a live writer released it
+  // and created a fresh lease before the rename.
+  const observed = { owner: "stale-owner", mtimeMs: Date.now() - 11 * 60_000 };
+  assert.throws(() => takeOverWriterLease(lease, "takeover-token", observed), /WRITE_CONFLICT/);
+  assert.equal(readFileSync(join(lease, "owner"), "utf8"), "live-owner");
 });
 
 test("a stale writer lease is taken over and cleaned up", async (t) => {
