@@ -120,13 +120,14 @@ package's trusted publisher must name `publish.yml` for this repository.
 
 - Node `^22.19.0 || >=24.0.0`
 - `gh` CLI, optional, only for execution history
-- DSH `>=0.2.1-rc.2 <0.3.0`, optional, only for the plugin tools
+- DSH `>=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0`, optional, only for
+  the plugin tools
 
 ## Development
 
 ```
 bun install
-node --test "tests/unit/*.test.ts"
+node scripts/test-core.mjs
 node scripts/gen-types.mjs --check
 node scripts/sync-contracts.mjs --check
 bun run typecheck

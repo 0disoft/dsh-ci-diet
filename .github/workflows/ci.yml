@@ -13,6 +13,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # The unit tests execute TypeScript directly with node --test, and
+      # package.json declares Node 22.19.0 as the floor. Pin it so CI runs on
+      # the declared floor instead of whatever Node the runner image ships.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest

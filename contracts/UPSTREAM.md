@@ -46,6 +46,10 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 6. Review chapters, evidence records, agent prompts, and internal estimates stay
    in the private pack. They are never copied here.
 7. The design pack is not published. When it is absent, `--check` verifies the
-   copies against `contracts/contracts.lock.json` (18 files, sha256). After an
+   copies against `contracts/contracts.lock.json` (18 files, sha256) and fails
+   unless the lock still names the pack above, agrees with the `Archive sha256`
+   anchor, and matches the `same`/`differs` rows in this file. After an
    intentional and reviewed change, regenerate the lock with
    `node scripts/sync-contracts.mjs --update-lock` and commit it with the change.
+   Regenerating refuses to run without the design pack: the lock may only carry
+   the pack's authority, never certify whatever bytes happen to be checked out.

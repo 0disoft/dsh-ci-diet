@@ -117,13 +117,14 @@ trusted publisher에 이 저장소의 `publish.yml`이 등록되어 있어야 �
 
 - Node `^22.19.0 || >=24.0.0`
 - `gh` CLI(선택): 실행 이력 조회에만 사용
-- DSH `>=0.2.1-rc.2 <0.3.0`(선택): 플러그인 도구에만 사용
+- DSH `>=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0`(선택): 플러그인 도구에만
+  사용
 
 ## 개발
 
 ```
 bun install
-node --test "tests/unit/*.test.ts"
+node scripts/test-core.mjs
 node scripts/gen-types.mjs --check
 node scripts/sync-contracts.mjs --check
 bun run typecheck

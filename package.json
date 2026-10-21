@@ -34,7 +34,7 @@
   ],
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2 <0.3.0"
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -44,8 +44,9 @@
     "check:types": "node scripts/gen-types.mjs --check",
     "gen:data": "node scripts/gen-data.mjs",
     "check:data": "node scripts/gen-data.mjs --check",
-    "test:core": "node --test \"tests/unit/*.test.ts\"",
+    "test:core": "node scripts/test-core.mjs",
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "smoke:node": "node dist/cli/index.js --version",
     "check:contracts": "node scripts/sync-contracts.mjs --check",
     "test:docs": "node scripts/check-docs.mjs",
@@ -75,7 +76,7 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.5",
-    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0",
     "@deepseek-ai/schemastery": "^3.18.5"
   },
   "main": "./dist/dsh/bootstrap.js",
