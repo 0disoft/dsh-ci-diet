@@ -1,0 +1,145 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../src/core/patch/store.ts";
+import type { AppliedChange } from "../../src/core/contracts/schema.ts";
+import { isolatedEnv } from "../helpers/test-env.ts";
+
+const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
+const HASH = "sha256:" + "a".repeat(64);
+const NOW = new Date("2026-10-20T00:00:00Z");
+
+function limits(overrides: Partial<{ storeMaxBytes: number; warningPercent: number; cacheMaxBytes: number; pruneAppliedBackups: boolean }> = {}) {
+  return { storeMaxBytes: 0, warningPercent: 80, cacheMaxBytes: 0, pruneAppliedBackups: false, ...overrides };
+}
+
+function change(changeId: string, state: AppliedChange["state"]): AppliedChange {
+  return {
+    schemaVersion: 2,
+    provenance: "observed",
+    changeId,
+    bindingId: "b_" + "1".repeat(24),
+    planId: "p_" + "2".repeat(24),
+    planDigest: HASH,
+    workflowPath: ".github/workflows/ci.yml",
+    state,
+    before: { path: "C:/repo/.github/workflows/ci.yml", hash: HASH, bytes: 1 },
+    after: { path: "C:/repo/.github/workflows/ci.yml", hash: HASH, bytes: 1 },
+    approvalChannel: "human-cli",
+    approvalReference: "nonce-1",
+    updatedAt: "2026-10-20T00:00:00Z",
+  };
+}
+
+function withRoot<T>(run: (root: string) => T): T {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-quota-"));
+  try {
+    return run(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("refuses a backup write that would cross the store quota and leaves no directory behind", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: 2048 }));
+    const big = "a".repeat(4096);
+    assert.throws(
+      () => store.writeBackup("c_" + "3".repeat(16), big, big, ".github/workflows/ci.yml", NOW),
+      (error: unknown) => error instanceof StoreQuotaError && /STORAGE_QUOTA_EXCEEDED/.test((error as Error).message),
+    );
+    assert.equal(existsSync(join(store.root, "backups", "c_" + "3".repeat(16))), false);
+  });
+});
+
+test("reports a warning near the quota and a block once usage reaches it", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: 22000 }));
+    store.writeBackup("c_" + "4".repeat(16), "x".repeat(9000), "y".repeat(9000), ".github/workflows/ci.yml", NOW);
+    const warning = store.storageStatus();
+    assert.equal(warning.warning, true);
+    assert.equal(warning.blocked, false);
+    assert.ok(warning.percent >= 80, String(warning.percent));
+    mkdirSync(join(store.root, "cache"), { recursive: true });
+    writeFileSync(join(store.root, "cache", "filler.bin"), Buffer.alloc(22000));
+    const blocked = store.storageStatus();
+    assert.equal(blocked.blocked, true);
+    assert.throws(() => store.ensureCapacity(1), StoreQuotaError);
+  });
+});
+
+test("prune evicts the oldest cache entries when the cache cap is exceeded", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const cache = join(store.root, "cache");
+    mkdirSync(cache, { recursive: true });
+    const entries = ["oldest", "middle", "newest"];
+    for (let index = 0; index < entries.length; index += 1) {
+      const file = join(cache, entries[index]!);
+      writeFileSync(file, "z".repeat(600));
+      const at = new Date(NOW.getTime() - (3 - index) * 60_000);
+      utimesSync(file, at, at);
+    }
+    const result = store.prune(NOW, { reportDays: 90, planDays: 7, cacheDays: 3650, cacheMaxBytes: 1000 });
+    assert.equal(result.removedCacheEntries, 2);
+    assert.equal(result.bytesFreed, 1200);
+    assert.deepEqual(existsSync(join(cache, "oldest")), false);
+    assert.deepEqual(existsSync(join(cache, "middle")), false);
+    assert.deepEqual(existsSync(join(cache, "newest")), true);
+  });
+});
+
+test("lists only settled backups and deletes them only with the exact listing token", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const appliedId = "c_" + "5".repeat(16);
+    const preparingId = "c_" + "6".repeat(16);
+    store.saveChange(change(appliedId, "APPLIED"));
+    store.saveChange(change(preparingId, "RECOVERY_REQUIRED"));
+    for (const id of [appliedId, preparingId]) {
+      store.writeBackup(id, "before\n", "after\n", ".github/workflows/ci.yml", NOW);
+    }
+    const candidates = store.appliedBackupCandidates();
+    assert.deepEqual(candidates.map((candidate) => candidate.changeId), [appliedId]);
+    assert.ok(candidates[0]!.bytes > 0);
+    const token = appliedBackupConfirmToken([appliedId]);
+    assert.throws(() => store.pruneAppliedBackups([appliedId], "wrong"), /STORAGE_BACKUP_TOKEN_MISMATCH/);
+    assert.throws(() => store.pruneAppliedBackups(["c_" + "7".repeat(16)], token), /STORAGE_BACKUP_NOT_SETTLED/);
+    const cleanup = store.pruneAppliedBackups([appliedId], token);
+    assert.equal(cleanup.removedBackups, 1);
+    assert.equal(existsSync(join(store.root, "backups", appliedId)), false);
+    assert.equal(existsSync(join(store.root, "backups", preparingId)), true);
+    assert.deepEqual(store.appliedBackupCandidates(), []);
+  });
+});
+
+test("prune --applied-backups lists a token, refuses a stale token, then deletes on confirmation", () => {
+  withRoot((root) => {
+    const stateDir = join(root, "state");
+    const store = PatchStore.open(stateDir);
+    const appliedId = "c_" + "8".repeat(16);
+    store.saveChange(change(appliedId, "APPLIED"));
+    store.writeBackup(appliedId, "before\n", "after\n", ".github/workflows/ci.yml", NOW);
+    const env = isolatedEnv();
+    const run = (...args: string[]) => spawnSync(process.execPath, [CLI, "prune", "--state-dir", stateDir, ...args], { encoding: "utf8", env, timeout: 15000 });
+    const listed = run("--applied-backups");
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.match(listed.stdout, new RegExp(appliedId));
+    assert.match(listed.stdout, /--applied-backups --confirm/);
+    const json = run("--applied-backups", "--json");
+    assert.equal(json.status, 0, json.stderr);
+    const payload = JSON.parse(json.stdout) as { token: string; candidates: { changeId: string }[] };
+    assert.equal(payload.candidates.length, 1);
+    assert.equal(payload.token, appliedBackupConfirmToken([appliedId]));
+    const stale = run("--applied-backups", "--confirm", "deadbeef");
+    assert.equal(stale.status, 1, stale.stderr);
+    assert.match(stale.stderr, /token/i);
+    assert.equal(existsSync(join(store.root, "backups", appliedId)), true);
+    const confirmed = run("--applied-backups", "--confirm", payload.token);
+    assert.equal(confirmed.status, 0, confirmed.stderr);
+    assert.equal(existsSync(join(store.root, "backups", appliedId)), false);
+  });
+});

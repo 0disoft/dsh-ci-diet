@@ -69,16 +69,18 @@ start. KV write success never decides recoverability.
 | Cache | 64 MiB, 30 days | Only rebuildable cache may be pruned |
 | Report | 90 days | Data referenced by recovery records is excluded |
 | Unapplied plan | 7 days | Expired plans cannot apply and are cleanup candidates |
-| Applied backup | No automatic TTL | Deleted only after a human confirms revert is impossible; at quota, block new applies; silent deletion forbidden; export and cleanup procedure required |
+| Applied backup | No automatic TTL | Deleted only after a human confirms revert is impossible; `ci-diet prune --applied-backups` lists targets and a deletion token, and `--confirm <token>` deletes exactly that listing; at quota, block new applies; silent deletion forbidden |
 | KV mirror record | 16 KiB | Fall back to the file adapter; no silent truncation |
 
 An apply reserves space for before, after, manifest, and target temp file. The
 store quota and the target volume's free space are separate checks: a write can
 fail below quota when the OS disk is full, and the project stays untouched. A
-quota reservation does not replace a durable write. Automatic cache or report
-cleanup never reclaims space by deleting recovery backups; at 256 MiB the
-product offers only a human-approved procedure that lists targets, shows the
-export path, and confirms that revert will be lost.
+quota reservation does not replace a durable write. A write that would exceed
+the store quota fails with `STORAGE_QUOTA_EXCEEDED` before any file is created,
+so a refused backup or record leaves no partial directory behind. Automatic
+cache or report cleanup never reclaims space by deleting recovery backups; only
+an explicit `--applied-backups --confirm` procedure deletes a backup, after the
+listing shows the targets and confirms that revert will be lost.
 
 ## Configuration
 
@@ -101,6 +103,7 @@ budget independent; it is not silently increased.
 | `DEPENDENCY_HASH_MISMATCH` / `SOURCE_HASH_MISMATCH` / `BLOCKERS_PRESENT` / `COVERAGE_INSUFFICIENT_FOR_WRITE` | An apply invariant failed | 3 |
 | `NONCE_INVALID` | The approval challenge is absent, already consumed, or the plan was never approved | 5 |
 | `BACKUP_UNAVAILABLE` | The backup could not be stored; nothing was applied | 6 |
+| `STORAGE_QUOTA_EXCEEDED` | The local state store is full; prune expired data or remove confirmed backups | 7 |
 | `CURRENT_BYTES_CHANGED` | Revert refused because the file no longer equals the applied result | 3 |
 | `BACKUP_HASH_MISMATCH` / `RESTORE_HASH_MISMATCH` / `RECOVERY_REQUIRED` | The journal and the bytes on disk need human review | 4 |
 | `WRITE_CONFLICT` | The path escapes the workspace, is a symlink, or the replacement failed | 3 |

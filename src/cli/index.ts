@@ -19,7 +19,7 @@ import type { HistoryBundle } from "../core/history/model.ts";
 import { GitHubError } from "../adapters/github/errors.ts";
 import { ContractViolationError } from "../core/contracts/validate.ts";
 import { ENGINE_VERSION } from "../core/version.ts";
-import { PatchStore, StoreCorruptionError } from "../core/patch/store.ts";
+import { appliedBackupConfirmToken, PatchStore, StoreCorruptionError, StoreQuotaError } from "../core/patch/store.ts";
 import type { PlanMeta } from "../core/patch/store.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../core/patch/plan.ts";
 import { collectDependencies } from "../core/patch/dependencies.ts";
@@ -44,6 +44,7 @@ const EXIT_INCOMPLETE = 3;
 const EXIT_INVARIANT = 4;
 const EXIT_NONCE = 5;
 const EXIT_BACKUP = 6;
+const EXIT_STORAGE = 7;
 const EXIT_CANCELLED = 130;
 
 interface Options {
@@ -72,6 +73,7 @@ interface Options {
   readonly claims: readonly string[];
   readonly report: string | null;
   readonly format: "text" | "json" | "html";
+  readonly appliedBackups: boolean;
 }
 
 class UsageError extends Error {}
@@ -110,6 +112,7 @@ function parseArgs(argv: readonly string[]): Options {
   let claims: readonly string[] = [];
   let report: string | null = null;
   let format: "text" | "json" | "html" = "text";
+  let appliedBackups = false;
 
   const takeValue = (index: number, flag: string): string => {
     const value = argv[index + 1];
@@ -130,6 +133,8 @@ function parseArgs(argv: readonly string[]): Options {
       network = true;
     } else if (arg === "--require-complete") {
       requireComplete = true;
+    } else if (arg === "--applied-backups") {
+      appliedBackups = true;
     } else if (arg === "--cwd") {
       cwd = takeValue(index, "--cwd");
       index += 1;
@@ -241,11 +246,28 @@ function parseArgs(argv: readonly string[]): Options {
     claims,
     report,
     format,
+    appliedBackups,
   };
 }
 
 function stateDirOf(options: Options): string {
   return options.stateDir ?? defaultStateDir();
+}
+
+/** Open the store with the product quota and warn once when it crosses the threshold. */
+function openStore(stateDir: string, locale: Locale): PatchStore {
+  const store = PatchStore.open(stateDir, DEFAULT_CONFIG.storage);
+  const status = store.storageStatus();
+  if (status.warning) {
+    process.stderr.write(
+      createTranslator(locale)("cli.storage.warning", {
+        percent: status.percent,
+        used: status.bytes,
+        limit: status.limit,
+      }) + "\n",
+    );
+  }
+  return store;
 }
 
 function resolveUiLocale(lang: string | null): Locale {
@@ -391,7 +413,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   });
   const report = built.report;
 
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   store.saveBinding(upgraded.binding);
   store.saveReport(report);
   store.saveHistory(upgraded.binding.bindingId, history);
@@ -452,7 +474,7 @@ function pickWorkflowPath(options: Options, available: readonly string[]): strin
 async function planCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
-  const store = existsSync(stateDir) ? PatchStore.open(stateDir) : null;
+  const store = existsSync(stateDir) ? openStore(stateDir, locale) : null;
   if (store === null) {
     process.stderr.write(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
@@ -638,7 +660,7 @@ function approveCommand(options: Options, locale: Locale): number {
     process.stderr.write(t("cli.approve.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   const result = approvePlan({
     store,
     planId: options.plan,
@@ -661,7 +683,7 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
     process.stderr.write(t("cli.apply.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   const result = await applyPlan({ store, planId: options.plan, now: new Date(), subjectId: options.subject });
   for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
   const lines: string[] = [];
@@ -683,7 +705,7 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
     process.stderr.write(t("cli.revert.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   const result = await revertChange({ store, changeId: options.change, now: new Date() });
   for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
   const lines: string[] = [];
@@ -697,7 +719,7 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
 
 function showChanged(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   const changes = store.listChanges();
   const lines: string[] = [];
   if (changes.length === 0) {
@@ -718,7 +740,7 @@ function showChanged(options: Options, locale: Locale): number {
 
 function plansList(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
-  const store = PatchStore.open(stateDirOf(options));
+  const store = openStore(stateDirOf(options), locale);
   const plans = store.listPlans().map((entry) => ({
     planId: entry.plan.planId,
     state: entry.plan.status.state,
@@ -745,7 +767,7 @@ function reportCommand(options: Options, locale: Locale): number {
     process.stderr.write(t("cli.report.none") + "\n");
     return EXIT_USAGE;
   }
-  const store = PatchStore.open(stateDir);
+  const store = openStore(stateDir, locale);
   const report = options.report === null ? store.latestReport() : store.readReport(options.report);
   if (report === null) {
     process.stderr.write(t("cli.report.none") + "\n");
@@ -801,18 +823,61 @@ function reportCommand(options: Options, locale: Locale): number {
   return EXIT_OK;
 }
 
+function pruneAppliedBackups(store: PatchStore, options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  const candidates = store.appliedBackupCandidates();
+  const changeIds = candidates.map((candidate) => candidate.changeId);
+  const token = appliedBackupConfirmToken(changeIds);
+  if (options.confirm === null) {
+    if (options.json) {
+      process.stdout.write(JSON.stringify({ candidates, token, automaticPruning: false }, null, 2) + "\n");
+      return EXIT_OK;
+    }
+    if (candidates.length === 0) {
+      process.stdout.write(t("cli.prune.backups.none") + "\n");
+      return EXIT_OK;
+    }
+    process.stdout.write(t("cli.prune.backups.list", { count: candidates.length }) + "\n");
+    for (const candidate of candidates) {
+      process.stdout.write(
+        t("cli.prune.backups.item", {
+          change: candidate.changeId,
+          state: candidate.state,
+          workflow: candidate.workflowPath,
+          bytes: candidate.bytes,
+          path: candidate.backupPath,
+        }) + "\n",
+      );
+    }
+    process.stdout.write(t("cli.prune.backups.manual") + "\n");
+    process.stdout.write(t("cli.prune.backups.token", { token }) + "\n");
+    return EXIT_OK;
+  }
+  if (options.confirm !== token) {
+    process.stderr.write(t("cli.prune.backups.invalidToken") + "\n");
+    return EXIT_USAGE;
+  }
+  const cleanup = store.pruneAppliedBackups(changeIds, options.confirm);
+  if (options.json) process.stdout.write(JSON.stringify({ removedChangeIds: changeIds, ...cleanup }, null, 2) + "\n");
+  else process.stdout.write(t("cli.prune.backups.deleted", { count: cleanup.removedBackups, bytes: cleanup.bytesFreed }) + "\n");
+  return EXIT_OK;
+}
+
 function pruneCommand(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
   if (!existsSync(stateDir)) {
-    process.stdout.write(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
+    if (options.appliedBackups) process.stdout.write(t("cli.prune.backups.none") + "\n");
+    else process.stdout.write(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
     return EXIT_OK;
   }
-  const store = PatchStore.open(stateDir);
+  const store = openStore(stateDir, locale);
+  if (options.appliedBackups) return pruneAppliedBackups(store, options, locale);
   const result = store.prune(new Date(), {
     reportDays: DEFAULT_CONFIG.storage.reportDays,
     planDays: DEFAULT_CONFIG.storage.planDays,
     cacheDays: DEFAULT_CONFIG.storage.cacheDays,
+    cacheMaxBytes: DEFAULT_CONFIG.storage.cacheMaxBytes,
   });
   if (options.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
   else {
@@ -823,6 +888,8 @@ function pruneCommand(options: Options, locale: Locale): number {
     }) + "\n");
     process.stdout.write(t("cli.prune.freed", { bytes: result.bytesFreed }) + "\n");
   }
+  const status = store.storageStatus();
+  if (status.blocked) process.stderr.write(t("error.STORAGE_QUOTA_EXCEEDED") + "\n");
   return EXIT_OK;
 }
 
@@ -868,6 +935,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
     }
     process.stderr.write(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
     return EXIT_USAGE;
+  }
+  if (error instanceof StoreQuotaError) {
+    process.stderr.write(t("error.STORAGE_QUOTA_EXCEEDED") + " " + error.message + "\n");
+    return EXIT_STORAGE;
   }
   if (error instanceof Error && error.message.startsWith("NONCE_INVALID")) {
     process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");

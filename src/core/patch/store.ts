@@ -60,6 +60,8 @@ export interface PruneLimits {
   readonly reportDays: number;
   readonly planDays: number;
   readonly cacheDays: number;
+  /** Product cache cap; oldest cache entries are pruned until the directory fits. */
+  readonly cacheMaxBytes?: number;
 }
 
 export interface PruneResult {
@@ -67,6 +69,54 @@ export interface PruneResult {
   readonly removedPlans: number;
   readonly removedCacheEntries: number;
   readonly bytesFreed: number;
+}
+
+/** Product-level limits from `Config.storage`; `null` means the store does not enforce a quota. */
+export interface StorageLimits {
+  readonly storeMaxBytes: number;
+  readonly warningPercent: number;
+  readonly cacheMaxBytes: number;
+  readonly pruneAppliedBackups: boolean;
+}
+
+export interface StorageStatus {
+  readonly bytes: number;
+  readonly files: number;
+  readonly limit: number;
+  readonly percent: number;
+  readonly warning: boolean;
+  readonly blocked: boolean;
+}
+
+/** A write that would cross the configured store quota is refused before any byte lands. */
+export class StoreQuotaError extends Error {
+  constructor(usedBytes: number, limitBytes: number, additionalBytes: number) {
+    super(
+      "STORAGE_QUOTA_EXCEEDED: " + usedBytes + " + " + additionalBytes + " bytes exceeds the " + limitBytes + "-byte store quota",
+    );
+    this.name = "StoreQuotaError";
+  }
+}
+
+export interface AppliedBackupCandidate {
+  readonly changeId: string;
+  readonly planId: string;
+  readonly workflowPath: string;
+  readonly state: AppliedChange["state"];
+  readonly appliedAt: string;
+  readonly bytes: number;
+  readonly backupPath: string;
+}
+
+export interface AppliedBackupCleanupResult {
+  readonly removedBackups: number;
+  readonly bytesFreed: number;
+}
+
+/** Human-confirmation token for deleting applied backups; derived from the exact change ids. */
+export function appliedBackupConfirmToken(changeIds: readonly string[]): string {
+  const sorted = [...changeIds].sort();
+  return createHash("sha256").update(sorted.join("\n"), "utf8").digest("hex").slice(0, 16);
 }
 
 const DAY_MS = 86_400_000;
@@ -91,15 +141,31 @@ function entryBytes(path: string): number {
   }
 }
 
+/** Bytes in one file or an entire directory tree; used by cache and backup accounting. */
+function deepBytes(path: string): number {
+  let stat;
+  try {
+    stat = statSync(path);
+  } catch {
+    return 0;
+  }
+  if (!stat.isDirectory()) return stat.size;
+  let total = 0;
+  for (const entry of readdirSync(path)) total += deepBytes(join(path, entry));
+  return total;
+}
+
 export class PatchStore {
   readonly root: string;
+  private readonly limits: StorageLimits | null;
 
-  constructor(root: string) {
+  constructor(root: string, limits: StorageLimits | null = null) {
     this.root = root;
+    this.limits = limits;
   }
 
-  static open(root: string): PatchStore {
-    const store = new PatchStore(root);
+  static open(root: string, limits: StorageLimits | null = null): PatchStore {
+    const store = new PatchStore(root, limits);
     for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots/history"]) {
       mkdirSync(join(root, directory), { recursive: true });
     }
@@ -115,6 +181,7 @@ export class PatchStore {
   }
 
   private writeText(path: string, text: string): void {
+    this.ensureCapacity(Buffer.byteLength(text, "utf8"));
     mkdirSync(dirname(path), { recursive: true });
     const temporary = path + ".tmp-" + process.pid + "-" + Math.random().toString(16).slice(2);
     try {
@@ -308,6 +375,11 @@ export class PatchStore {
   }
 
   writeBackup(changeId: string, beforeText: string, afterText: string, workflowPath: string, now: Date): BackupManifest {
+    // Reserve before, after, manifest, and target temp space in one check so a
+    // quota failure cannot leave a partially written backup behind.
+    this.ensureCapacity(
+      Buffer.byteLength(beforeText, "utf8") + Buffer.byteLength(afterText, "utf8") + 2048,
+    );
     const directory = this.path("backups", requireId(changeId, "changeId"));
     mkdirSync(directory, { recursive: true });
     this.writeText(join(directory, "before.yml"), beforeText);
@@ -363,6 +435,7 @@ export class PatchStore {
 
   appendEvent(event: Record<string, unknown>, now: Date): void {
     const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
+    this.ensureCapacity(Buffer.byteLength(line, "utf8"));
     const path = this.path("events", "events.jsonl");
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, line, { encoding: "utf8", flag: "a" });
@@ -433,7 +506,99 @@ export class PatchStore {
       }
     }
 
+    const cacheCap = limits.cacheMaxBytes ?? 0;
+    if (cacheCap > 0 && existsSync(cacheRoot)) {
+      const entries: { full: string; size: number; modified: number }[] = [];
+      for (const entry of readdirSync(cacheRoot)) {
+        const full = join(cacheRoot, entry);
+        let modified = 0;
+        try {
+          modified = statSync(full).mtimeMs;
+        } catch {
+          continue;
+        }
+        entries.push({ full, size: deepBytes(full), modified });
+      }
+      let total = entries.reduce((sum, entry) => sum + entry.size, 0);
+      entries.sort((a, b) => a.modified - b.modified);
+      for (const entry of entries) {
+        if (total <= cacheCap) break;
+        bytesFreed += entry.size;
+        total -= entry.size;
+        rmSync(entry.full, { recursive: true, force: true });
+        removedCacheEntries += 1;
+      }
+    }
+
     return { removedReports, removedPlans, removedCacheEntries, bytesFreed };
+  }
+
+  /**
+   * Backups whose revert outcome is already settled: applied changes that are
+   * still live and changes that were already reverted. Recovery-relevant states
+   * are never listed, because their backup is the only way back.
+   */
+  appliedBackupCandidates(): AppliedBackupCandidate[] {
+    const settled = new Set<AppliedChange["state"]>(["APPLIED", "REVERTED"]);
+    const candidates: AppliedBackupCandidate[] = [];
+    for (const change of this.listChanges()) {
+      if (!settled.has(change.state)) continue;
+      const directory = this.path("backups", change.changeId);
+      if (!existsSync(directory)) continue;
+      candidates.push({
+        changeId: change.changeId,
+        planId: change.planId,
+        workflowPath: change.workflowPath,
+        state: change.state,
+        appliedAt: change.updatedAt,
+        bytes: deepBytes(directory),
+        backupPath: directory,
+      });
+    }
+    return candidates.sort((a, b) => (a.appliedAt < b.appliedAt ? -1 : 1));
+  }
+
+  /**
+   * Delete applied backups only for the exact ids a human confirmed. There is
+   * no age-based path here: the token binds the listing to the deletion, and a
+   * stale token refuses instead of deleting a backup that appeared later.
+   */
+  pruneAppliedBackups(changeIds: readonly string[], confirmToken: string): AppliedBackupCleanupResult {
+    const candidates = this.appliedBackupCandidates();
+    const byId = new Map(candidates.map((candidate) => [candidate.changeId, candidate]));
+    for (const changeId of changeIds) {
+      if (!byId.has(changeId)) throw new Error("STORAGE_BACKUP_NOT_SETTLED: " + changeId);
+    }
+    if (confirmToken !== appliedBackupConfirmToken(changeIds)) {
+      throw new Error("STORAGE_BACKUP_TOKEN_MISMATCH");
+    }
+    let removedBackups = 0;
+    let bytesFreed = 0;
+    for (const changeId of changeIds) {
+      const candidate = byId.get(changeId);
+      if (candidate === undefined) continue;
+      rmSync(this.path("backups", requireId(changeId, "changeId")), { recursive: true, force: true });
+      removedBackups += 1;
+      bytesFreed += candidate.bytes;
+    }
+    return { removedBackups, bytesFreed };
+  }
+
+  /** Current usage together with the configured quota verdict. */
+  storageStatus(): StorageStatus {
+    const { bytes, files } = this.usage();
+    const limit = this.limits?.storeMaxBytes ?? 0;
+    const percent = limit > 0 ? Math.min(100, Math.floor((bytes / limit) * 100)) : 0;
+    const warning = this.limits !== null && limit > 0 && percent >= this.limits.warningPercent;
+    return { bytes, files, limit, percent, warning, blocked: limit > 0 && bytes >= limit };
+  }
+
+  /** Refuse a write before it starts when it would cross the store quota. */
+  ensureCapacity(additionalBytes: number): void {
+    const limit = this.limits?.storeMaxBytes ?? 0;
+    if (limit <= 0 || !Number.isFinite(additionalBytes) || additionalBytes <= 0) return;
+    const { bytes } = this.usage();
+    if (bytes + additionalBytes > limit) throw new StoreQuotaError(bytes, limit, additionalBytes);
   }
 
   usage(): { bytes: number; files: number } {
