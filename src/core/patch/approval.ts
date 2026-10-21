@@ -49,7 +49,7 @@ export function approvePlan(input: ApproveInput): ApproveResult {
   };
   // A failed nonce write must leave the plan available for an explicit approval retry.
   input.store.saveNonce(plan.planId, nonce);
-  input.store.savePlan(approved, stored.meta);
+  input.store.updatePlanStatus(plan.planId, approved.status);
   const warnings = input.store.appendSummaryEvent({ type: "approved", planId: plan.planId, nonceId: nonce.nonceId, channel: input.channel }, input.now);
   return { plan: approved, nonce, ...(warnings.length > 0 ? { warnings } : {}) };
 }

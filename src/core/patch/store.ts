@@ -264,7 +264,10 @@ export class PatchStore {
   updatePlanStatus(planId: string, status: PlanStatus): void {
     const stored = this.readPlan(planId);
     if (stored === null) throw new Error("STORE_PLAN_NOT_FOUND: " + planId);
-    this.savePlan({ ...stored.plan, status }, stored.meta);
+    const plan = { ...stored.plan, status };
+    assertValidDocument("PatchPlan", plan);
+    // A status transition must not republish unchanged metadata after the plan.
+    this.writeJson(this.path("plans", requireId(planId, "planId") + ".json"), plan);
   }
 
   listPlans(): StoredPlan[] {

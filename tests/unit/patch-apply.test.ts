@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
@@ -112,6 +112,44 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(approved.plan.status.state, "approved");
 });
 
+test("status-only persistence rejects invalid status without changing stored records", (t) => {
+  const f = setup();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const planFile = join(f.store.root, "plans", f.plan.planId + ".json");
+  const metaFile = join(f.store.root, "plans", f.plan.planId + ".meta.json");
+  const planBytes = readFileSync(planFile, "utf8");
+  const metaBytes = readFileSync(metaFile, "utf8");
+  assert.throws(() => f.store.updatePlanStatus(f.plan.planId, { ...f.plan.status, state: "invalid" as never }));
+  assert.equal(readFileSync(planFile, "utf8"), planBytes);
+  assert.equal(readFileSync(metaFile, "utf8"), metaBytes);
+  assert.throws(() => f.store.updatePlanStatus("p_missing", f.plan.status), /STORE_PLAN_NOT_FOUND/);
+});
+
+test("approval does not rewrite unchanged read-only metadata", { skip: process.platform !== "win32" }, async (t) => {
+  const f = setup();
+  const metaFile = join(f.store.root, "plans", f.plan.planId + ".meta.json");
+  const metadata = readFileSync(metaFile, "utf8");
+  chmodSync(metaFile, 0o444);
+  t.after(() => {
+    chmodSync(metaFile, 0o666);
+    rmSync(f.root, { recursive: true, force: true });
+  });
+  let approved;
+  try {
+    approved = approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+  } catch (error) {
+    assert.equal(f.store.readPlan(f.plan.planId)?.plan.status.state, f.plan.status.state,
+      "Failed approval must not publish approved status before a failing metadata rewrite: " + String(error));
+    throw error;
+  }
+  assert.equal(approved.plan.status.state, "approved");
+  assert.equal(f.store.readPlan(f.plan.planId)?.plan.status.approvalNonceId, approved.nonce.nonceId);
+  assert.equal(readFileSync(metaFile, "utf8"), metadata);
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+  assert.equal(applied.state, "applied");
+});
+
 for (const refusal of ["changed source", "out of scope", "changed before replace"] as const) {
   test("apply preserves " + refusal + " refusal when the summary event fails", async (t) => {
     const f = setup();
@@ -148,7 +186,7 @@ for (const refusal of ["changed source", "out of scope", "changed before replace
   });
 }
 
-for (const failingWrite of ["saveNonce", "savePlan"] as const) {
+for (const failingWrite of ["saveNonce", "updatePlanStatus"] as const) {
   test("approval can retry after " + failingWrite + " fails without permitting an unapproved apply", async (t) => {
     const f = setup();
     const approve = () => approvePlan({
