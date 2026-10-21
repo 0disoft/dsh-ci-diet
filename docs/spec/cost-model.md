@@ -140,11 +140,13 @@ from one repository's usage.
 
 `sync` accepts `--included-minutes` and `--account-minutes-used`, or the same
 values as `billing` in the config file, to supply the account-wide allowance.
-The estimate treats saved minutes as the last minutes consumed:
-`billable = max(0, saved - max(0, included - used))`, converted at the confirmed
-SKU rates. Jobs with unknown SKUs keep the estimate `unknown` rather than
-reporting a partial amount. The CLI accepts both flags or neither; passing only
-one is a usage error.
+`accountMinutesUsed` is the current usage and already includes the analyzed
+runs, so the estimate removes the overage before and after the savings:
+`billable = min(saved, max(0, used - included))`, converted at the confirmed
+SKU rates. An account at or below its allowance saves no billed minutes today,
+even though the list price falls. Jobs with unknown SKUs keep the estimate
+`unknown` rather than reporting a partial amount. The CLI accepts both flags or
+neither; passing only one is a usage error.
 
 ## Artifacts
 

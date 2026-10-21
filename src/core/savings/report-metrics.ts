@@ -101,12 +101,17 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
       "BILLING_ESTIMATE_UNCONFIGURED",
     );
   } else {
-    const unusedAllowance = Math.max(0, billing.includedMinutes - billing.accountMinutesUsed);
-    const billableMinutes = Math.max(0, knownRateMinutes - unusedAllowance);
+    // accountMinutesUsed is current usage and already includes the analyzed
+    // runs, so savings only avoid a charge for minutes that are over the
+    // allowance now: overage before minus overage after. An account under its
+    // allowance saves no billed minutes today even though the list price drops.
+    const overageMinutes = Math.max(0, billing.accountMinutesUsed - billing.includedMinutes);
+    const billableMinutes = Math.min(knownRateMinutes, overageMinutes);
     const billableMicro = Math.round((knownRateMicroUsd * billableMinutes) / knownRateMinutes);
     estimatedMarginalUsd = knownUsd(
       formatUsd(billableMicro),
-      "saved " + knownRateMinutes + " min at confirmed SKUs with " + unusedAllowance + " included minutes unused",
+      "saved " + knownRateMinutes + " min at confirmed SKUs; " + overageMinutes
+        + " min of the account were already over " + billing.includedMinutes + " included minutes",
     );
   }
 

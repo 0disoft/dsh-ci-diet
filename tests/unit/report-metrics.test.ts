@@ -30,16 +30,26 @@ test("savings inside the included allowance cost nothing", () => {
   assert.equal(value.value, "0.000000");
 });
 
-test("savings that cross the allowance are billed only past it", () => {
-  const value = marginal({ accountMinutesUsed: 1995, includedMinutes: 2000 });
+test("usage just past the allowance bills only the overlapping minutes", () => {
+  const value = marginal({ accountMinutesUsed: 2005, includedMinutes: 2000 });
   assert.equal(value.status, "known");
   assert.equal(value.value, "0.030000");
 });
 
-test("savings past the allowance are billed at the list rate", () => {
-  const value = marginal({ accountMinutesUsed: 2500, includedMinutes: 2000 });
-  assert.equal(value.status, "known");
-  assert.equal(value.value, "0.060000");
+test("savings are capped by the minutes already over the allowance", () => {
+  for (const accountMinutesUsed of [2100, 2500]) {
+    const value = marginal({ accountMinutesUsed, includedMinutes: 2000 });
+    assert.equal(value.status, "known");
+    assert.equal(value.value, "0.060000");
+  }
+});
+
+test("usage at or below the allowance keeps the marginal cost at zero", () => {
+  for (const accountMinutesUsed of [1900, 2000]) {
+    const value = marginal({ accountMinutesUsed, includedMinutes: 2000 });
+    assert.equal(value.status, "known");
+    assert.equal(value.value, "0.000000");
+  }
 });
 
 test("an unknown SKU keeps the marginal estimate unknown", () => {
