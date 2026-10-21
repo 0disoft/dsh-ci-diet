@@ -21,6 +21,34 @@ const PR_ONLY = [
   "      - run: echo hi",
 ].join("\n");
 
+
+const TIMEOUT_WORKFLOW = (minutes: number | string): string =>
+  [
+    "name: pr",
+    "on:",
+    "  pull_request:",
+    "jobs:",
+    "  test:",
+    "    runs-on: ubuntu-latest",
+    "    timeout-minutes: " + String(minutes),
+    "    steps:",
+    "      - run: echo hi",
+    "",
+  ].join("\n");
+
+const UPLOAD_WORKFLOW = (extra: readonly string[]): string =>
+  [
+    "on:",
+    "  pull_request:",
+    "jobs:",
+    "  test:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: actions/upload-artifact@v4",
+    ...extra,
+    "",
+  ].join("\n");
+
 const PR_AND_PUSH = [
   "on: [push, pull_request]",
   "jobs:",
@@ -210,3 +238,72 @@ test("CD005 keeps a small cohort review-only", () => {
   assert.equal(evaluation.findings[0]?.patchability, "review-only");
   assert.ok(evaluation.findings[0]?.blockers.includes("COHORT_BELOW_20"));
 });
+
+function twentyJobs(runId: string): HistoryJob[] {
+  const jobs: HistoryJob[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    jobs.push(job("t" + index, runId, "2026-10-19T00:00:00.000Z", (10 + index) * 1000));
+  }
+  return jobs;
+}
+
+test("CD005 keeps an equal or smaller literal timeout", () => {
+  for (const minutes of [5, 6]) {
+    const parsed = definition(TIMEOUT_WORKFLOW(minutes));
+    const history = bundle([run("510", { jobs: twentyJobs("510"), definition: parsed })]);
+    const evaluation = rule(evaluateRules(context(history), ["CD005"]), "CD005");
+    assert.equal(evaluation.results[0]?.outcome, "no_finding", "timeout-minutes: " + minutes);
+  }
+});
+
+test("CD005 proposes reducing a larger literal timeout", () => {
+  const parsed = definition(TIMEOUT_WORKFLOW(30));
+  const history = bundle([run("511", { jobs: twentyJobs("511"), definition: parsed })]);
+  const finding = rule(evaluateRules(context(history), ["CD005"]), "CD005").findings[0];
+  assert.ok(finding);
+  assert.equal(finding.patchability, "review-only");
+  assert.match(finding.title, /caps at 30 minutes; p95 is 28\.0 s/);
+  assert.doesNotMatch(finding.title, /no timeout/);
+  assert.match(finding.renderedText, /reduced to 6 minutes/);
+  assert.equal(finding.message, undefined);
+});
+
+test("CD005 reports an expression timeout without proposing a literal", () => {
+  const parsed = definition(TIMEOUT_WORKFLOW("$" + "{{ inputs.timeout }}"));
+  const history = bundle([run("512", { jobs: twentyJobs("512"), definition: parsed })]);
+  const finding = rule(evaluateRules(context(history), ["CD005"]), "CD005").findings[0];
+  assert.ok(finding);
+  assert.equal(finding.patchability, "review-only");
+  assert.match(finding.title, /expression timeout/);
+  assert.ok(finding.blockers.includes("EXPRESSION_TIMEOUT_REPORT_ONLY"));
+});
+
+test("CD005 ignores a cohort whose definition hash is not the scanned file", () => {
+  const sampled = definition(PR_ONLY);
+  const history = bundle([run("513", { jobs: twentyJobs("513"), definition: sampled })]);
+  const edited = definition(TIMEOUT_WORKFLOW(30));
+  const evaluation = rule(evaluateRules({ ...context(history), workflows: [edited] }, ["CD005"]), "CD005");
+  assert.equal(evaluation.findings.length, 0);
+  assert.equal(evaluation.results[0]?.outcome, "no_finding");
+});
+
+test("CD008 treats retention-days: 0 as the repository default", () => {
+  const parsed = definition(UPLOAD_WORKFLOW(["        with:", "          retention-days: 0"]));
+  const evaluation = rule(evaluateRules(context(bundle([run("600", { definition: parsed })])), ["CD008"]), "CD008");
+  const finding = evaluation.findings[0];
+  assert.ok(finding);
+  assert.match(finding.title, /repository default/);
+  assert.match(finding.renderedText, /repository default \(retention-days: 0\)/);
+  assert.equal(finding.patchability, "review-only");
+});
+
+test("CD008 keeps a 7-day literal and reports a larger one", () => {
+  const seven = definition(UPLOAD_WORKFLOW(["        with:", "          retention-days: 7"]));
+  const kept = rule(evaluateRules(context(bundle([run("601", { definition: seven })])), ["CD008"]), "CD008");
+  assert.equal(kept.findings.length, 0);
+  const thirty = definition(UPLOAD_WORKFLOW(["        with:", "          retention-days: 30"]));
+  const reported = rule(evaluateRules(context(bundle([run("602", { definition: thirty })])), ["CD008"]), "CD008");
+  assert.equal(reported.findings.length, 1);
+  assert.match(reported.findings[0]?.title ?? "", /30 days/);
+});
+

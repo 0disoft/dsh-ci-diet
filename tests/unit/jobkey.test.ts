@@ -51,6 +51,40 @@ test("returns null for empty job lists", () => {
   assert.equal(recoverJobKey("build", []), null);
 });
 
+test("attributes each leg of a single-job matrix workflow", () => {
+  const text = [
+    "on: push",
+    "jobs:",
+    "  test:",
+    "    strategy:",
+    "      matrix:",
+    "        os: [ubuntu-latest, windows-2022]",
+    "        node: [18, 20]",
+    "    runs-on: $" + "{{ matrix.os }}",
+    "    steps:",
+    "      - run: echo ok",
+    "",
+  ].join("\n");
+  const workflowJobs = parseWorkflow("single-matrix.yml", text).jobs;
+  const linux = recoverJobKey("test (ubuntu-latest, 18)", workflowJobs);
+  assert.ok(linux);
+  assert.equal(linux.key, "test");
+  assert.equal(linux.level, "matrix-expanded");
+  assert.deepEqual(linux.matrix, { os: "ubuntu-latest", node: 18 });
+  const windows = recoverJobKey("test (windows-2022, 20)", workflowJobs);
+  assert.ok(windows);
+  assert.deepEqual(windows.matrix, { os: "windows-2022", node: 20 });
+  assert.equal(recoverJobKey("Platform (ubuntu-latest, 24.x)", workflowJobs), null);
+});
+
+test("keeps a non-matrix single job on the single-job level", async () => {
+  const workflowJobs = await jobs("single-job.yml");
+  const match = recoverJobKey("Platform (ubuntu-latest, 24.x)", workflowJobs);
+  assert.ok(match);
+  assert.equal(match.key, "build");
+  assert.equal(match.level, "single-job");
+});
+
 test("refuses to expand past the combination cap", () => {
   const values = Array.from({ length: 20 }, (_, index) => index);
   const text = [

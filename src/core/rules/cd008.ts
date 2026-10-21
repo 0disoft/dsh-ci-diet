@@ -56,12 +56,22 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
       for (const step of job.steps) {
         if (step.uses === null || !UPLOAD_ARTIFACT.test(step.uses)) continue;
         const state = retentionState(step.withEntries);
-        if (state.kind === "literal" && state.days <= PROPOSED_RETENTION_DAYS) continue;
+        // 0 means the repository default, never zero-day retention, so it is
+        // never already compliant (rules.md:190).
+        if (state.kind === "literal" && state.days >= 1 && state.days <= PROPOSED_RETENTION_DAYS) continue;
         if (state.kind === "other") continue;
 
+        const retentionKind =
+          state.kind === "literal" && state.days > 0
+            ? "literal"
+            : state.kind === "expression"
+              ? "expression"
+              : "default";
         const current =
           state.kind === "literal"
-            ? state.days + " days"
+            ? state.days === 0
+              ? "the repository default (retention-days: 0)"
+              : state.days + " days"
             : state.kind === "expression"
               ? "an expression"
               : "the repository default (no retention-days input)";
@@ -88,22 +98,12 @@ function evaluateCd008(context: RuleContext): RuleEvaluation {
               current +
               ". A 7-day retention is a proposal, not a default; it applies only below the confirmed repository maximum and above the consumer minimum. Current artifacts are never deleted.",
             message: {
-              titleKey:
-                state.kind === "literal"
-                  ? "finding.CD008.title.literal"
-                  : state.kind === "expression"
-                    ? "finding.CD008.title.expression"
-                    : "finding.CD008.title.default",
-              textKey:
-                state.kind === "literal"
-                  ? "finding.CD008.text.literal"
-                  : state.kind === "expression"
-                    ? "finding.CD008.text.expression"
-                    : "finding.CD008.text.default",
+              titleKey: "finding.CD008.title." + retentionKind,
+              textKey: "finding.CD008.text." + retentionKind,
               params: {
                 job: job.key,
                 step: step.name ?? "step " + (step.index + 1),
-                ...(state.kind === "literal" ? { days: state.days } : {}),
+                ...(state.kind === "literal" && state.days > 0 ? { days: state.days } : {}),
               },
             },
             evidenceLevel: "static",

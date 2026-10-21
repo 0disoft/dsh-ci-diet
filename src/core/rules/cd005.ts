@@ -147,7 +147,12 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
     const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
     if (p95 === null) continue;
     const recommendation = recommendedMinutes(p95);
-    if (state.timeoutMinutes !== null && state.timeoutMinutes >= 1 && state.timeoutMinutes >= recommendation) continue;
+    const existingMinutes = state.timeoutMinutes;
+    // Never raise a literal: keep an equal or smaller value, and propose only a
+    // reduction when the existing literal is above the recommendation. A literal
+    // below 1 is invalid, so it is left alone rather than raised (rules.md:170-172).
+    if (existingMinutes !== null && (existingMinutes < 1 || existingMinutes <= recommendation)) continue;
+    const reductionMinutes = existingMinutes !== null ? existingMinutes : null;
 
     const cohortReady = n >= CD005_MIN_COHORT;
     const excess = cohort.samples.some((sample) => sample.seconds > recommendation * 60);
@@ -162,31 +167,49 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
     const eligible = cohortReady && blockers.length === 0 && writeComposition.writeAllowed && !state.timeoutPresent;
 
     const sampleIds = cohort.samples.slice(0, 10).map((sample) => "run:" + sample.runId + "#job:" + sample.jobId);
+    const title =
+      reductionMinutes !== null
+        ? "Job " + cohort.jobKey + " caps at " + reductionMinutes + " minutes; p95 is " + p95.toFixed(1) + " s"
+        : state.timeoutPresent
+          ? "Job " + cohort.jobKey + " has an expression timeout; p95 is " + p95.toFixed(1) + " s"
+          : "Job " + cohort.jobKey + " has no timeout; p95 is " + p95.toFixed(1) + " s";
+    const proposal =
+      reductionMinutes !== null
+        ? "The existing timeout-minutes: " + reductionMinutes + " would be reduced to " + recommendation + " minutes."
+        : state.timeoutPresent
+          ? "The timeout is an expression, so CI Diet reports only and proposes no literal."
+          : "A timeout of " + recommendation + " minutes is the proposal from ceil(max(2 * p95, p95 + 300) / 60).";
     findings.push(
       buildFinding({
         ruleId: RULE_ID,
         ruleVersion: RULE_VERSION,
         workflowPath: cohort.workflowPath,
         workflowHash: cohort.workflowHash,
-        title: "Job " + cohort.jobKey + " has no timeout; p95 is " + p95.toFixed(1) + " s",
+        title,
         renderedText:
           "Job " + cohort.jobKey + " on " + cohort.workflowPath + " ran successfully " + n + " times with a nearest-rank p95 of " +
-          p95.toFixed(1) + " s. A timeout of " + recommendation + " minutes is the proposal from ceil(max(2 * p95, p95 + 300) / 60). " +
+          p95.toFixed(1) + " s. " + proposal + " " +
           "The cohort is definition " + cohort.workflowHash.slice(0, 19) + ", runner labels " + (cohort.runnerKey === "" ? "(none)" : cohort.runnerKey) + ", event " + cohort.event + ".",
-        message: {
-          titleKey: "finding.CD005.title",
-          textKey: "finding.CD005.text",
-          params: {
-            job: cohort.jobKey,
-            p95: p95.toFixed(1),
-            workflow: cohort.workflowPath,
-            samples: n,
-            minutes: recommendation,
-            hash: cohort.workflowHash.slice(0, 19),
-            runner: cohort.runnerKey === "" ? "(none)" : cohort.runnerKey,
-            event: cohort.event,
-          },
-        },
+        // The localized titles in the catalogs describe an absent timeout, so a
+        // reduction or an expression timeout keeps the canonical English text.
+        ...(state.timeoutPresent
+          ? {}
+          : {
+              message: {
+                titleKey: "finding.CD005.title",
+                textKey: "finding.CD005.text",
+                params: {
+                  job: cohort.jobKey,
+                  p95: p95.toFixed(1),
+                  workflow: cohort.workflowPath,
+                  samples: n,
+                  minutes: recommendation,
+                  hash: cohort.workflowHash.slice(0, 19),
+                  runner: cohort.runnerKey === "" ? "(none)" : cohort.runnerKey,
+                  event: cohort.event,
+                },
+              },
+            }),
         evidenceLevel: cohortReady ? "observed" : "inferred",
         patchability: eligible ? "eligible" : "review-only",
         evidenceRefs: ["workflow:" + cohort.workflowPath + "#jobs." + cohort.jobKey + ".timeout-minutes", ...sampleIds],
@@ -227,14 +250,15 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
   };
 }
 
+/**
+ * The current definition must match the cohort's hash: a cohort measured on
+ * older workflow content cannot be judged against today's timeout state.
+ */
 function definitionFor(context: RuleContext, workflowPath: string, workflowHash: string) {
   for (const workflow of context.workflows) {
-    if (workflow.path === workflowPath) return isAnalyzable(workflow) ? workflow : null;
-  }
-  for (const run of context.history?.runs ?? []) {
-    if (run.workflowPath !== workflowPath) continue;
-    if (run.definition === null) continue;
-    if (run.definition.sha256 === workflowHash && isAnalyzable(run.definition)) return run.definition;
+    if (workflow.path !== workflowPath) continue;
+    if (workflow.sha256 !== workflowHash) continue;
+    return isAnalyzable(workflow) ? workflow : null;
   }
   return null;
 }

@@ -1,5 +1,6 @@
 import { digestOf } from "../../shared/cdj1.ts";
 import type { PricingSnapshot } from "../contracts/schema.ts";
+import { AXIS_NAMES, RULE_IDS } from "../model/domain.ts";
 import type { AxisName, CoverageLevel, DimensionStatus, RuleId } from "../model/domain.ts";
 import { COVERAGE_POLICY_JSON, PRICING_SNAPSHOT_JSON } from "./contracts.generated.ts";
 
@@ -43,10 +44,38 @@ export function loadPricingSnapshot(json: string): PricingSnapshot {
   return deepFreeze(snapshot);
 }
 
+const DIMENSION_STATUSES: readonly DimensionStatus[] = ["complete", "partial", "unavailable"];
+
+/**
+ * Parse and verify the embedded coverage policy.
+ *
+ * Every rule x axis x status cell decides evidence and write eligibility, so a
+ * hole is a build defect: fail closed at load rather than let composition fall
+ * back to `full`.
+ */
 export function loadCoveragePolicy(json: string): CoveragePolicy {
   const policy = JSON.parse(json) as CoveragePolicy;
   for (const level of policy.compositionOrder) {
     if (!(level in policy.levels)) throw new Error("coverage policy is missing level " + level);
+    if (!(level in policy.writeEligibility)) {
+      throw new Error("coverage policy is missing writeEligibility for level " + level);
+    }
+  }
+  for (const ruleId of RULE_IDS) {
+    const axes = policy.rules?.[ruleId];
+    if (axes === undefined) throw new Error("coverage policy is missing rules." + ruleId);
+    for (const axis of AXIS_NAMES) {
+      const cells = axes[axis];
+      if (cells === undefined) throw new Error("coverage policy is missing rules." + ruleId + "." + axis);
+      for (const status of DIMENSION_STATUSES) {
+        const level = cells[status];
+        if (!policy.compositionOrder.includes(level)) {
+          throw new Error(
+            "coverage policy maps rules." + ruleId + "." + axis + "." + status + " to unknown level " + String(level),
+          );
+        }
+      }
+    }
   }
   return deepFreeze(policy);
 }

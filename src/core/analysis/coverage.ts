@@ -1,5 +1,5 @@
 import type { Coverage, Dimension } from "../contracts/schema.ts";
-import { COVERAGE_POLICY } from "../data/index.ts";
+import { COVERAGE_POLICY, type CoveragePolicy } from "../data/index.ts";
 import { AXIS_NAMES } from "../model/domain.ts";
 import type { AxisName, CoverageLevel, DimensionStatus, RuleId } from "../model/domain.ts";
 
@@ -33,9 +33,11 @@ export function composeCoverage(
   coverage: Coverage,
   ruleId: RuleId,
   options: CompositionOptions = {},
+  policy: CoveragePolicy = COVERAGE_POLICY,
 ): CoverageComposition {
   const missingAxes: MissingAxis[] = [];
   const reasons: string[] = [];
+  const weakestIndex = policy.compositionOrder.length - 1;
   let levelIndex = 0;
 
   for (const axis of AXIS_NAMES) {
@@ -43,17 +45,20 @@ export function composeCoverage(
     if (dimension.status === "complete") continue;
     missingAxes.push({ axis, status: dimension.status, reasons: [...dimension.reasons] });
     reasons.push("MISSING_" + axis.toUpperCase() + "_" + dimension.status.toUpperCase());
-    const mapped = COVERAGE_POLICY.rules[ruleId][axis][dimension.status];
-    levelIndex = Math.max(levelIndex, COVERAGE_POLICY.compositionOrder.indexOf(mapped));
+    const mapped = policy.rules[ruleId][axis][dimension.status];
+    const mappedIndex = policy.compositionOrder.indexOf(mapped);
+    // An unmapped cell is a policy defect and must never widen evidence: fall
+    // back to the most restrictive level instead of leaving the index at full.
+    levelIndex = Math.max(levelIndex, mappedIndex === -1 ? weakestIndex : mappedIndex);
   }
 
   if (options.currentDefinitionParsed === false) {
-    levelIndex = COVERAGE_POLICY.compositionOrder.length - 1;
+    levelIndex = weakestIndex;
     reasons.push("CURRENT_DEFINITION_UNPARSABLE");
   }
 
-  const level = COVERAGE_POLICY.compositionOrder[levelIndex] ?? "skip";
-  const eligibility = COVERAGE_POLICY.writeEligibility[level];
+  const level = policy.compositionOrder[levelIndex] ?? "skip";
+  const eligibility = policy.writeEligibility[level];
   const writeAllowed =
     eligibility === "always" ||
     (eligibility === "requires-complete-edit-evidence" && options.editedJobEvidenceComplete === true);
