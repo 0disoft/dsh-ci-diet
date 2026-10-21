@@ -6,7 +6,7 @@ import { DEFAULT_CONFIG } from "../../core/data/default-config.ts";
 import { buildHistoryReport } from "../../core/analysis/report.ts";
 import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
 import type { RuleId } from "../../core/model/domain.ts";
-import type { Coverage } from "../../core/contracts/schema.ts";
+import type { Coverage, Dimension } from "../../core/contracts/schema.ts";
 import { PatchStore } from "../../core/patch/store.ts";
 import { PROPOSED_RETENTION_DAYS, planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../../core/patch/edits.ts";
 import type { ByteEdit } from "../../core/contracts/schema.ts";
@@ -44,6 +44,11 @@ export const Config: Schema<Config> = Schema.object({
 
 function stateDirOf(config: Config): string {
   return config.stateDir === "" ? defaultStateDir() : config.stateDir;
+}
+
+/** True when history collection stopped early; the model must not treat the window as complete. */
+export function isHistoryTruncated(coverage: Pick<Dimension, "status" | "reasons">): boolean {
+  return coverage.status === "partial" || coverage.reasons.some((reason) => reason === "RUN_LIMIT_REACHED" || reason === "ARTIFACT_RUN_LIMIT_REACHED");
 }
 
 function text(value: string) {
@@ -127,7 +132,7 @@ export function apply(ctx: Context, config: Config) {
       const rules = args.rules as readonly RuleId[] | undefined;
       const scan = runStaticScan({ workspaceRoot: root, enabledRules: rules, maxWorkflowBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
       if (!existsSync(root)) throw new Error("workspace does not exist: " + root);
-      const store = PatchStore.open(stateDirOf(config));
+      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       store.saveBinding(scan.binding);
       store.saveReport(scan.report);
       return {
@@ -192,11 +197,11 @@ export function apply(ctx: Context, config: Config) {
       const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date() });
       const binding = createLocalBinding(root, new Date().toISOString(), { repositoryFullName: synced.history.repositoryFullName }).binding;
       const built = buildHistoryReport({ binding, workflows, history: synced.history, config: settings, generatedAt: new Date().toISOString() });
-      const store = PatchStore.open(stateDirOf(config));
+      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       store.saveBinding(binding);
       store.saveReport(built.report);
       store.saveHistory(binding.bindingId, synced.history);
-      const truncated = synced.history.missingScopes.some((scope) => scope.reason === "RUN_LIMIT_REACHED");
+      const truncated = isHistoryTruncated(synced.history.coverage.history);
       return {
         repository: synced.history.repositoryFullName,
         reportId: built.report.reportId,
@@ -232,7 +237,7 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(_args, exec) {
       exec.signal.throwIfAborted();
-      const store = PatchStore.open(stateDirOf(config));
+      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       const report = store.latestReport();
       if (report === null) throw new Error("no report stored yet; run ci_diet_scan or ci_diet_sync first");
       const binding = store.readBinding(report.bindingId);
@@ -290,7 +295,7 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
-      const store = PatchStore.open(stateDirOf(config));
+      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       const now = new Date();
       const root = realpathSync(args.cwd ?? process.cwd());
       const existing = store.findBindingByRoot(root);

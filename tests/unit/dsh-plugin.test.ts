@@ -4,7 +4,7 @@ import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { apply } from "../../src/dsh/host/plugin.ts";
+import { apply, isHistoryTruncated } from "../../src/dsh/host/plugin.ts";
 
 interface Registered {
   readonly name: string;
@@ -102,6 +102,13 @@ test("ci_diet_sync refuses without networkEnabled", async () => {
     () => tools.get("ci_diet_sync")!.execute({ cwd: workspace() }, { signal: new AbortController().signal }),
     /networkEnabled/,
   );
+});
+
+test("reports truncated history from the history coverage dimension", () => {
+  assert.equal(isHistoryTruncated({ status: "complete", reasons: [] }), false);
+  assert.equal(isHistoryTruncated({ status: "partial", reasons: ["PARTIAL_COLLECTION"] }), true);
+  assert.equal(isHistoryTruncated({ status: "unavailable", reasons: ["RUN_LIMIT_REACHED"] }), true);
+  assert.equal(isHistoryTruncated({ status: "unavailable", reasons: ["ARTIFACT_RUN_LIMIT_REACHED"] }), true);
 });
 
 test("ci_diet_plan previews retention edits without writing", async () => {

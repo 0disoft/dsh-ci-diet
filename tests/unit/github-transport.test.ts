@@ -174,4 +174,92 @@ describe("gh transport", () => {
     const transport = new GhTransport({ budget: budget(), runner });
     await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"), (error: unknown) => error instanceof GitHubError && error.code === "GH_NOT_INSTALLED");
   });
+
+  it("waits for Retry-After on a 429 instead of using exponential backoff", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(429, { message: "secondary" }, { "retry-after": "30" }), httpResponse(200, { ok: true }));
+    const waits: number[] = [];
+    const transport = new GhTransport({
+      budget: budget(),
+      runner,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(waits, [30_000]);
+  });
+
+  it("parses an HTTP-date Retry-After and ignores invalid values", async () => {
+    const future = new Date(Date.now() + 3_600_000).toUTCString();
+    const dateWaits: number[] = [];
+    const dateRunner = runnerFrom(httpResponse(429, null, { "retry-after": future }), httpResponse(200, { ok: true }));
+    const dateTransport = new GhTransport({
+      budget: budget(),
+      runner: dateRunner.runner,
+      sleep: async (milliseconds) => {
+        dateWaits.push(milliseconds);
+      },
+    });
+    await dateTransport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.deepEqual(dateWaits, [30_000]);
+
+    const invalidWaits: number[] = [];
+    const invalidRunner = runnerFrom(httpResponse(429, null, { "retry-after": "not-a-date" }), httpResponse(200, { ok: true }));
+    const invalidTransport = new GhTransport({
+      budget: budget(),
+      runner: invalidRunner.runner,
+      sleep: async (milliseconds) => {
+        invalidWaits.push(milliseconds);
+      },
+    });
+    await invalidTransport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.deepEqual(invalidWaits, [500]);
+  });
+
+  it("retries a status-0 network failure", async () => {
+    const { runner, calls } = runnerFrom("", httpResponse(200, { ok: true }));
+    const waits: number[] = [];
+    const transport = new GhTransport({
+      budget: budget(),
+      runner,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.equal(waits.length, 1);
+  });
+
+  it("retries a timed-out gh invocation and forwards the request timeout", async () => {
+    const timeouts: Array<number | undefined> = [];
+    const stdout = httpResponse(200, { ok: true });
+    const runner: GhRunner = async (_args, timeoutMs) => {
+      timeouts.push(timeoutMs);
+      if (timeouts.length === 1) return { exitCode: 1, stdout: "", stderr: "", timedOut: true };
+      return { exitCode: 0, stdout, stderr: "" };
+    };
+    const transport = new GhTransport({ budget: budget(), runner, timeoutMs: 5_000, sleep: async () => {} });
+    const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.equal(response.status, 200);
+    assert.deepEqual(timeouts, [5_000, 5_000]);
+  });
+
+  it("does not retry an authentication failure", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(401, { message: "Bad credentials" }), httpResponse(200, { ok: true }));
+    const waits: number[] = [];
+    const transport = new GhTransport({
+      budget: budget(),
+      runner,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"));
+    assert.equal(calls.length, 1);
+    assert.equal(waits.length, 0);
+  });
 });

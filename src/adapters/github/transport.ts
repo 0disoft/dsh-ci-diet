@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { GitHubError } from "./errors.ts";
+import { GitHubError, isTransient } from "./errors.ts";
 import { renderPath } from "./endpoints.ts";
 import type { EndpointRequest } from "./endpoints.ts";
 import type { Family, RequestBudget } from "./budget.ts";
@@ -12,9 +12,11 @@ export interface GhResult {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
+  /** True when gh was killed before it could answer, e.g. by the execFile timeout. */
+  readonly timedOut?: boolean;
 }
 
-export type GhRunner = (args: readonly string[]) => Promise<GhResult>;
+export type GhRunner = (args: readonly string[], timeoutMs?: number) => Promise<GhResult>;
 
 export interface GhResponse {
   readonly status: number;
@@ -43,16 +45,19 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 /** Real runner: resolves the gh binary from PATH and never uses a shell. */
-export const ghCliRunner: GhRunner = (args) =>
+export const ghCliRunner: GhRunner = (args, timeoutMs = DEFAULT_TIMEOUT_MS) =>
   new Promise((resolveRun) => {
-    execFile("gh", [...args], { timeout: DEFAULT_TIMEOUT_MS, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+    execFile("gh", [...args], { timeout: timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
       if (error === null) {
         resolveRun({ exitCode: 0, stdout: String(stdout), stderr: String(stderr) });
         return;
       }
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         resolveRun({ exitCode: 127, stdout: String(stdout), stderr: "gh was not found on PATH" });
+        return;
+      }
+      if ((error as { killed?: boolean }).killed === true) {
+        resolveRun({ exitCode: 1, stdout: String(stdout), stderr: String(stderr), timedOut: true });
         return;
       }
       const status = typeof (error as { code?: unknown }).code === "number" ? Number((error as { code?: unknown }).code) : 1;
@@ -90,6 +95,31 @@ function parseResponse(stdout: string): { status: number; headers: Record<string
   return { status: match === null ? 0 : Number(match[1]), headers, text };
 }
 
+const MAX_RETRY_DELAY_MS = 30_000;
+
+/** Parse Retry-After: whole seconds or an HTTP-date; anything else is ignored. */
+function parseRetryAfter(value: string | undefined): number | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  if (/^[0-9]+$/.test(trimmed)) {
+    return Math.min(Number(trimmed) * 1000, MAX_RETRY_DELAY_MS);
+  }
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  return Math.min(Math.max(0, at - Date.now()), MAX_RETRY_DELAY_MS);
+}
+
+function retryAfterFromHeaders(headers: Readonly<Record<string, string>>): number | null {
+  const direct = parseRetryAfter(headers["retry-after"]);
+  if (direct !== null) return direct;
+  const reset = headers["x-ratelimit-reset"];
+  if (reset === undefined) return null;
+  const seconds = Number(reset.trim());
+  if (!Number.isFinite(seconds)) return null;
+  return Math.min(Math.max(0, seconds * 1000 - Date.now()), MAX_RETRY_DELAY_MS);
+}
+
 function classify(status: number, headers: Readonly<Record<string, string>>, text: string): GitHubError {
   const remaining = headers["x-ratelimit-remaining"];
   const reset = headers["x-ratelimit-reset"];
@@ -97,25 +127,24 @@ function classify(status: number, headers: Readonly<Record<string, string>>, tex
   if (status === 401) return new GitHubError("AUTH_REQUIRED", "GitHub rejected the stored credentials; run gh auth login", 401, detail);
   if (status === 403 && remaining === "0") {
     const suffix = reset === undefined ? "" : " (resets at " + reset + ")";
-    return new GitHubError("RATE_LIMITED", "GitHub primary rate limit exhausted" + suffix, 403, detail);
+    return new GitHubError("RATE_LIMITED", "GitHub primary rate limit exhausted" + suffix, 403, detail, retryAfterFromHeaders(headers));
   }
   if (status === 403) return new GitHubError("PERMISSION_DENIED", "the token cannot read this resource", 403, detail);
   if (status === 404) return new GitHubError("NOT_FOUND", "resource not found or not accessible", 404, detail);
-  if (status === 429) return new GitHubError("RATE_LIMITED", "GitHub secondary rate limit hit", 429, detail);
+  if (status === 429) return new GitHubError("RATE_LIMITED", "GitHub secondary rate limit hit", 429, detail, retryAfterFromHeaders(headers));
   return new GitHubError("NETWORK_ERROR", "unexpected GitHub response: HTTP " + String(status), status, detail);
 }
 
-function retryDelay(status: number, headers: Readonly<Record<string, string>>, attempt: number): number {
-  const retryAfter = headers["retry-after"];
-  const parsed = retryAfter === undefined ? Number.NaN : Number(retryAfter);
-  if (Number.isFinite(parsed) && parsed >= 0) return Math.min(parsed * 1000, 30_000);
-  return Math.min(500 * 2 ** attempt, 8_000);
+function retryDelay(failure: GitHubError, attempt: number): number {
+  if (failure.retryAfterMs !== null) return failure.retryAfterMs;
+  return Math.min(500 * 2 ** attempt, MAX_RETRY_DELAY_MS);
 }
 
 /** Read-only GitHub.com transport: allowlisted GETs through the user`s gh credentials. */
 export class GhTransport {
   private readonly budget: RequestBudget;
   private readonly runner: GhRunner;
+  private readonly timeoutMs: number;
   private readonly retries: number;
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly cache: boolean;
@@ -124,6 +153,7 @@ export class GhTransport {
   constructor(options: TransportOptions) {
     this.budget = options.budget;
     this.runner = options.runner ?? ghCliRunner;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = options.retries ?? DEFAULT_RETRIES;
     this.sleep = options.sleep ?? delay;
     this.cache = options.cache ?? true;
@@ -143,9 +173,8 @@ export class GhTransport {
       } catch (error) {
         const failure = error instanceof GitHubError ? error : new GitHubError("NETWORK_ERROR", String(error));
         lastError = failure;
-        const transient = failure.status === 429 || failure.status === 502 || failure.status === 503 || failure.status === 504;
-        if (!transient || attempt === this.retries) break;
-        const wait = retryDelay(failure.status ?? 0, {}, attempt);
+        if (!isTransient(failure) || attempt === this.retries) break;
+        const wait = retryDelay(failure, attempt);
         await this.sleep(wait);
       } finally {
         this.budget.settle();
@@ -160,11 +189,12 @@ export class GhTransport {
     args.push(path);
     let result: GhResult;
     try {
-      result = await this.runner(args);
+      result = await this.runner(args, this.timeoutMs);
     } catch (error) {
       throw new GitHubError("NETWORK_ERROR", "gh invocation failed: " + String(error));
     }
     if (result.exitCode === 127) throw new GitHubError("GH_NOT_INSTALLED", "gh CLI is not installed or not on PATH", null, result.stderr.trim());
+    if (result.timedOut === true) throw new GitHubError("NETWORK_ERROR", "gh timed out after " + String(this.timeoutMs) + "ms", 0);
     const parsed = parseResponse(result.stdout);
     if (parsed.status === 304) {
       return { status: 304, headers: parsed.headers, body: null, etag, notified304: true };

@@ -123,6 +123,76 @@ test("collects changed files when the pull request is readable", async () => {
   assert.deepEqual(result.history.pulls.get(5)?.files, ["src/app.ts", "src/old.ts"]);
 });
 
+test("counts fetched jobs per job instead of per page", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (/\/attempts\/\d+\/jobs$/.test(request.path)) {
+      const jobs = [11, 12].map((id) => ({
+        id,
+        name: "build-" + String(id),
+        conclusion: "success",
+        started_at: "2026-10-19T10:00:10Z",
+        completed_at: "2026-10-19T10:01:10Z",
+        labels: ["ubuntu-latest"],
+        runner_name: "GitHub Actions 1",
+      }));
+      return response({ total_count: jobs.length, jobs });
+    }
+    return original(request, family);
+  };
+  const progress: number[] = [];
+  const result = await syncRepositoryHistory({
+    owner: "o",
+    repo: "r",
+    config: config(),
+    now: NOW,
+    transport,
+    onProgress: (snapshot) => progress.push(snapshot.jobsFetched),
+  });
+  assert.deepEqual(progress, [2]);
+  assert.equal(result.history.runs[0]?.jobs.length, 2);
+  assert.equal(result.history.coverage.history.status, "complete");
+});
+
+test("marks history partial with RUN_LIMIT_REACHED when the run window is truncated", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) {
+      const base = await original(request, family);
+      return { ...base, headers: { link: '<https://api.github.com/repositories/1/actions/runs?page=2>; rel="next"' } };
+    }
+    return original(request, family);
+  };
+  const baseConfig = config();
+  const truncatedConfig = { ...baseConfig, history: { ...baseConfig.history, maxRuns: 1 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: truncatedConfig, now: NOW, transport });
+  assert.equal(result.history.coverage.history.status, "partial");
+  assert.deepEqual(result.history.coverage.history.reasons, ["RUN_LIMIT_REACHED"]);
+});
+
+test("marks history partial when artifacts stop at the page cap", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/artifacts")) {
+      return response(
+        {
+          total_count: 999,
+          artifacts: [{ id: 1, name: "build", size_in_bytes: 10, created_at: "2026-10-19T10:00:00Z", expires_at: "2026-11-19T10:00:00Z" }],
+        },
+        { link: '<https://api.github.com/repositories/1/actions/artifacts?page=2>; rel="next"' },
+      );
+    }
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.artifacts.length, 3);
+  assert.equal(result.history.coverage.history.status, "partial");
+  assert.deepEqual(result.history.coverage.history.reasons, ["ARTIFACT_RUN_LIMIT_REACHED"]);
+});
+
 test("propagates authentication failures instead of recording them", async () => {
   const transport = {
     async get(): Promise<GhResponse> {

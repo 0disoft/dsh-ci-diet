@@ -104,7 +104,6 @@ export async function syncRepositoryHistory(options: {
 
   const historyRuns: HistoryRun[] = [];
   let jobsFetched = 0;
-  let jobsExpected = 0;
   const definitions = new Map<string, WorkflowDefinition | null>();
   const pulls = new Map<number, HistoryPull>();
   const pullNumbers = new Set<number>();
@@ -115,11 +114,10 @@ export async function syncRepositoryHistory(options: {
     const jobs: HistoryJob[] = [];
     const attempts = Math.max(1, run.run_attempt);
     for (let attempt = attempts; attempt >= 1; attempt -= 1) {
-      jobsExpected += 1;
       try {
         for (let page = 1; page <= 10; page += 1) {
           const result = await effectiveClient.attemptJobs(run.id, attempt, page, JOB_PAGE_SIZE);
-          jobsFetched += 1;
+          jobsFetched += result.items.length;
           for (const job of result.items) {
             const durationMillis = job.started_at === null ? null : durationMillisBetween(job.started_at, job.completed_at);
             jobs.push({
@@ -238,6 +236,7 @@ export async function syncRepositoryHistory(options: {
   }
 
   const artifacts: ArtifactRecord[] = [];
+  let artifactsTruncated = false;
   try {
     for (let page = 1; page <= MAX_ARTIFACT_PAGES; page += 1) {
       const result = await effectiveClient.artifacts(page, PAGE_SIZE);
@@ -252,6 +251,7 @@ export async function syncRepositoryHistory(options: {
         });
       }
       if (!result.hasNext) break;
+      if (page === MAX_ARTIFACT_PAGES) artifactsTruncated = true;
     }
   } catch (error) {
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
@@ -261,7 +261,16 @@ export async function syncRepositoryHistory(options: {
   const unresolvedDefinitions = historyRuns.filter((run) => run.definitionResolution === "unresolved").length;
   const pullsWithoutFiles = [...pulls.values()].filter((pull) => pull.files === null).length;
   const pullsMissing = pullNumbers.size - pulls.size;
-  const historyStatus: Dimension["status"] = historyError !== null ? "unavailable" : truncatedByLimit || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0 ? "partial" : "complete";
+  const historyReasons: string[] = [];
+  if (historyError !== null) historyReasons.push(historyError);
+  if (truncatedByLimit) historyReasons.push("RUN_LIMIT_REACHED");
+  if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
+  const historyStatus: Dimension["status"] =
+    historyError !== null
+      ? "unavailable"
+      : truncatedByLimit || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0
+        ? "partial"
+        : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";
   const changedFilesStatus: Dimension["status"] = pullNumbers.size === 0 ? "unavailable" : pullsMissing > 0 || pullsWithoutFiles > 0 ? "partial" : "complete";
 
@@ -288,7 +297,7 @@ export async function syncRepositoryHistory(options: {
         scope: historyConfig.lookbackDays + "d recent runs",
         fetched: historyRuns.length,
         expected: null,
-        reasons: coverageReasons(historyStatus, historyError !== null ? [historyError] : truncatedByLimit ? ["RUN_LIMIT_REACHED"] : []),
+        reasons: coverageReasons(historyStatus, historyReasons),
         missingScopes: missingScopes.filter((scope) => scope.family === "jobs"),
       },
       workflowDefinitions: {
