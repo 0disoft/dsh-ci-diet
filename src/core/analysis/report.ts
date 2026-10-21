@@ -97,7 +97,7 @@ export function buildHistoryReport(input: HistoryReportInput): HistoryReportResu
   const ruleResults: RuleResult[] = evaluations.flatMap((evaluation) => evaluation.results);
   const removals = evaluations.flatMap((evaluation) => evaluation.removals);
   const jobs = jobsFrom(input.history, removals);
-  const { metrics } = computeReportMetrics(jobs, { unavailableReason: "HISTORY_EMPTY" });
+  const { metrics } = computeReportMetrics(jobs, { unavailableReason: "HISTORY_EMPTY", billing: input.config.billing ?? null });
   const inputHashes = input.workflows
     .map((workflow) => workflow.sha256)
     .concat(digestOf({ history: input.history.runs.map((run) => run.runId).sort() }))

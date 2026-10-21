@@ -16,7 +16,7 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 
 | File | Original sha256 | Copy sha256 | Change |
 | --- | --- | --- | --- |
-| `contracts/ci-diet.schema.json` | `74f388db…` | differs | added optional `/$defs/Finding/properties/message` |
+| `contracts/ci-diet.schema.json` | `74f388db…` | differs | added optional `/$defs/Finding/properties/message` and `/$defs/Config/properties/billing` |
 | `contracts/pricing-2026-10-20.json` | `7192ea47…` | same | none |
 | `contracts/example-validation-map.json` | `1c1a7b08…` | same | none |
 | `contracts/coverage-policy.json` | `11748554…` | differs | localized `/levels/{full,subset,degrade,skip}` prose |
@@ -39,8 +39,9 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 4. A schema field that this repository adds on purpose belongs in `EXTENDED`.
    `--check` fails when the repository copy lacks the pointer or when the frozen
    pack already has it, so every extension is visible in review. The current
-   extension is Finding.message, which carries i18n keys and parameters; the
-   English `title` and `renderedText` stay canonical.
+   extensions are Finding.message, which carries i18n keys and parameters (the
+   English `title` and `renderedText` stay canonical), and Config.billing, which
+   supplies the optional account allowance for the marginal cost estimate.
 5. Deep-copying a file to hide drift is not an extension. Prefer a narrow optional
    field, keep it out of digest inputs, and record the reason in an ADR.
 6. Review chapters, evidence records, agent prompts, and internal estimates stay

@@ -56,6 +56,7 @@ the plan digest, and apply consumes a single-use nonce created by that approval.
 ```
 ci-diet scan  --cwd <repo> [--json] [--out <file>] [--rules CD001,CD008]
 ci-diet sync  --network --repo <owner/name> [--days 7] [--json]
+ci-diet sync  --network --included-minutes N --account-minutes-used M
 ci-diet plan  --rule CD008 [--cwd <repo>] --workflow .github/workflows/ci.yml \
               --job build --step upload --claims artifact-purpose:temporary,consumer-min-days:7
 ci-diet plan  --rule CD005 --workflow .github/workflows/ci.yml --job build --minutes 20

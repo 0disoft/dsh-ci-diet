@@ -12,9 +12,18 @@ import {
   unknownUsd,
 } from "./metrics.ts";
 
+export interface BillingEstimate {
+  /** Account-wide hosted runner minutes already used in the billing period. */
+  readonly accountMinutesUsed: number;
+  /** Hosted runner minutes included by the account plan for the same period. */
+  readonly includedMinutes: number;
+}
+
 export interface MetricsOptions {
   /** Reason reported for every field that needs history this run did not collect. */
   readonly unavailableReason: string;
+  /** When known, estimate the marginal charge avoided by the modeled savings. */
+  readonly billing?: BillingEstimate | null;
 }
 
 export interface ComputedMetrics {
@@ -79,6 +88,28 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
       )
     : knownUsd(formatUsd(knownRateMicroUsd), "list price delta at confirmed SKUs");
 
+  const billing = options.billing ?? null;
+  let estimatedMarginalUsd;
+  if (unknownSku || knownSkuJobs === 0 || knownRateMinutes <= 0) {
+    estimatedMarginalUsd = unknownUsd(
+      "known subset " + formatUsd(knownRateMicroUsd) + " USD across " + knownSkuJobs + "/" + jobs.length + " jobs",
+      "UNKNOWN_SKU",
+    );
+  } else if (billing === null) {
+    estimatedMarginalUsd = unknownUsd(
+      "configure billing.includedMinutes and billing.accountMinutesUsed",
+      "BILLING_ESTIMATE_UNCONFIGURED",
+    );
+  } else {
+    const unusedAllowance = Math.max(0, billing.includedMinutes - billing.accountMinutesUsed);
+    const billableMinutes = Math.max(0, knownRateMinutes - unusedAllowance);
+    const billableMicro = Math.round((knownRateMicroUsd * billableMinutes) / knownRateMinutes);
+    estimatedMarginalUsd = knownUsd(
+      formatUsd(billableMicro),
+      "saved " + knownRateMinutes + " min at confirmed SKUs with " + unusedAllowance + " included minutes unused",
+    );
+  }
+
   const metrics: AnalysisReport["metrics"] = {
     observedRunnerSeconds: knownSeconds(secondsFromMillis(observedMillis), "sum of confirmed job durations"),
     candidateRemovableSeconds: knownSeconds(secondsFromMillis(removedMillis), "union of removable intervals"),
@@ -87,7 +118,7 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
       "baseline " + baselineMinutes + " min, scenario " + scenarioMinutes + " min after per-job rounding",
     ),
     listPriceUsd,
-    estimatedMarginalUsd: unknownUsd("allowance_unknown", "ACCOUNT_ALLOWANCE_UNKNOWN"),
+    estimatedMarginalUsd,
     actualBilledUsd: unknownUsd("billing_not_queried", "BILLING_NOT_QUERIED"),
     queueSeconds: unknownSeconds("queue_not_observed", unknownReason),
     executionSpanSeconds: unknownSeconds("span_not_observed", unknownReason),

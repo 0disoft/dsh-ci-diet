@@ -42,7 +42,7 @@ const LOCALIZED = new Map([
 // Pointers added by this repository on purpose. The repository must have the
 // pointer and the pack must not, so the extension shows up in review.
 const EXTENDED = new Map([
-  ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message"]]
+  ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message", "/$defs/Config/properties/billing"]]
 ]);
 
 // Translated markdown: compare existence and parseability only.

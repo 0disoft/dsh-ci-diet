@@ -61,6 +61,8 @@ interface Options {
   readonly repo: string | null;
   readonly network: boolean;
   readonly days: number | null;
+  readonly accountMinutesUsed: number | null;
+  readonly includedMinutes: number | null;
   readonly stateDir: string | null;
   readonly workflow: string | null;
   readonly rule: RuleId | null;
@@ -100,6 +102,8 @@ function parseArgs(argv: readonly string[]): Options {
   let repo: string | null = null;
   let network = false;
   let days: number | null = null;
+  let accountMinutesUsed: number | null = null;
+  let includedMinutes: number | null = null;
   let stateDir: string | null = null;
   let workflow: string | null = null;
   let rule: RuleId | null = null;
@@ -155,6 +159,18 @@ function parseArgs(argv: readonly string[]): Options {
       const parsed = Number(value);
       if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 90) throw new UsageError("INVALID_VALUE:--days");
       days = parsed;
+    } else if (arg === "--account-minutes-used") {
+      const value = takeValue(index, "--account-minutes-used");
+      index += 1;
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) throw new UsageError("INVALID_VALUE:--account-minutes-used");
+      accountMinutesUsed = parsed;
+    } else if (arg === "--included-minutes") {
+      const value = takeValue(index, "--included-minutes");
+      index += 1;
+      const parsed = Number(value);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) throw new UsageError("INVALID_VALUE:--included-minutes");
+      includedMinutes = parsed;
     } else if (arg === "--rules") {
       const value = takeValue(index, "--rules");
       index += 1;
@@ -234,6 +250,8 @@ function parseArgs(argv: readonly string[]): Options {
     repo,
     network,
     days,
+    accountMinutesUsed,
+    includedMinutes,
     stateDir,
     workflow,
     rule,
@@ -377,9 +395,17 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     repository = remote.repository;
   }
 
-  const config: Config = options.days === null
+  if ((options.accountMinutesUsed === null) !== (options.includedMinutes === null)) {
+    process.stderr.write(t("cli.invalidValue", { flag: options.accountMinutesUsed === null ? "--account-minutes-used" : "--included-minutes" }) + "\n");
+    return EXIT_USAGE;
+  }
+  const billing = options.accountMinutesUsed === null || options.includedMinutes === null
+    ? null
+    : { accountMinutesUsed: options.accountMinutesUsed, includedMinutes: options.includedMinutes };
+  const baseConfig: Config = options.days === null
     ? DEFAULT_CONFIG
     : { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: options.days } };
+  const config: Config = billing === null ? baseConfig : { ...baseConfig, billing };
 
   const showProgress = process.stderr.isTTY === true && !options.json;
   let progressPrinted = false;

@@ -54,6 +54,10 @@ export type Config = {
   "progressPollMinMs": 500;
   "modelResultMaxBytes": 65536;
 };
+  "billing"?: {
+  "accountMinutesUsed": number;
+  "includedMinutes": number;
+};
 };
 export type RepositoryBinding = {
   "schemaVersion": 2;

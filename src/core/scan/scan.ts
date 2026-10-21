@@ -123,7 +123,7 @@ export function runStaticScan(options: StaticScanOptions): StaticScanResult {
 
   const findings = ruleEvaluations.flatMap((evaluation) => evaluation.findings);
   const ruleResults = ruleEvaluations.flatMap((evaluation) => evaluation.results);
-  const { metrics } = computeReportMetrics([], { unavailableReason: "NO_HISTORY" });
+  const { metrics } = computeReportMetrics([], { unavailableReason: "NO_HISTORY", billing: null });
 
   const inputHashes = workflows
     .map((workflow) => workflow.sha256)

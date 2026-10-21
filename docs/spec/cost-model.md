@@ -23,7 +23,7 @@ integer milliseconds so that 60.001 seconds never becomes 1 minute.
 | `candidateRemovableSeconds` | Union of removable intervals under valid scenarios. |
 | `modeledRoundedMinutes` | Baseline and scenario values after per-job minute rounding. |
 | `listPriceUsd` | Reference amount at confirmed SKU list prices. |
-| `estimatedMarginalUsd` | Marginal cost estimate only when account allowance or discount conditions are known. |
+| `estimatedMarginalUsd` | Marginal cost estimate when the account allowance is known from `billing.includedMinutes` and `billing.accountMinutesUsed`. |
 | `actualBilledUsd` | Actual charge from billing data. v0.1 does not query billing, so this is `unknown`. |
 | `standaloneRunnerSeconds` | Interval removed by one finding in isolation. |
 
@@ -137,6 +137,14 @@ direct charge; larger runners are excluded, and self-hosted GitHub-hosted cost i
 `not_applicable` with unknown infrastructure cost. Private repository included
 minutes are shared across the account, so remaining allowance cannot be derived
 from one repository's usage.
+
+`sync` accepts `--included-minutes` and `--account-minutes-used`, or the same
+values as `billing` in the config file, to supply the account-wide allowance.
+The estimate treats saved minutes as the last minutes consumed:
+`billable = max(0, saved - max(0, included - used))`, converted at the confirmed
+SKU rates. Jobs with unknown SKUs keep the estimate `unknown` rather than
+reporting a partial amount. The CLI accepts both flags or neither; passing only
+one is a usage error.
 
 ## Artifacts
 
