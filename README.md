@@ -106,6 +106,11 @@ names resolved to workflow keys, which matrix jobs expanded, and which
 collection caps left a coverage axis incomplete. It is read-only and works
 offline; `--require-complete` exits `3` when any axis is incomplete.
 
+It also lists advisory cache hygiene hints: a dependency install with no cache,
+and a literal cache key that cannot follow the lockfile. The frozen contract has
+no cache rule id, so hints never become findings or patches.
+
+
 ## Releasing
 
 Pushing a tag that matches the version in `package.json` triggers

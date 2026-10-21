@@ -885,6 +885,16 @@ function diagnoseCommand(options: Options, locale: Locale): number {
     }
   }
   if (diagnostics.workflows.every((workflow) => workflow.misses.length === 0)) lines.push(t("cli.diagnose.none"));
+  if (diagnostics.cacheHints.length > 0) {
+    lines.push(t("cli.diagnose.cache.header", { count: diagnostics.cacheHints.length }));
+    for (const hint of diagnostics.cacheHints) {
+      lines.push(t(hint.code === "CACHE_MISSING" ? "cli.diagnose.cache.missing" : "cli.diagnose.cache.unpinned", {
+        path: hint.workflowPath,
+        jobs: hint.jobs.join(", "),
+        steps: hint.steps.join(", "),
+      }));
+    }
+  }
 
   reportText(JSON.stringify(payload, null, 2) + "\n", options, lines);
   if (options.requireComplete && diagnosticsIncomplete(diagnostics)) {

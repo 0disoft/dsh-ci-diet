@@ -164,3 +164,9 @@ and reasons, so a cap such as `JOB_PAGE_LIMIT_REACHED` is visible next to the
 axis it truncated. The command is read-only; `--json` emits the same data and
 `--require-complete` exits `3` when any axis is incomplete or a run has no
 resolved definition.
+
+Cache hints are advisory. When a job installs dependencies without a cache, or
+an `actions/cache` key is a literal that cannot follow the lockfile, `diagnose`
+lists it under cache hygiene. The frozen v0.2.1 contract has no cache rule id,
+so these hints never become findings, never change coverage, and never produce a
+patch.

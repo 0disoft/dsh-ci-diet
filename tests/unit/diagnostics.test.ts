@@ -138,3 +138,55 @@ test("treats fully covered history without unresolved runs as complete", () => {
   const report = buildDiagnostics(bundle([run("r1", [job("lint", "r1")])]));
   assert.equal(diagnosticsIncomplete(report), false);
 });
+
+function cacheReport(workflow: readonly string[]) {
+  const definition = parseWorkflow(PATH, ["name: ci", "on: [push]", "jobs:", "  build:", "    runs-on: ubuntu-latest", "    steps:", ...workflow, ""].join("\n"));
+  return buildDiagnostics(bundle([run("r1", [job("build", "r1")], definition)]));
+}
+
+test("flags dependency installs that have no cache", () => {
+  const report = cacheReport([
+    "      - name: Install deps",
+    "        run: npm ci",
+  ]);
+
+  assert.deepEqual(report.cacheHints, [{ workflowPath: PATH, code: "CACHE_MISSING", jobs: ["build"], steps: ["Install deps"] }]);
+});
+
+test("accepts a hashFiles cache key", () => {
+  const report = cacheReport([
+    "      - name: Cache npm",
+    "        uses: actions/cache@v4",
+    "        with:",
+    "          path: ~/.npm",
+    "          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}",
+    "      - run: npm ci",
+  ]);
+
+  assert.deepEqual(report.cacheHints, []);
+});
+
+test("flags literal cache keys that cannot follow the lockfile", () => {
+  const report = cacheReport([
+    "      - name: Cache deps",
+    "        uses: actions/cache@v4",
+    "        with:",
+    "          path: node_modules",
+    "          key: deps-v1",
+    "      - run: npm ci",
+  ]);
+
+  assert.deepEqual(report.cacheHints, [{ workflowPath: PATH, code: "CACHE_KEY_UNPINNED", jobs: ["build"], steps: ["Cache deps"] }]);
+});
+
+test("accepts setup action built-in caching instead of actions/cache", () => {
+  const report = cacheReport([
+    "      - uses: actions/setup-node@v4",
+    "        with:",
+    "          node-version: 22",
+    "          cache: npm",
+    "      - run: npm ci",
+  ]);
+
+  assert.deepEqual(report.cacheHints, []);
+});
