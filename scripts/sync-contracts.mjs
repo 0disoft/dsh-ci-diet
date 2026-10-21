@@ -45,6 +45,16 @@ const EXTENDED = new Map([
   ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message", "/$defs/Config/properties/billing"]]
 ]);
 
+// Enum values added by this repository on purpose, with the same rule: the
+// repository copy must contain the value and the pack copy must not. The value
+// is removed before the trees are compared, so every other member of the enum
+// stays byte-for-byte identical to the pack.
+const EXTENDED_VALUES = new Map([
+  ["contracts/ci-diet.schema.json", [
+    { pointer: "/$defs/AppliedChange/properties/state/enum", value: "REVERTING" }
+  ]]
+]);
+
 // Translated markdown: compare existence and parseability only.
 const PROSE_ONLY = new Set(["examples/README.md"]);
 
@@ -189,6 +199,22 @@ const dropPointer = (root, pointer) => {
   return true;
 };
 
+const dropEnumValue = (root, pointer, value) => {
+  const parts = pointer.split("/").slice(1);
+  let node = root;
+  for (let i = 0; i < parts.length - 1; i += 1) {
+    node = node?.[parts[i]];
+    if (node === undefined || node === null) return false;
+  }
+  const last = parts[parts.length - 1];
+  const list = node?.[last];
+  if (!Array.isArray(list)) return false;
+  const index = list.indexOf(value);
+  if (index === -1) return false;
+  list.splice(index, 1);
+  return true;
+};
+
 const diff = (left, right, path, out) => {
   if (out.length >= 20) return;
   if (left === right) return;
@@ -239,6 +265,10 @@ const compareTree = (area) => {
       for (const pointer of EXTENDED.get(rel)) {
         if (!dropPointer(repoCopy, pointer)) errors.push(rel + pointer + ": extended pointer missing in this repository");
         if (dropPointer(packCopy, pointer)) errors.push(rel + pointer + ": unexpectedly present in the design pack");
+      }
+      for (const { pointer, value } of EXTENDED_VALUES.get(rel) ?? []) {
+        if (!dropEnumValue(repoCopy, pointer, value)) errors.push(rel + pointer + ": extended value " + value + " missing in this repository");
+        if (dropEnumValue(packCopy, pointer, value)) errors.push(rel + pointer + ": value " + value + " unexpectedly present in the design pack");
       }
       const drift = [];
       diff(repoCopy, packCopy, rel, drift);

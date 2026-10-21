@@ -322,7 +322,7 @@ export type AppliedChange = {
   "planId": string;
   "planDigest": string;
   "workflowPath": string;
-  "state": "PREPARED" | "APPLYING" | "APPLIED" | "REVERTED" | "CONFLICT" | "RECOVERY_REQUIRED" | "NOT_APPLIED";
+  "state": "PREPARED" | "APPLYING" | "APPLIED" | "REVERTING" | "REVERTED" | "CONFLICT" | "RECOVERY_REQUIRED" | "NOT_APPLIED";
   "before": {
   "path": string;
   "hash": string;

@@ -12,6 +12,7 @@ import { digestOf } from "../../src/shared/cdj1.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
 import { applyPlan, revertChange } from "../../src/core/patch/apply.ts";
+import type { AppliedChange } from "../../src/core/contracts/schema.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -335,6 +336,62 @@ for (const missingFile of ["manifest.json", "before.yml"] as const) {
   });
 }
 
+test("revert leaves the target untouched when the restore journal cannot be written", async (t) => {
+  const f = setup();
+  approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester", channel: "human-cli", now: f.now });
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  const after = readFileSync(f.file, "utf8");
+  t.mock.method(f.store, "saveChange", (change: AppliedChange) => {
+    if (change.state === "REVERTING") throw new Error("STORAGE_QUOTA_EXCEEDED: test store is full");
+  });
+  await assert.rejects(revertChange({ store: f.store, changeId, now: f.now }), /STORAGE_QUOTA_EXCEEDED/);
+  assert.equal(f.store.readChange(changeId)?.state, "APPLIED");
+  assert.equal(readFileSync(f.file, "utf8"), after);
+  t.mock.restoreAll();
+  const retried = await revertChange({ store: f.store, changeId, now: f.now });
+  assert.equal(retried.state, "REVERTED");
+  assert.equal(readFileSync(f.file, "utf8"), f.text);
+});
+
+test("revert converges when the journal cannot record the restored bytes", async (t) => {
+  const f = setup();
+  approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester", channel: "human-cli", now: f.now });
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  const original = f.store.saveChange.bind(f.store);
+  let failed = false;
+  t.mock.method(f.store, "saveChange", (change: AppliedChange) => {
+    if (!failed && change.state === "REVERTED") {
+      failed = true;
+      throw new Error("STORAGE_QUOTA_EXCEEDED: test store is full");
+    }
+    return original(change);
+  });
+  await assert.rejects(revertChange({ store: f.store, changeId, now: f.now }), /STORAGE_QUOTA_EXCEEDED/);
+  assert.equal(f.store.readChange(changeId)?.state, "REVERTING");
+  assert.equal(readFileSync(f.file, "utf8"), f.text);
+  t.mock.restoreAll();
+  const retried = await revertChange({ store: f.store, changeId, now: f.now });
+  assert.equal(retried.state, "REVERTED");
+  assert.equal(f.store.readChange(changeId)?.state, "REVERTED");
+  assert.equal(readFileSync(f.file, "utf8"), f.text);
+});
+
+test("revert finalizes when the target already holds the original bytes", async () => {
+  const f = setup();
+  approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester", channel: "human-cli", now: f.now });
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  writeFileSync(f.file, f.text, "utf8");
+  const reverted = await revertChange({ store: f.store, changeId, now: f.now });
+  assert.equal(reverted.state, "REVERTED");
+  assert.equal(f.store.readChange(changeId)?.state, "REVERTED");
+  assert.equal(readFileSync(f.file, "utf8"), f.text);
+});
 test("revert retry from recovery still refuses a user-edited target", async () => {
   const f = setup();
   approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),

@@ -16,7 +16,7 @@ The unpacked pack is reference material only. It is not edited and not shipped.
 
 | File | Original sha256 | Copy sha256 | Change |
 | --- | --- | --- | --- |
-| `contracts/ci-diet.schema.json` | `74f388db…` | differs | added optional `/$defs/Finding/properties/message` and `/$defs/Config/properties/billing` |
+| `contracts/ci-diet.schema.json` | `74f388db…` | differs | added optional `/$defs/Finding/properties/message`, `/$defs/Config/properties/billing`, and `REVERTING` in `/$defs/AppliedChange/properties/state/enum` |
 | `contracts/pricing-2026-10-20.json` | `7192ea47…` | same | none |
 | `contracts/example-validation-map.json` | `1c1a7b08…` | same | none |
 | `contracts/coverage-policy.json` | `11748554…` | differs | localized `/levels/{full,subset,degrade,skip}` prose |
@@ -41,7 +41,10 @@ The unpacked pack is reference material only. It is not edited and not shipped.
    pack already has it, so every extension is visible in review. The current
    extensions are Finding.message, which carries i18n keys and parameters (the
    English `title` and `renderedText` stay canonical), and Config.billing, which
-   supplies the optional account allowance for the marginal cost estimate.
+   supplies the optional account allowance for the marginal cost estimate. Enum
+   values added on purpose belong in `EXTENDED_VALUES` and follow the same rule;
+   the current extension is AppliedChange.state `REVERTING`, which records that a
+   revert may have restored the file before the journal was finalized.
 5. Deep-copying a file to hide drift is not an extension. Prefer a narrow optional
    field, keep it out of digest inputs, and record the reason in an ADR.
 6. Review chapters, evidence records, agent prompts, and internal estimates stay

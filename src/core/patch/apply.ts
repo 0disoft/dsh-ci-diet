@@ -493,7 +493,7 @@ export async function revertChange(options: {
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
   const revertable = change.state === "APPLIED" || change.state === "RECOVERY_REQUIRED"
-    || change.state === "PREPARED" || change.state === "APPLYING";
+    || change.state === "REVERTING" || change.state === "PREPARED" || change.state === "APPLYING";
   if (!revertable) return { state: change.state, reason: "CHANGE_NOT_APPLIED" };
   // PREPARED/APPLYING may be in doubt after a crash: the replacement may or may
   // not have landed, so classify by the target bytes before touching anything.
@@ -505,11 +505,20 @@ export async function revertChange(options: {
     const target = resolveInside(binding.workspaceRoot, change.workflowPath);
     assertRegularFile(target);
     const currentText = readFileSync(target, "utf8");
-    if (textHash(currentText) !== change.after.hash) {
-      if (inDoubt && textHash(currentText) === change.before.hash) {
-        // The replacement never happened; only the journal needs correcting.
-        options.store.saveChange({ ...change, state: "NOT_APPLIED", updatedAt: iso(options.now) });
-        return { state: "NOT_APPLIED", reason: "TARGET_UNCHANGED" };
+    const currentHash = textHash(currentText);
+    if (currentHash !== change.after.hash) {
+      if (currentHash === change.before.hash) {
+        if (inDoubt) {
+          // The replacement never happened; only the journal needs correcting.
+          options.store.saveChange({ ...change, state: "NOT_APPLIED", updatedAt: iso(options.now) });
+          return { state: "NOT_APPLIED", reason: "TARGET_UNCHANGED" };
+        }
+        // A previous revert restored the bytes but crashed before finalizing the
+        // journal, or the user restored them by hand. The goal already holds, so
+        // converge instead of reporting a conflict the user cannot resolve.
+        options.store.saveChange({ ...change, state: "REVERTED", updatedAt: iso(options.now) });
+        const warnings = options.store.appendSummaryEvent({ type: "reverted", changeId: change.changeId }, options.now);
+        return { state: "REVERTED", reason: null, ...(warnings.length > 0 ? { warnings } : {}) };
       }
       options.store.saveChange({ ...change, state: "CONFLICT", updatedAt: iso(options.now) });
       return { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" };
@@ -527,6 +536,12 @@ export async function revertChange(options: {
     if (textHash(recheck) !== change.after.hash) {
       options.store.saveChange({ ...change, state: "CONFLICT", updatedAt: iso(options.now) });
       return { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" };
+    }
+    // Record that the file may be restored before replacing it. A crash or a
+    // journal write failure after this point leaves REVERTING with the bytes in
+    // a known state, and a retry finishes the revert instead of conflicting.
+    if (change.state !== "REVERTING") {
+      options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
     }
     const mode = statSync(target).mode;
     const restoredHash = await replaceAtomically(target, backup.beforeText, mode);

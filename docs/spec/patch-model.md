@@ -223,13 +223,19 @@ equivalent power-loss durability is claimed.
 | --- | --- |
 | PREPARED and target equals before | Mark as not applied; the unconsumed approval nonce stays valid for a retry |
 | APPLYING/PREPARED and target equals after | Recover the receipt from the stored result; write no extra bytes |
+| REVERTING and target equals after | Retry the restore from the reserved backup |
+| REVERTING and target equals before | The restore landed before the journal was finalized; mark REVERTED without writing |
+| APPLIED/RECOVERY_REQUIRED and target equals before | The revert objective already holds; mark REVERTED without writing |
 | APPLIED and target equals after | Revert is available |
 | Any state, target differs from both before and after | `CONFLICT`; never overwrite the current file |
 | Required backup missing or hash mismatch | `RECOVERY_REQUIRED`; never restore corrupted bytes |
 
 Revert also needs a separate approval and quota/target recheck, and changes the
-file only when `current == after`. If the user edited the file afterwards, offer
-the conflict and the preserved original comparison only. `git reset --hard`,
+file only when `current == after`. It journals REVERTING before replacing the
+target, so a crash or a journal write failure after the restore leaves a state
+that a retry can finish rather than a CONFLICT the user cannot resolve. If the
+user edited the file afterwards, offer the conflict and the preserved original
+comparison only. `git reset --hard`,
 `git checkout --`, and forced overwrite are never recovery mechanisms.
 
 Backups are stored verbatim for exact revert; masking happens only in exports,

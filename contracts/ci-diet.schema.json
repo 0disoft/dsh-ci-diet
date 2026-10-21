@@ -1912,6 +1912,7 @@
             "PREPARED",
             "APPLYING",
             "APPLIED",
+            "REVERTING",
             "REVERTED",
             "CONFLICT",
             "RECOVERY_REQUIRED",

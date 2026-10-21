@@ -1,7 +1,7 @@
 {
   "pack": "ci-diet-design-v0.2.1",
   "files": {
-    "contracts/ci-diet.schema.json": "e2191381da0dabdcd51851944d52c4bdc743eacafbd5400a487e27db49c86f00",
+    "contracts/ci-diet.schema.json": "cbad5ef1b581ae9b7465f0eae483ef60f8f1e34c9e0c795998b8b0a18b807c8c",
     "contracts/coverage-policy.json": "2b7aa50f81c7760dcba64c913332cb44ec5f1bf433290324fcf866c73614bdac",
     "contracts/example-validation-map.json": "1c1a7b086e6fd5105e14820e3bc6571f6a159e0fd142d664d28f742153718146",
     "contracts/pricing-2026-10-20.json": "7192ea47d918cf2b9718a75b3a193d4e62b21b79f9f842898d89fc7b9504db09",
