@@ -5,7 +5,7 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in 0.1.1 and published on npm (`dsh-ci-diet@0.1.1`). The
+Status: implemented in 0.2.0 and published on npm (`dsh-ci-diet@0.2.0`). The
 CLI and the DSH model tools are available; the DSH Web client screens are still
 open. The machine-readable contracts in `contracts/` are the authority where
 prose and schema disagree.

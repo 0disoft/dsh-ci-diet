@@ -3,7 +3,7 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
-## Unreleased
+## 0.2.0 (2026-10-21)
 
 ### Added
 
@@ -15,6 +15,25 @@ Keep a Changelog, and the project uses semantic versioning.
 - `Finding.message` (optional `titleKey`, `textKey`, `params`) so a stored
   English finding can be rendered in another language without changing its
   identity. The field is a tracked contract extension outside digests.
+- `ci-diet diagnose` reports job-name attribution, matrix legs, unresolved
+  definitions, and every incomplete coverage axis from the latest stored
+  history. `--require-complete` exits `3`; the command is offline and read-only.
+- Advisory cache hygiene hints for dependency installs without a cache and
+  literal cache keys that cannot follow a lockfile. They never become findings
+  or patches because the frozen contract has no cache rule id.
+- Billing estimate configuration (`billing.includedMinutes` and
+  `billing.accountMinutesUsed`, or the matching `sync` flags).
+  `estimatedMarginalUsd` now prices only minutes already above the account
+  allowance and stays `unknown` when the SKU is unknown.
+- Storage quota enforcement: writes that would cross `storage.storeMaxBytes` fail
+  before any file is created, warnings appear near `warningPercent`, the cache is
+  capped by `cacheMaxBytes`, and applied backups are deleted only after
+  `prune --applied-backups` lists them and the exact listing token is confirmed.
+- Coverage reasons for every collection page cap: workflow discovery, job pages
+  per attempt, pull-request file pages, and artifact pages are reported instead
+  of silently truncating.
+- A recorded `REVERTING` journal state, so a revert that restores bytes but
+  cannot finish its record converges on retry instead of looking applied.
 
 ### Changed
 
@@ -22,6 +41,42 @@ Keep a Changelog, and the project uses semantic versioning.
   descriptions, and render text are localized; the HTML report sets its `lang`
   attribute. Rule ids, error codes, enum values, paths, hashes, and numbers stay
   untranslated.
+- GitHub transport honors `Retry-After`, retries network failures and request
+  timeouts, and uses the configured `requestTimeoutMs` instead of a hard-coded
+  20 s timeout.
+- CD005 keeps an existing timeout that is at or below the recommendation,
+  reports a reduction for a larger literal, and reads the job definition whose
+  hash matches the cohort instead of the current working tree.
+- CD008 treats `retention-days: 0` as the repository default, and its retention
+  edit aligns with the step mapping indentation for both `uses`-first and
+  `name`-first step layouts.
+- Matrix replay keeps every leg of a single-job matrix, and coverage composition
+  fails closed on an unmapped rule, axis, or status cell.
+- Apply saves `APPLYING` before replacing and consumes the approval nonce only
+  after a confirmed replacement; revert saves `REVERTING` before restoring. A
+  failed replacement leaves the change retryable, and an expired or
+  subject-mismatched approval is refused.
+- The writer lease records the owner process id: a stale lease is taken over only
+  after that process is gone, and a live owner is never moved out of the lease
+  path. Release never moves a lease owned by another writer.
+- CLI expiry failures exit `3`, `--minutes` accepts `1..360` to match the timeout
+  edit, and `apply`/`revert` finish their journal before a SIGINT exit.
+- Packaging builds `dist` in `prepack`, the test runner fails on zero collected
+  tests, CI provisions the Node floor, and the contracts check validates the
+  design-pack lock instead of approving itself.
+- `ci-diet --version`, report `engineVersion`, and plan `engineVersion` report
+  `0.2.0`.
+
+### Fixed
+
+- Reports resolve the binding for the current workspace, compare timestamps
+  chronologically, and reject corrupt stored documents instead of trusting them.
+- Stored approvals and patch metadata are validated before use, and a workflow
+  path that resolves outside the workspace is refused.
+- A committed apply, revert, or approval keeps its result when summary event
+  logging fails.
+- Release artifacts include `dist` in a clean checkout, and the release tag check
+  rejects a tag that does not match `package.json`.
 
 ## 0.1.1 (2026-10-21)
 

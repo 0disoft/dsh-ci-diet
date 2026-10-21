@@ -2,7 +2,7 @@
  * Engine version printed by the CLI and stored in reports. It must match the
  * package version; tests/unit/release-process.test.ts enforces that.
  */
-export const ENGINE_VERSION = "0.1.1";
+export const ENGINE_VERSION = "0.2.0";
 
 export const RULE_VERSION = "0.1.0";
 
