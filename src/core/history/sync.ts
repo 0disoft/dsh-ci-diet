@@ -66,6 +66,8 @@ export async function syncRepositoryHistory(options: {
   const requestedTo = now;
   const requestedFrom = new Date(requestedTo.getTime() - historyConfig.lookbackDays * 86_400_000);
   const missingScopes: MissingScope[] = [];
+  let jobsPageTruncated = false;
+  let pullFilesTruncated = false;
 
   const repository = await effectiveClient.repository();
   const defaultBranch = repository.default_branch;
@@ -75,6 +77,9 @@ export async function syncRepositoryHistory(options: {
     const result = await effectiveClient.workflows(page, PAGE_SIZE);
     for (const workflow of result.items) workflows.push({ id: workflow.id, name: workflow.name, path: workflow.path, state: workflow.state });
     if (!result.hasNext) break;
+    if (page === 10) {
+      missingScopes.push(missingScope({ family: "discovery", resource: "actions.workflows", reason: "WORKFLOW_LIMIT_REACHED", resumable: true }));
+    }
   }
 
   const runs: GitHubRun[] = [];
@@ -136,6 +141,10 @@ export async function syncRepositoryHistory(options: {
             });
           }
           if (!result.hasNext) break;
+          if (page === 10) {
+            jobsPageTruncated = true;
+            missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_PAGE_LIMIT_REACHED", resumable: true }));
+          }
         }
       } catch (error) {
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
@@ -189,6 +198,10 @@ export async function syncRepositoryHistory(options: {
             if (file.previous_filename !== undefined) collected.push(file.previous_filename);
           }
           if (!result.hasNext) break;
+          if (page === 30) {
+            pullFilesTruncated = true;
+            missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: "PULL_FILES_LIMIT_REACHED", resumable: true }));
+          }
         }
         files = collected;
       } catch (error) {
@@ -264,15 +277,17 @@ export async function syncRepositoryHistory(options: {
   const historyReasons: string[] = [];
   if (historyError !== null) historyReasons.push(historyError);
   if (truncatedByLimit) historyReasons.push("RUN_LIMIT_REACHED");
+  if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
   if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
   const historyStatus: Dimension["status"] =
     historyError !== null
       ? "unavailable"
-      : truncatedByLimit || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0
+      : truncatedByLimit || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0
         ? "partial"
         : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";
-  const changedFilesStatus: Dimension["status"] = pullNumbers.size === 0 ? "unavailable" : pullsMissing > 0 || pullsWithoutFiles > 0 ? "partial" : "complete";
+  const changedFilesStatus: Dimension["status"] =
+    pullNumbers.size === 0 ? "unavailable" : pullsMissing > 0 || pullsWithoutFiles > 0 || pullFilesTruncated ? "partial" : "complete";
 
   const coverageReasons = (status: Dimension["status"], reasons: readonly string[]): string[] =>
     status === "complete" ? [] : reasons.length === 0 ? [status === "partial" ? "PARTIAL_COLLECTION" : "UNAVAILABLE"] : [...reasons];
@@ -315,7 +330,13 @@ export async function syncRepositoryHistory(options: {
         expected: pullNumbers.size,
         reasons: coverageReasons(
           changedFilesStatus,
-          pullsMissing > 0 ? ["PULL_UNAVAILABLE"] : pullsWithoutFiles > 0 ? ["PULL_FILES_UNAVAILABLE"] : ["NO_PULL_REQUESTS"],
+          pullsMissing > 0
+            ? ["PULL_UNAVAILABLE"]
+            : pullsWithoutFiles > 0
+              ? ["PULL_FILES_UNAVAILABLE"]
+              : pullFilesTruncated
+                ? ["PULL_FILES_LIMIT_REACHED"]
+                : ["NO_PULL_REQUESTS"],
         ),
         missingScopes: missingScopes.filter((scope) => scope.family === "policyAndFiles" && scope.pullRequest !== null),
       },

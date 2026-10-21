@@ -40,6 +40,12 @@ When several axes are missing, the most restrictive level wins in the order
 `full < subset < degrade < skip`. Two axes missing at the same time keep every
 blocking reason; they are never collapsed into one.
 
+Pagination caps are part of coverage, not silent truncation. When a collection
+stops because a page cap was reached, the axis is at best `partial` and the reason is one of
+`RUN_LIMIT_REACHED`, `JOB_PAGE_LIMIT_REACHED`, `WORKFLOW_LIMIT_REACHED` (recorded as a
+`discovery` missing scope), `PULL_FILES_LIMIT_REACHED`, or
+`ARTIFACT_RUN_LIMIT_REACHED`. A truncated axis is never reported as `complete`.
+
 The machine-readable policy is `contracts/coverage-policy.json`. It is the
 authority. The table below is the composed result when one axis is
 `partial` / `unavailable`; the `full` case evaluates each rule's individual

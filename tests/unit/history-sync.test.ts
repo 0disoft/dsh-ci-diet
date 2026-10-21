@@ -193,6 +193,80 @@ test("marks history partial when artifacts stop at the page cap", async () => {
   assert.deepEqual(result.history.coverage.history.reasons, ["ARTIFACT_RUN_LIMIT_REACHED"]);
 });
 
+test("marks history partial when jobs stop at the page cap", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (/\/attempts\/\d+\/jobs$/.test(request.path)) {
+      return response(
+        {
+          total_count: 999,
+          jobs: [{
+            id: 11,
+            name: "build",
+            conclusion: "success",
+            started_at: "2026-10-19T10:00:10Z",
+            completed_at: "2026-10-19T10:01:10Z",
+            labels: ["ubuntu-latest"],
+            runner_name: "GitHub Actions 1",
+          }],
+        },
+        { link: '<https://api.github.com/repositories/1/actions/runs/100/attempts/1/jobs?page=2>; rel="next"' },
+      );
+    }
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.runs[0]?.jobs.length, 10);
+  assert.equal(result.history.coverage.history.status, "partial");
+  assert.deepEqual(result.history.coverage.history.reasons, ["JOB_PAGE_LIMIT_REACHED"]);
+  assert.ok(
+    result.history.missingScopes.some((scope) => scope.family === "jobs" && scope.reason === "JOB_PAGE_LIMIT_REACHED" && scope.resumable),
+  );
+});
+
+test("marks changed files partial when pull files stop at the page cap", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/pulls/5/files")) {
+      return response(
+        [{ filename: "src/app.ts" }],
+        { link: '<https://api.github.com/repositories/1/pulls/5/files?page=2>; rel="next"' },
+      );
+    }
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.pulls.get(5)?.files?.length, 30);
+  assert.equal(result.history.coverage.changedFiles.status, "partial");
+  assert.deepEqual(result.history.coverage.changedFiles.reasons, ["PULL_FILES_LIMIT_REACHED"]);
+  assert.ok(
+    result.history.missingScopes.some((scope) => scope.resource === "pulls.files" && scope.reason === "PULL_FILES_LIMIT_REACHED"),
+  );
+});
+
+test("records a discovery scope when the workflow list stops at the page cap", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/workflows")) {
+      return response(
+        { total_count: 999, workflows: [{ id: 7, name: "CI", path: ".github/workflows/ci.yml", state: "active" }] },
+        { link: '<https://api.github.com/repositories/1/actions/workflows?page=2>; rel="next"' },
+      );
+    }
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.workflows.length, 10);
+  assert.ok(
+    result.history.missingScopes.some(
+      (scope) => scope.family === "discovery" && scope.resource === "actions.workflows" && scope.reason === "WORKFLOW_LIMIT_REACHED",
+    ),
+  );
+});
+
 test("propagates authentication failures instead of recording them", async () => {
   const transport = {
     async get(): Promise<GhResponse> {
