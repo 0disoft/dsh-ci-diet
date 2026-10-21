@@ -66,6 +66,7 @@ ci-diet revert --change <changeId>
 ci-diet changes
 ci-diet plans
 ci-diet report [--report <id>] [--format text|json|html] [--out <file>]
+ci-diet diagnose [--json] [--out <file>] [--require-complete]
 ci-diet prune
 ```
 
@@ -152,3 +153,14 @@ document to a file instead of standard output.
 `ci-diet prune` deletes reports older than 90 days, plans older than 7 days,
 and cache entries older than the configured cache window. It never deletes
 backups, and it reports the freed byte count.
+
+## Diagnostics
+
+`ci-diet diagnose` explains the latest stored history without touching the
+network. For each workflow it shows how many job names resolved to YAML keys,
+which matrix jobs expanded and to how many legs, and the most frequent job
+names that did not resolve. It also lists each coverage axis with its status
+and reasons, so a cap such as `JOB_PAGE_LIMIT_REACHED` is visible next to the
+axis it truncated. The command is read-only; `--json` emits the same data and
+`--require-complete` exits `3` when any axis is incomplete or a run has no
+resolved definition.

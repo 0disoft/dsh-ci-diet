@@ -10,6 +10,7 @@ import { parseWorkflow } from "../core/workflow/parse.ts";
 import { syncRepositoryHistory } from "../core/history/sync.ts";
 import { defaultStateDir } from "../core/state/paths.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
+import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagnostics.ts";
 import { PROPOSED_RETENTION_DAYS } from "../core/rules/cd008.ts";
 import { claimsFromTokens, evaluatePatchEligibility } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
@@ -823,6 +824,76 @@ function reportCommand(options: Options, locale: Locale): number {
   return EXIT_OK;
 }
 
+function diagnoseCommand(options: Options, locale: Locale): number {
+  const t = createTranslator(locale);
+  if (options.format === "html") {
+    process.stderr.write(t("cli.invalidValue", { flag: "--format" }) + "\n");
+    return EXIT_USAGE;
+  }
+  const stateDir = stateDirOf(options);
+  if (!existsSync(stateDir)) {
+    process.stderr.write(t("cli.diagnose.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+  const store = openStore(stateDir, locale);
+  const root = realpathSync(options.cwd);
+  const binding = store.findBindingByRoot(root) ?? createLocalBinding(root, new Date().toISOString()).binding;
+  const history = store.readLatestHistory(binding.bindingId);
+  if (history === null) {
+    process.stderr.write(t("cli.diagnose.syncRequired") + "\n");
+    return EXIT_USAGE;
+  }
+
+  const diagnostics = buildDiagnostics(history);
+  const payload = {
+    repository: binding.repositoryFullName,
+    workspaceRoot: binding.workspaceRoot,
+    bindingId: binding.bindingId,
+    ...diagnostics,
+  };
+  const lines: string[] = [];
+  lines.push(t("cli.diagnose.summary", {
+    name: binding.repositoryFullName ?? history.repositoryFullName,
+    runs: diagnostics.runs,
+    jobs: diagnostics.jobs,
+    workflows: diagnostics.workflows.length,
+  }));
+  lines.push(t("cli.diagnose.match", {
+    matched: diagnostics.matchedJobs,
+    jobs: diagnostics.jobs,
+    percent: diagnostics.matchPercent === null ? "n/a" : diagnostics.matchPercent.toFixed(1),
+  }));
+  const incomplete = diagnostics.coverage.filter((axis) => axis.status !== "complete");
+  if (incomplete.length === 0) lines.push(t("cli.diagnose.axisComplete"));
+  for (const axis of incomplete) {
+    lines.push(t("cli.diagnose.axis", { axis: axis.axis, status: axis.status, reasons: axis.reasons.join(", ") }));
+  }
+  if (diagnostics.unresolvedRuns > 0) lines.push(t("cli.diagnose.unresolved", { count: diagnostics.unresolvedRuns }));
+  if (diagnostics.missingScopes.length > 0) lines.push(t("cli.diagnose.scopes", { count: diagnostics.missingScopes.length }));
+  for (const workflow of diagnostics.workflows) {
+    lines.push(t("cli.diagnose.workflow", {
+      path: workflow.path,
+      runs: workflow.analyzableRuns,
+      matched: workflow.matched,
+      unmatched: workflow.unmatched,
+    }));
+    for (const matrix of workflow.matrixJobs) {
+      lines.push(t("cli.diagnose.matrix", { job: matrix.template ?? matrix.key, legs: matrix.legs === null ? "unknown" : matrix.legs }));
+    }
+    for (const miss of workflow.misses.slice(0, 5)) {
+      lines.push(t("cli.diagnose.miss", { name: miss.jobName, count: miss.occurrences }));
+    }
+  }
+  if (diagnostics.workflows.every((workflow) => workflow.misses.length === 0)) lines.push(t("cli.diagnose.none"));
+
+  reportText(JSON.stringify(payload, null, 2) + "\n", options, lines);
+  if (options.requireComplete && diagnosticsIncomplete(diagnostics)) {
+    process.stderr.write(t("cli.scan.incomplete") + "\n");
+    return EXIT_INCOMPLETE;
+  }
+  return EXIT_OK;
+}
+
 function pruneAppliedBackups(store: PatchStore, options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   const candidates = store.appliedBackupCandidates();
@@ -903,6 +974,7 @@ const HELP_KEYS: Record<string, MessageKey> = {
   changes: "cli.list.help",
   plans: "cli.list.help",
   report: "cli.report.help",
+  diagnose: "cli.diagnose.help",
   prune: "cli.prune.help",
 };
 
@@ -991,6 +1063,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (options.command === "changes") return showChanged(options, locale);
     if (options.command === "plans") return plansList(options, locale);
     if (options.command === "report") return reportCommand(options, locale);
+    if (options.command === "diagnose") return diagnoseCommand(options, locale);
     if (options.command === "prune") return pruneCommand(options, locale);
   } catch (error) {
     return mapError(error, t);

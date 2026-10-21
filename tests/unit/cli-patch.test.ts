@@ -503,3 +503,35 @@ test("CLI plan bounds --minutes to the timeout edit range", () => {
   const accepted = cli(["plan", "--rule", "CD005", "--minutes", "360", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
   assert.doesNotMatch(accepted.stderr, /Invalid value for --minutes/);
 });
+
+test("CLI diagnose explains attribution for stored history", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+
+  const result = cli(["diagnose", "--cwd", root, "--state-dir", stateDir, "--json"], root);
+  assert.equal(result.status, 0, result.stderr);
+  const payload = JSON.parse(result.stdout) as {
+    repository: string;
+    runs: number;
+    jobs: number;
+    matchedJobs: number;
+    matchPercent: number;
+    coverage: { axis: string; status: string }[];
+    workflows: { path: string }[];
+  };
+  assert.equal(payload.repository, "owner/repo");
+  assert.equal(payload.runs, 2);
+  assert.equal(payload.jobs, 2);
+  assert.equal(payload.matchedJobs, 2);
+  assert.equal(payload.matchPercent, 100);
+  assert.equal(payload.coverage.length, 5);
+  assert.equal(payload.workflows[0]?.path, ".github/workflows/pr.yml");
+});
+
+test("CLI diagnose asks for a sync when history is missing", () => {
+  const { root } = makeRepo();
+  const result = cli(["diagnose", "--cwd", root, "--state-dir", join(root, ".state")], root);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Run ci-diet sync --network first/);
+});

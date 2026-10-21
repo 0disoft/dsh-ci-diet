@@ -93,12 +93,18 @@ pushed, or applied without the explicit `approve` step.
 ```
 ci-diet report                 # text summary of the latest stored report
 ci-diet report --format html --out report.html
+ci-diet diagnose               # explain job-name attribution and collection coverage
 ci-diet prune                  # drop expired reports, plans, and cache entries
 ```
 
 The HTML file is self-contained: inline CSS, no scripts, no external requests.
 It is read-only, so approvals stay in the CLI where the digest and nonce checks
 live.
+
+`diagnose` reads the latest stored history and reports how many GitHub job
+names resolved to workflow keys, which matrix jobs expanded, and which
+collection caps left a coverage axis incomplete. It is read-only and works
+offline; `--require-complete` exits `3` when any axis is incomplete.
 
 ## Releasing
 

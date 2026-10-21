@@ -91,11 +91,17 @@ ci-diet revert --change <changeId>       # 백업한 바이트를 복원
 ```
 ci-diet report                 # 저장된 최신 보고서의 텍스트 요약
 ci-diet report --format html --out report.html
+ci-diet diagnose               # Job 이름 매칭과 수집 커버리지 설명
 ci-diet prune                  # 만료된 보고서, 계획, 캐시 정리
 ```
 
 HTML 파일은 자체 완결형입니다. 인라인 CSS만 쓰고 스크립트와 외부 요청이 없습니다.
 읽기 전용이므로 승인은 digest와 nonce 검사가 있는 CLI에 남습니다.
+
+`diagnose`는 저장된 최신 이력을 읽어 GitHub Job 이름이 워크플로 키로 얼마나
+해석됐는지, 어떤 matrix Job이 몇 개 레그로 확장됐는지, 어느 수집 상한 때문에
+커버리지 축이 불완전한지 보여줍니다. 오프라인에서도 동작하며 `--require-complete`를
+쓰면 축이 불완전할 때 종료 코드 `3`으로 끝납니다.
 
 ## 릴리스
 
