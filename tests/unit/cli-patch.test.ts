@@ -471,3 +471,35 @@ test("CLI plan records unresolved dependencies as blockers and apply refuses", (
   assert.equal(applied.status, 3, applied.stderr);
   assert.match(applied.stdout, /BLOCKERS_PRESENT/);
 });
+
+test("CLI approve exits 3 with PLAN_EXPIRED when the plan expired", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
+  const planFile = join(stateDir, "plans", plan.planId + ".json");
+  const stored = JSON.parse(readFileSync(planFile, "utf8")) as { payload: { expiresAt: string } };
+  stored.payload.expiresAt = "2000-01-01T00:00:00.000Z";
+  writeFileSync(planFile, JSON.stringify(stored));
+  const approved = cli(
+    ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir, "--lang", "en"],
+    root,
+  );
+  assert.equal(approved.status, 3, approved.stderr);
+  assert.match(approved.stderr, /PLAN_EXPIRED/);
+});
+
+test("CLI plan bounds --minutes to the timeout edit range", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  const rejected = cli(["plan", "--rule", "CD005", "--minutes", "361", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /Invalid value for --minutes/);
+  const accepted = cli(["plan", "--rule", "CD005", "--minutes", "360", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
+  assert.doesNotMatch(accepted.stderr, /Invalid value for --minutes/);
+});

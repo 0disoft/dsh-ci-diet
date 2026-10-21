@@ -33,6 +33,7 @@ export const fr: Record<MessageKey, string> = {
   "ui.empty.rules": "Aucune règle n’a encore franchi le seuil de qualité A0.",
   "cli.description": "Trouvez le temps de runner GitHub Actions gaspillé et proposez de petits correctifs locaux.",
   "cli.error.prefix": "erreur :",
+  "cli.cancelled": "Annulé ; l'état de la transaction a été enregistré avant la sortie.",
   "rule.CD001.title": "Exécutions de PR remplacées",
   "rule.CD002.title": "Déclencheurs en double",
   "rule.CD003.title": "Vérifications lourdes sur des changements documentaires",

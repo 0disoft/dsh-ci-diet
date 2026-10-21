@@ -33,6 +33,7 @@ export const hi: Record<MessageKey, string> = {
   "ui.empty.rules": "अभी कोई नियम A0 गुणवत्ता द्वार पार नहीं कर पाया।",
   "cli.description": "GitHub Actions के बर्बाद रनर समय को खोजें और छोटे स्थानीय पैच सुझाएँ।",
   "cli.error.prefix": "त्रुटि:",
+  "cli.cancelled": "रद्द किया गया; बाहर निकलने से पहले लेन-देन की स्थिति दर्ज की गई।",
   "rule.CD001.title": "बदले गए PR रन",
   "rule.CD002.title": "डुप्लिकेट ट्रिगर",
   "rule.CD003.title": "केवल-दस्तावेज़ बदलावों पर भारी जाँच",

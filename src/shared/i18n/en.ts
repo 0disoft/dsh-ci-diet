@@ -32,6 +32,7 @@ export const en = {
   "ui.empty.rules": "No rule passed the A0 quality gate yet.",
   "cli.description": "Find wasted GitHub Actions runner time and propose small local patches.",
   "cli.error.prefix": "error:",
+  "cli.cancelled": "Cancelled; the transaction state was recorded before exit.",
   "rule.CD001.title": "Superseded PR runs",
   "rule.CD002.title": "Duplicate triggers",
   "rule.CD003.title": "Heavy checks on docs-only changes",

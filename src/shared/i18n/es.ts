@@ -33,6 +33,7 @@ export const es: Record<MessageKey, string> = {
   "ui.empty.rules": "Ninguna regla ha superado aún la puerta de calidad A0.",
   "cli.description": "Encuentra tiempo de runner desperdiciado en GitHub Actions y propone parches locales pequeños.",
   "cli.error.prefix": "error:",
+  "cli.cancelled": "Cancelado; el estado de la transacción se registró antes de salir.",
   "rule.CD001.title": "Ejecuciones de PR reemplazadas",
   "rule.CD002.title": "Disparadores duplicados",
   "rule.CD003.title": "Comprobaciones pesadas en cambios solo de documentación",

@@ -33,6 +33,7 @@ export const zhHans: Record<MessageKey, string> = {
   "ui.empty.rules": "尚无规则通过 A0 质量门槛。",
   "cli.description": "找出浪费的 GitHub Actions 运行器时间，并提出小范围本地补丁。",
   "cli.error.prefix": "错误：",
+  "cli.cancelled": "已取消；退出前已记录事务状态。",
   "rule.CD001.title": "被取代的 PR 运行",
   "rule.CD002.title": "重复触发器",
   "rule.CD003.title": "仅文档变更上的重检查",

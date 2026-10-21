@@ -33,6 +33,7 @@ export const ko: Record<MessageKey, string> = {
   "ui.empty.rules": "A0 품질 기준을 통과한 규칙이 아직 없습니다.",
   "cli.description": "낭비된 GitHub Actions 러너 시간을 찾고 작은 로컬 패치를 제안합니다.",
   "cli.error.prefix": "오류:",
+  "cli.cancelled": "취소했어요. 종료 전에 트랜잭션 상태를 기록했어요.",
   "rule.CD001.title": "교체된 PR 실행",
   "rule.CD002.title": "중복 트리거",
   "rule.CD003.title": "문서만 바뀐 변경의 무거운 검사",

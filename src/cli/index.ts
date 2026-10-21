@@ -186,7 +186,7 @@ function parseArgs(argv: readonly string[]): Options {
       const value = takeValue(index, "--minutes");
       index += 1;
       const parsed = Number(value);
-      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 1440) throw new UsageError("INVALID_VALUE:--minutes");
+      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 360) throw new UsageError("INVALID_VALUE:--minutes");
       minutes = parsed;
     } else if (arg === "--plan") {
       plan = takeValue(index, "--plan");
@@ -906,11 +906,14 @@ const HELP_KEYS: Record<string, MessageKey> = {
   prune: "cli.prune.help",
 };
 
+function resolveLang(argv: readonly string[]): string | null {
+  const flagIndex = argv.indexOf("--lang");
+  return flagIndex === -1 ? null : (argv[flagIndex + 1] ?? null);
+}
+
 function usageMessage(error: UsageError, argv: readonly string[]): string {
   const [code = "", suffix = ""] = error.message.split(":", 2);
-  const flagIndex = argv.indexOf("--lang");
-  const lang = flagIndex === -1 ? null : (argv[flagIndex + 1] ?? null);
-  const t = createTranslator(resolveUiLocale(lang));
+  const t = createTranslator(resolveUiLocale(resolveLang(argv)));
   if (code === "UNKNOWN_RULE") return t("cli.unknownRule", { rule: suffix });
   if (code === "MISSING_VALUE") return t("cli.missingValue", { flag: suffix });
   if (code === "UNKNOWN_COMMAND") return t("cli.unknownCommand", { command: suffix });
@@ -939,6 +942,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
   if (error instanceof StoreQuotaError) {
     process.stderr.write(t("error.STORAGE_QUOTA_EXCEEDED") + " " + error.message + "\n");
     return EXIT_STORAGE;
+  }
+  if (error instanceof Error && (error.message.startsWith("PLAN_EXPIRED") || error.message.startsWith("POLICY_STALE"))) {
+    process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");
+    return EXIT_INCOMPLETE;
   }
   if (error instanceof Error && error.message.startsWith("NONCE_INVALID")) {
     process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");
@@ -994,11 +1001,23 @@ export async function main(argv: readonly string[]): Promise<number> {
 
 const invokedDirectly = process.argv[1] !== undefined && /(?:^|[\\/])cli(?:[\\/]index)?\.[cm]?[jt]s$/.test(process.argv[1]);
 if (invokedDirectly) {
+  const argv = process.argv.slice(2);
+  // Only mutating commands defer cancellation: their journal must reach a
+  // consistent state before the process leaves, matching the documented
+  // "record the transaction state first" rule. Everything else stops at once.
+  const deferred = argv.some((arg) => arg === "apply" || arg === "revert");
+  let interrupted = false;
   process.on("SIGINT", () => {
-    process.exit(EXIT_CANCELLED);
+    if (!deferred || interrupted) process.exit(EXIT_CANCELLED);
+    interrupted = true;
   });
-  main(process.argv.slice(2)).then(
+  main(argv).then(
     (code) => {
+      if (interrupted) {
+        process.stderr.write(createTranslator(resolveUiLocale(resolveLang(argv)))("cli.cancelled") + "\n");
+        process.exitCode = EXIT_CANCELLED;
+        return;
+      }
       process.exitCode = code;
     },
     (error: unknown) => {
