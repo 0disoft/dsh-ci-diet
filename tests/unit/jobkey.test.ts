@@ -146,7 +146,7 @@ test("refuses two jobs that share one literal name", () => {
   assert.equal(recoverJobKey("first", workflowJobs)?.key, "first");
 });
 
-test("prefers a literal job key over an earlier matrix rendering the same name", () => {
+test("refuses a job key that a matrix rendering can also explain", () => {
   const text = [
     "on: push",
     "jobs:",
@@ -165,8 +165,44 @@ test("prefers a literal job key over an earlier matrix rendering the same name",
     "",
   ].join("\n");
   const workflowJobs = parseWorkflow("matrix-literal-precedence.yml", text).jobs;
-  const match = recoverJobKey("lint", workflowJobs);
-  assert.ok(match);
-  assert.equal(match.key, "lint");
-  assert.equal(match.level, "key-equals-name");
+  assert.equal(recoverJobKey("lint", workflowJobs), null);
+});
+
+test("refuses a name that is both a job key and another job name", () => {
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    name: Other",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo build",
+    "  other:",
+    "    name: build",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo other",
+    "",
+  ].join("\n");
+  const workflowJobs = parseWorkflow("key-name-collision.yml", text).jobs;
+  assert.equal(recoverJobKey("build", workflowJobs), null);
+  assert.equal(recoverJobKey("Other", workflowJobs)?.key, "build");
+});
+
+test("refuses one literal name shared by every matrix leg", () => {
+  const text = [
+    "on: push",
+    "jobs:",
+    "  tests:",
+    "    name: Shared",
+    "    strategy:",
+    "      matrix:",
+    "        os: [ubuntu-latest, windows-2022]",
+    "    runs-on: ${{ matrix.os }}",
+    "    steps:",
+    "      - run: echo ok",
+    "",
+  ].join("\n");
+  const workflowJobs = parseWorkflow("shared-matrix-name.yml", text).jobs;
+  assert.equal(recoverJobKey("Shared", workflowJobs), null);
 });

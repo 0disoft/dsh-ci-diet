@@ -79,8 +79,18 @@ function buildJobKeyIndex(jobs: readonly WorkflowJob[]): JobKeyIndex {
   const byMatrixName = new Map<string, JobKeyMatch | null>();
   for (const job of jobs) {
     remember(byKey, normalizeName(job.key), { key: job.key, level: "key-equals-name", matrix: null });
-    if (job.displayName !== null) {
-      remember(byName, normalizeName(job.displayName), { key: job.key, level: "name-literal", matrix: null });
+    if (job.displayName === null) continue;
+    const name = normalizeName(job.displayName);
+    const combinations = job.matrix === null ? null : expandMatrix(job.matrix);
+    if (job.matrix === null || combinations === null || MATRIX_EXPRESSION_ALL.test(job.displayName)) {
+      // Matrix templates expand to per-leg names below. A literal name on a
+      // matrix job is one name shared by every leg, so each combination is a
+      // distinct candidate until the leg itself is known.
+      remember(byName, name, { key: job.key, level: "name-literal", matrix: null });
+      continue;
+    }
+    for (const values of combinations) {
+      remember(byName, name, { key: job.key, level: "name-literal", matrix: values });
     }
   }
   // Matrix names are lowest precedence, and jobs are indexed in YAML order.
@@ -122,9 +132,15 @@ export function recoverJobKey(displayName: string, jobs: readonly WorkflowJob[])
   }
   if (index.singleJob !== null) return index.singleJob;
   const name = normalizeName(displayName);
-  const keyMatch = index.byKey.get(name);
-  if (keyMatch !== undefined) return keyMatch;
-  const nameMatch = index.byName.get(name);
-  if (nameMatch !== undefined) return nameMatch;
-  return index.byMatrixName.get(name) ?? null;
+  const candidates: JobKeyMatch[] = [];
+  for (const map of [index.byKey, index.byName, index.byMatrixName]) {
+    const candidate = map.get(name);
+    if (candidate === undefined) continue;
+    // Any level that cannot name a single job or leg makes the whole row
+    // unknowable: the levels are alternative renderings of one run name.
+    if (candidate === null) return null;
+    if (candidates.some((known) => known.key === candidate.key && matrixSignature(known.matrix) === matrixSignature(candidate.matrix))) continue;
+    candidates.push(candidate);
+  }
+  return candidates.length === 1 ? candidates[0]! : null;
 }
