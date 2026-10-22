@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { cancelAction, executeCli } from "../../src/cli/index.ts";
+import { ENGINE_VERSION } from "../../src/core/version.ts";
 
 function capture(): { write: (text: string) => void; text: () => string } {
   const chunks: string[] = [];
@@ -27,7 +28,7 @@ test("executeCli runs against injected streams instead of the process", async ()
   const stderr = capture();
   const code = await executeCli(["--version"], { stdout, stderr });
   assert.equal(code, 0);
-  assert.equal(stdout.text(), "ci-diet 0.2.0\n");
+  assert.equal(stdout.text(), "ci-diet " + ENGINE_VERSION + "\n");
   assert.equal(stderr.text(), "");
 });
 

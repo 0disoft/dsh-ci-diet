@@ -2,10 +2,10 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **alpha, published on npm** as `dsh-ci-diet@0.2.0`. The contracts,
+Status: **alpha**, release `dsh-ci-diet@0.3.0` prepared. The contracts,
 specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
-self-contained HTML report are implemented and tested. The DSH Web client
-screens are still open.
+self-contained HTML report are implemented and tested. The DSH Web client has a
+Settings screen; the report and apply screens are still open.
 
 ## What it does
 
@@ -73,7 +73,7 @@ to the next tool call without a restart, and never rewrite the CLI's own config.
 `localApplyEnabled` is not exposed because there is no apply tool yet. Installing
 the package globally is optional: `npx dsh-ci-diet` runs the same CLI, and the DSH
 plugin only needs the package in the profile. Release tags are on GitHub; the
-matching npm version is `0.2.0`.
+matching npm version is `0.3.0`.
 
 ## Run it
 
@@ -130,8 +130,8 @@ Pushing a tag that matches the version in `package.json` triggers
 `.github/workflows/publish.yml`:
 
 ```
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 The workflow compares the tag with `package.json` (`node

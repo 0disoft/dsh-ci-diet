@@ -2,9 +2,10 @@
 
 낭비된 GitHub Actions 러너 시간을 찾고, 작고 검토 가능한 패치를 제안합니다.
 
-상태: **알파, npm에 `dsh-ci-diet@0.2.0`로 배포됨**. 계약, 명세, 분석 엔진,
+상태: **알파, `dsh-ci-diet@0.3.0` 릴리스 준비됨**. 계약, 명세, 분석 엔진,
 패치 엔진, CLI, DSH 플러그인 도구, 자체 완결형 HTML 보고서는 구현과 테스트를
-마쳤습니다. DSH Web 클라이언트 화면은 아직 남아 있습니다.
+마쳤습니다. DSH Web 클라이언트는 설정 화면을 제공하고, 보고서·적용 화면은 아직
+남아 있습니다.
 
 ## 하는 일
 
@@ -69,8 +70,8 @@ dsh plugin --profile web add dsh-ci-diet
 기본값을 쓰며, 재시작 없이 다음 도구 호출부터 적용되고 CLI의 설정 파일은 건드리지
 않습니다. 적용 도구가 아직 없어 `localApplyEnabled`는 노출하지 않습니다. 전역 설치는
 선택 사항입니다. `npx dsh-ci-diet`로 같은 CLI를 실행할 수 있고, DSH 플러그인은
-프로필에 패키지가 있으면 됩니다. 릴리스 태그는 GitHub에, 같은 버전은 npm `0.2.0`에
-있습니다.
+프로필에 패키지가 있으면 됩니다. 릴리스 태그는 GitHub에, 같은 버전은 npm `0.3.0`에
+게시됩니다.
 
 ## 실행
 
@@ -118,8 +119,8 @@ lockfile 변경을 따라가지 못하는 리터럴 캐시 키가 대상입니�
 `.github/workflows/publish.yml`이 실행됩니다.
 
 ```
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
 ```
 
 워크플로는 태그와 `package.json` 버전을 대조하고(`node

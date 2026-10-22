@@ -5,10 +5,10 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in 0.2.0 and published on npm (`dsh-ci-diet@0.2.0`). The
-CLI and the DSH model tools are available; the DSH Web client screens are still
-open. The machine-readable contracts in `contracts/` are the authority where
-prose and schema disagree.
+Status: implemented in 0.3.0. The CLI, the DSH model tools, and the DSH Web
+Settings screen are available; the report and apply screens are still open. The
+machine-readable contracts in `contracts/` are the authority where prose and
+schema disagree.
 
 ## Scope (v0.1)
 
@@ -20,11 +20,13 @@ prose and schema disagree.
   (timeout-minutes), CD008 (retention-days). CD002, CD003, and CD004 are
   explanation-only in v0.1.
 - One plan edits one existing `.github/workflows/*.yml` or `*.yaml` file. The
-  patch is applied to the working tree by the local CLI or the Web UI after an
-  explicit human approval; CI Diet never commits, pushes, opens a PR, or merges.
+  patch is applied to the working tree by the local CLI after an explicit human
+  approval; the Web client's Settings screen does not apply changes, and report
+  and apply screens are not implemented yet. CI Diet never commits, pushes,
+  opens a PR, or merges.
 - All durable state is local. Nothing is uploaded, and there is no telemetry.
-- UI languages: English (default) and Korean. Simplified Chinese is a translation
-  slot only and falls back to English.
+- UI languages: English (default), Korean, Simplified Chinese, Hindi, Spanish,
+  and French. Each dictionary is complete; English is the source of truth.
 
 ## Non-goals (v0.1)
 
