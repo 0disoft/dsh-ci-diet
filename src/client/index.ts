@@ -149,10 +149,13 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
+  const [pinnedRevision, setPinnedRevision] = React.useState<number | null>(null);
+  const [conflict, setConflict] = React.useState(false);
 
   const disabled = !snapshot.writable || saving;
 
   const edit = (key: string, value: SettingsDraftValue) => {
+    setPinnedRevision((current) => current ?? snapshot.revision ?? null);
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
       const next = { ...current };
@@ -183,6 +186,8 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
           return next;
         });
         setSaved(true);
+        setPinnedRevision(null);
+        setConflict(false);
       }
     } catch {
       setFailed(true);
@@ -200,12 +205,17 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
     if (ops.length === 0) return;
     setSaving(true);
     setFailed(false);
+    setConflict(false);
     try {
-      const accepted = await form.mutate(ops, snapshot.revision);
+      const accepted = await form.mutate(ops, pinnedRevision ?? snapshot.revision);
       if (accepted) {
         setDraft({});
         setSaved(true);
-      } else setFailed(true);
+        setPinnedRevision(null);
+      } else {
+        setFailed(true);
+        setConflict(pinnedRevision !== null && snapshot.revision !== pinnedRevision);
+      }
     } catch {
       setFailed(true);
     } finally {
@@ -306,9 +316,9 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
         type: "button",
         style: S.button,
         disabled: disabled || readOnly || Object.keys(draft).length === 0,
-        onClick: () => { setDraft({}); setErrors({}); setSaved(false); setFailed(false); },
+        onClick: () => { setDraft({}); setErrors({}); setSaved(false); setFailed(false); setConflict(false); setPinnedRevision(null); },
       }, t("page.discard")),
-      failed ? React.createElement("span", { style: S.status, role: "alert" }, t("page.saveFailed")) : null,
+      failed ? React.createElement("span", { style: S.status, role: "alert" }, t(conflict ? "page.conflict" : "page.saveFailed")) : null,
       !failed && saved ? React.createElement("span", { style: S.status, role: "status" }, t("page.saved")) : null,
     ),
   );

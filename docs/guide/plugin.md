@@ -27,7 +27,9 @@ write leaves the stored configuration unchanged. The CLI keeps its own
 `--config` file and flags; the page does not write them. The host schema itself
 enforces the contract bounds (lookback 1–30, concurrency 1–4, at least one
 analysis rule) while the form is written, so an out-of-contract save is refused
-before any tool reads it.
+before any tool reads it. The page remembers the revision it was editing; if
+another screen saves first, the page refuses your save and asks you to discard
+the draft instead of overwriting the newer values.
 
 | Group | Fields |
 | --- | --- |

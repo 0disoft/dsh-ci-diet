@@ -131,7 +131,9 @@ Keep a Changelog, and the project uses semantic versioning.
   schema: the enabled rules are one field that rejects an empty list, an unknown
   id, or a duplicate, and every numeric field carries its contract bounds. An
   out-of-contract lookback or an all-off rule set is refused at save time instead
-  of failing on the next tool call.
+  of failing on the next tool call. The page also pins the revision it started
+  editing, so a save made after another screen changed the configuration is
+  refused instead of overwriting the newer values.
 - A failing git origin lookup is no longer reported as a missing remote: the
   CLI and the DSH tool show the git explanation, and coverage reasons keep the
   GitHub error code alongside its message. A gh response with no HTTP block but

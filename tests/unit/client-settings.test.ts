@@ -26,7 +26,57 @@ interface LoadedBundle {
   readonly languages: { id: string; label: string; fallback: string }[];
 }
 
-function loadBundle(): LoadedBundle {
+interface FakeElement {
+  readonly type: unknown;
+  readonly props: Record<string, unknown>;
+}
+
+function fakeReact(): { react: Record<string, unknown>; values: unknown[] } {
+  const values: unknown[] = [];
+  let index = 0;
+  const react = {
+    createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): FakeElement {
+      return { type, props: { ...(props ?? {}), ...(children.length === 0 ? {} : { children: children.length === 1 ? children[0] : children }) } };
+    },
+    useState<T>(initial: T): [T, (next: T | ((current: T) => T)) => void] {
+      const slot = index++;
+      if (slot >= values.length) values[slot] = initial;
+      const set = (next: T | ((current: T) => T)): void => {
+        const current = values[slot] as T;
+        values[slot] = typeof next === "function" ? (next as (value: T) => T)(current) : next;
+      };
+      return [values[slot] as T, set];
+    },
+    useSyncExternalStore(_subscribe: unknown, get: () => unknown): unknown {
+      return get();
+    },
+    reset(): void {
+      index = 0;
+    },
+  };
+  return { react, values };
+}
+
+function renderPage(react: Record<string, unknown>, component: unknown, props: Record<string, unknown>): FakeElement {
+  (react.reset as () => void)();
+  return (component as (input: Record<string, unknown>) => FakeElement)(props);
+}
+
+function findElement(node: unknown, predicate: (element: FakeElement) => boolean): FakeElement | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElement(child, predicate);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (node === null || typeof node !== "object") return undefined;
+  const element = node as FakeElement;
+  if (predicate(element)) return element;
+  return findElement(element.props.children, predicate);
+}
+
+function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
   const captured: { id: string; factory(require: (id: string) => unknown): unknown }[] = [];
   const sandbox = { window: { __ModuleLoader__: { load(entry: unknown) { captured.push(entry as never); } } } };
   vm.runInNewContext(readFileSync(join(ROOT, "client", "index.js"), "utf8"), sandbox);
@@ -37,7 +87,7 @@ function loadBundle(): LoadedBundle {
   const languages: { id: string; label: string; fallback: string }[] = [];
   const form = { getSnapshot: () => ({ status: "ready", writable: true }), subscribe: () => () => {}, mutate: async () => true, unset: async () => true };
   const plugin = entry.factory((id: string) => {
-    if (id === "react") return { createElement: () => null, useState: () => [undefined, () => {}], useSyncExternalStore: () => ({ status: "loading", writable: false }) };
+    if (id === "react") return fake ?? { createElement: () => null, useState: () => [undefined, () => {}], useSyncExternalStore: () => ({ status: "loading", writable: false }) };
     throw new Error("unexpected require " + id);
   }) as LoadedBundle["plugin"];
   const ctx = {
@@ -93,6 +143,36 @@ test("the client bundle registers one settings section for the package", () => {
   assert.equal(typeof loaded.sections[0]!.component, "function");
   assert.deepEqual(loaded.languages.map((language) => language.id), ["ko", "hi", "es", "fr"]);
   assert.ok(loaded.languages.every((language) => language.fallback === "en"));
+});
+
+test("the page saves against the revision it started editing", async () => {
+  buildBundle();
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  let revision = 1;
+  const calls: { ops: readonly unknown[]; revision: number | undefined }[] = [];
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision, value: { rules: ["CD001", "CD002", "CD004"] } }),
+    subscribe: () => () => {},
+    mutate: async (ops: readonly unknown[], expected?: number) => { calls.push({ ops, revision: expected }); return true; },
+    unset: async () => true,
+  };
+  const component = loaded.sections[0]!.component;
+  const props = { form, t: (key: string) => key };
+  let tree = renderPage(fake.react, component, props);
+  const rule = findElement(tree, (element) => element.props["aria-label"] === "field.ruleCD005");
+  assert.ok(rule !== undefined, "the rule checkbox is missing");
+  (rule.props.onChange as () => void)();
+  tree = renderPage(fake.react, component, props);
+  revision = 2;
+  const save = findElement(tree, (element) => element.type === "button" && element.props.children === "page.save");
+  assert.ok(save !== undefined, "the save button is missing");
+  (save.props.onClick as () => void)();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.revision, 1);
+  const set = (calls[0]!.ops as { op: string; path: readonly string[]; value: unknown }[]).find((op) => op.path[0] === "rules");
+  assert.deepEqual(Array.from(set?.value as readonly string[]), ["CD001", "CD002", "CD004", "CD005"]);
 });
 
 test("all six languages expose the same non-empty keys", () => {
