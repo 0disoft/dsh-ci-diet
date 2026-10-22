@@ -226,6 +226,26 @@ test("CLI hides a saved plan diff after the workflow changes", () => {
   assert.doesNotMatch(shown.stdout, /Proposed change:/);
 });
 
+test("CLI hides a saved plan diff after the workflow is deleted", () => {
+  const { root, file } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const planId = (JSON.parse(planned.stdout) as { planId: string }).planId;
+  rmSync(file);
+  const shown = cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
+  assert.equal(shown.status, 3, shown.stderr);
+  assert.match(shown.stdout, /no longer available/);
+  assert.doesNotMatch(shown.stdout, /Proposed change:/);
+  const json = cli(["plans", "--plan", planId, "--state-dir", stateDir, "--json"], root);
+  assert.equal(json.status, 3, json.stderr);
+  assert.equal((JSON.parse(json.stdout) as { planId: string }).planId, planId);
+});
+
 test("CLI enforces apply.allowedRules for plan and apply", () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");

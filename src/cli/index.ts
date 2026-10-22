@@ -822,6 +822,8 @@ function plansList(options: Options, locale: Locale): number {
     }
     if (source === null) {
       lines.push(t("cli.plan.diffUnavailable"));
+      reportText(JSON.stringify(stored.plan, null, 2) + "\n", options, lines);
+      return EXIT_INCOMPLETE;
     } else if (sourceHashOf(source) !== payload.sourceHash) {
       lines.push(t("cli.plan.sourceChanged"));
       reportText(JSON.stringify(stored.plan, null, 2) + "\n", options, lines);

@@ -147,8 +147,9 @@ Keep a Changelog, and the project uses semantic versioning.
 ### Fixed
 
 - Re-showing a saved plan verifies that the workflow bytes still match the
-  plan's source hash. Changed bytes hide the diff, explain the mismatch, and exit
-  3 instead of rendering a misleading diff against the new file.
+  plan's source hash. Missing workspace or workflow bytes, or changed bytes, hide
+  the diff, keep the plan JSON, explain the state, and exit 3 instead of
+  reporting success or rendering a misleading diff against the new file.
 - Saving the DSH settings now validates the whole engine contract in the host
   schema: the enabled rules are one field that rejects an empty list or an unknown
   id, and every numeric field carries its contract bounds. An out-of-contract
