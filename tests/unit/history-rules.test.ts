@@ -4,7 +4,7 @@ import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { evaluateRules } from "../../src/core/rules/index.ts";
 import { parseWorkflow } from "../../src/core/workflow/index.ts";
-import type { HistoryBundle, HistoryJob, HistoryRun } from "../../src/core/history/model.ts";
+import type { HistoryBundle, HistoryJob, HistoryPull, HistoryRun, ProtectionSnapshot } from "../../src/core/history/model.ts";
 import type { WorkflowDefinition } from "../../src/core/workflow/model.ts";
 import type { RuleContext } from "../../src/core/rules/types.ts";
 
@@ -106,7 +106,11 @@ function run(id: string, options: {
   };
 }
 
-function bundle(runs: HistoryRun[], pulls = new Map()): HistoryBundle {
+function bundle(
+  runs: HistoryRun[],
+  pulls = new Map(),
+  protection: Partial<ProtectionSnapshot> = {},
+): HistoryBundle {
   const coverage = buildCoverage({ apiVersion: "2022-11-28", ghVersion: "2.0.0", requestedFrom: "2026-10-13T00:00:00.000Z", requestedTo: NOW }, {});
   return {
     repositoryId: "git:" + "b".repeat(32),
@@ -119,10 +123,14 @@ function bundle(runs: HistoryRun[], pulls = new Map()): HistoryBundle {
     workflows: [],
     artifacts: [],
     retention: null,
-    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: NOW },
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: NOW, ...protection },
     coverage,
     missingScopes: [],
   };
+}
+
+function pull(baseBranch: string, number = 7): Map<number, HistoryPull> {
+  return new Map([[number, { number, baseBranch, headBranch: "feature", files: [] }]]);
 }
 
 function context(history: HistoryBundle, rules: RuleContext["config"] = DEFAULT_CONFIG): RuleContext {
@@ -155,7 +163,10 @@ test("CD001 finds a superseded pull request run and records a removal", () => {
     createdAt: "2026-10-19T00:02:00.000Z",
     jobs: [job("j2", "101", "2026-10-19T00:02:10.000Z", 300000)],
   });
-  const evaluation = rule(evaluateRules(context(bundle([first, second]))), "CD001");
+  const evaluation = rule(
+    evaluateRules(context(bundle([first, second], pull("main"), { classicProtection: false }))),
+    "CD001",
+  );
   assert.equal(evaluation.results[0]?.outcome, "finding");
   assert.equal(evaluation.findings.length, 1);
   const finding = evaluation.findings[0];
@@ -165,6 +176,37 @@ test("CD001 finds a superseded pull request run and records a removal", () => {
   assert.equal(evaluation.removals.length, 1);
   assert.equal(evaluation.removals[0]?.jobId, "j1");
   assert.ok((evaluation.removals[0]?.endMillis ?? 0) > 0);
+});
+
+function supersededRuns(parsed: WorkflowDefinition, prefix: string): HistoryRun[] {
+  return [
+    run(prefix + "0", { sha: "5".repeat(40), createdAt: "2026-10-19T00:00:00.000Z", definition: parsed, jobs: [job(prefix + "--job", prefix + "0", "2026-10-19T00:00:10.000Z", 600000)] }),
+    run(prefix + "1", { sha: "6".repeat(40), createdAt: "2026-10-19T00:02:00.000Z", definition: parsed }),
+  ];
+}
+
+test("CD001 blocks a pull request that targets a branch other than the protected default", () => {
+  const parsed = definition(PR_ONLY);
+  const history = bundle(supersededRuns(parsed, "210"), pull("release"), { classicProtection: false });
+  const evaluation = rule(evaluateRules(context(history)), "CD001");
+  assert.equal(evaluation.findings[0]?.patchability, "review-only");
+  assert.ok(evaluation.findings[0]?.blockers.includes("PULL_REQUEST_BASE_BRANCH_NOT_DEFAULT"));
+});
+
+test("CD001 blocks classic branch protection even without required checks", () => {
+  const parsed = definition(PR_ONLY);
+  const history = bundle(supersededRuns(parsed, "220"), pull("main"), { classicProtection: true, ruleCount: 0 });
+  const evaluation = rule(evaluateRules(context(history)), "CD001");
+  assert.equal(evaluation.findings[0]?.patchability, "review-only");
+  assert.ok(evaluation.findings[0]?.blockers.includes("CLASSIC_BRANCH_PROTECTION_UNKNOWN"));
+});
+
+test("CD001 blocks a run whose pull request base branch was not synced", () => {
+  const parsed = definition(PR_ONLY);
+  const history = bundle(supersededRuns(parsed, "230"), new Map(), { classicProtection: false });
+  const evaluation = rule(evaluateRules(context(history)), "CD001");
+  assert.equal(evaluation.findings[0]?.patchability, "review-only");
+  assert.ok(evaluation.findings[0]?.blockers.includes("PULL_REQUEST_BASE_BRANCH_UNKNOWN"));
 });
 
 test("CD001 keeps an existing concurrency policy review-only", () => {

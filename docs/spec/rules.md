@@ -94,8 +94,10 @@ side effects. The workflow Attestation must cover `ciOnly` and `replaceSafe`, an
 every opaque action, script, and reusable reference must be recorded.
 
 The plan is also blocked when the workflow owns a required check, when
-protection data cannot be read, or when dynamic job names make the required
-check mapping ambiguous. That is a deliberate v0.1 limitation, not a claim that
+protection data cannot be read, when classic branch protection is enabled or
+unknown, when the pull request targets a branch other than
+`protection.defaultBranch`, or when dynamic job names make the required check
+mapping ambiguous. That is a deliberate v0.1 limitation, not a claim that
 concurrency is wrong for required checks. If the eligible rate stays too low in
 measurement, CD001 ships as diagnosis-only.
 

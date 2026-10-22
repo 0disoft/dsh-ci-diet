@@ -61,7 +61,29 @@ function collectRemovals(run: HistoryRun, replacement: HistoryRun, lagSeconds: n
   return rows;
 }
 
-function staticBlockers(context: RuleContext, definition: WorkflowDefinition): string[] {
+/**
+ * The stored protection snapshot is read for the default branch only, so a run
+ * whose pull request targets another branch cannot be judged from it. Classic
+ * protection and required checks also hide ownership that this tool cannot
+ * resolve, so anything other than "no classic protection, zero required
+ * checks, on the default branch" stays review-only.
+ */
+function protectionBlockers(context: RuleContext, run: HistoryRun): string[] {
+  const blockers: string[] = [];
+  const protection = context.history?.protection ?? null;
+  if (context.coverage.protectionRules.status !== "complete" || protection === null) {
+    blockers.push("PROTECTION_RULES_UNAVAILABLE");
+    return blockers;
+  }
+  const pull = context.history?.pulls.get(run.pullRequestNumbers[0] ?? -1) ?? null;
+  if (pull === null) blockers.push("PULL_REQUEST_BASE_BRANCH_UNKNOWN");
+  else if (pull.baseBranch !== protection.defaultBranch) blockers.push("PULL_REQUEST_BASE_BRANCH_NOT_DEFAULT");
+  if (protection.classicProtection !== false) blockers.push("CLASSIC_BRANCH_PROTECTION_UNKNOWN");
+  if (protection.ruleCount === null || protection.ruleCount > 0) blockers.push("REQUIRED_CHECK_OWNERSHIP_UNKNOWN");
+  return blockers;
+}
+
+function staticBlockers(context: RuleContext, definition: WorkflowDefinition, run: HistoryRun): string[] {
   const blockers: string[] = [];
   const triggers = [...definition.triggers].sort();
   if (triggers.length !== 1 || triggers[0] !== "pull_request") blockers.push("WORKFLOW_TRIGGERS_NOT_PR_ONLY");
@@ -69,11 +91,7 @@ function staticBlockers(context: RuleContext, definition: WorkflowDefinition): s
   if (definition.jobs.some((job) => job.environment !== null)) blockers.push("ENVIRONMENT_DEPENDENCY");
   if (definition.jobs.some((job) => job.reusableWorkflow !== null)) blockers.push("REUSABLE_WORKFLOW_JOB");
   if (definition.jobs.some((job) => jobLooksRisky(job))) blockers.push("DEPLOY_OR_RELEASE_JOB");
-  if (context.coverage.protectionRules.status !== "complete") {
-    blockers.push("PROTECTION_RULES_UNAVAILABLE");
-  } else if ((context.history?.protection?.ruleCount ?? 0) > 0) {
-    blockers.push("REQUIRED_CHECK_OWNERSHIP_UNKNOWN");
-  }
+  blockers.push(...protectionBlockers(context, run));
   return blockers;
 }
 
@@ -116,7 +134,7 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
       const removalsAtThirty = collectRemovals(run, replacement, 30);
       const removedZero = removalsAtZero.reduce((sum, row) => sum + (row.endMillis - row.startMillis) / 1000, 0);
       const removedThirty = removalsAtThirty.reduce((sum, row) => sum + (row.endMillis - row.startMillis) / 1000, 0);
-      const blockers = staticBlockers(context, definition);
+      const blockers = staticBlockers(context, definition, run);
       if (composition.level !== "full") blockers.push("COVERAGE_" + composition.level.toUpperCase());
       const eligible = blockers.length === 0 && composition.writeAllowed;
       const finding = buildFinding({
