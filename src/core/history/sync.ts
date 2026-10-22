@@ -39,6 +39,27 @@ function missingScope(partial: Omit<MissingScope, "runId" | "attempt" | "path" |
   };
 }
 
+/**
+ * Strip a ref suffix GitHub appends to run.path (for example ".github/workflows/ci.yml@main").
+ * A trailing "@x" that names a branch/ref is a suffix, not part of the filename, but a real
+ * "@" inside a filename must survive.
+ */
+function splitWorkflowRef(path: string, headBranch: string | null): string {
+  const at = path.lastIndexOf("@");
+  if (at <= 0) return path;
+  const suffix = path.slice(at + 1);
+  const looksLikeRef = suffix.startsWith("refs/") || suffix === headBranch || /^[0-9a-f]{40}$/.test(suffix);
+  return looksLikeRef ? path.slice(0, at) : path;
+}
+
+/** Resolve the repository-relative workflow file a run executed. */
+function workflowFilePath(run: GitHubRun, knownPaths: ReadonlyMap<number, string>): string {
+  // The workflows listing maps workflow_id to the canonical path; prefer it so a
+  // filename that genuinely contains "@" (or a path with no ref suffix) is not mangled.
+  const listed = run.workflow_id === undefined ? undefined : knownPaths.get(run.workflow_id);
+  return listed ?? splitWorkflowRef(run.path, run.head_branch);
+}
+
 /** Collect one bounded history window through the read-only transport. */
 export async function syncRepositoryHistory(options: {
   readonly owner: string;
@@ -92,28 +113,46 @@ export async function syncRepositoryHistory(options: {
         perPage: PAGE_SIZE,
         createdAfter: isoSeconds(requestedFrom),
       });
+      // Count rows this window refused so dropping the tail is reported even when
+      // GitHub served the final page (hasNext is false).
+      let dropped = 0;
       for (const run of result.items) {
-        if (runs.length >= historyConfig.maxRuns) break;
+        if (runs.length >= historyConfig.maxRuns) {
+          dropped += 1;
+          continue;
+        }
         runs.push(run);
       }
+      if (dropped > 0 || (runs.length >= historyConfig.maxRuns && result.hasNext)) truncatedByLimit = true;
+      if (runs.length >= historyConfig.maxRuns) break;
       if (!result.hasNext) break;
-      if (runs.length >= historyConfig.maxRuns) {
-        truncatedByLimit = true;
-        break;
-      }
     }
   } catch (error) {
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
     historyError = error instanceof Error ? error.message : String(error);
   }
+  // Discovery is finished; unused discovery quota may fund the jobs stage.
+  budget.finish("discovery");
 
   const historyRuns: HistoryRun[] = [];
   let jobsFetched = 0;
   const definitions = new Map<string, WorkflowDefinition | null>();
   const pulls = new Map<number, HistoryPull>();
   const pullNumbers = new Set<number>();
+  const workflowPaths = new Map<number, string>();
+  for (const workflow of workflows) workflowPaths.set(workflow.id, workflow.path);
 
+  interface CollectedRun {
+    readonly run: GitHubRun;
+    readonly workflowPath: string;
+    readonly attempts: number;
+    readonly jobs: HistoryJob[];
+    readonly pullRequestNumbers: readonly number[];
+  }
+
+  const collectedRuns: CollectedRun[] = [];
   for (const run of runs) {
+    const workflowPath = workflowFilePath(run, workflowPaths);
     const pullRequestNumbers = (run.pull_requests ?? []).map((pull) => pull.number);
     for (const number of pullRequestNumbers) pullNumbers.add(number);
     const jobs: HistoryJob[] = [];
@@ -130,7 +169,7 @@ export async function syncRepositoryHistory(options: {
               runId: String(run.id),
               attempt,
               name: job.name,
-              workflowPath: run.path,
+              workflowPath,
               conclusion: job.conclusion,
               startedAt: job.started_at ?? "",
               completedAt: job.completed_at,
@@ -151,39 +190,46 @@ export async function syncRepositoryHistory(options: {
         missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: error instanceof Error ? error.message : "JOBS_UNAVAILABLE", resumable: true }));
       }
     }
+    collectedRuns.push({ run, workflowPath, attempts, jobs, pullRequestNumbers });
+  }
+  // Jobs are finished; quota this stage never used can fund the definitions stage.
+  budget.finish("jobs");
 
-    const definitionKey = run.path + "@" + run.head_sha;
+  for (const entry of collectedRuns) {
+    const { run, workflowPath } = entry;
+    const definitionKey = workflowPath + "@" + run.head_sha;
     let definition = definitions.get(definitionKey);
     if (definition === undefined) {
       try {
-        const content = await effectiveClient.contents(run.path, run.head_sha);
-        definition = content === null ? null : parseWorkflow(run.path, content.text);
+        const content = await effectiveClient.contents(workflowPath, run.head_sha);
+        definition = content === null ? null : parseWorkflow(workflowPath, content.text);
       } catch (error) {
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
         definition = null;
-        missingScopes.push(missingScope({ family: "definitions", resource: "contents", runId: String(run.id), path: run.path, reason: error instanceof Error ? error.message : "DEFINITION_UNAVAILABLE", resumable: true }));
+        missingScopes.push(missingScope({ family: "definitions", resource: "contents", runId: String(run.id), path: workflowPath, reason: error instanceof Error ? error.message : "DEFINITION_UNAVAILABLE", resumable: true }));
       }
       definitions.set(definitionKey, definition);
     }
 
     historyRuns.push({
       runId: String(run.id),
-      workflowPath: run.path,
+      workflowPath,
       workflowName: run.name,
       headSha: run.head_sha,
       headBranch: run.head_branch,
       event: run.event,
       createdAt: run.created_at,
-      attempt: attempts,
+      attempt: entry.attempts,
       conclusion: run.conclusion,
-      pullRequestNumbers,
-      jobs,
+      pullRequestNumbers: entry.pullRequestNumbers,
+      jobs: entry.jobs,
       definition,
       definitionResolution: definition === null ? "unresolved" : "resolved",
     });
     options.onProgress?.({ runsProcessed: historyRuns.length, runsTotal: runs.length, jobsFetched });
-
   }
+  // Definitions are finished; the policy/files stage inherits the remainder.
+  budget.finish("definitions");
 
   for (const number of pullNumbers) {
     try {

@@ -267,6 +267,150 @@ test("records a discovery scope when the workflow list stops at the page cap", a
   );
 });
 
+test("reports RUN_LIMIT_REACHED when the final page holds more runs than the window", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const run = (id: number) => ({
+    id,
+    name: "CI",
+    path: ".github/workflows/ci.yml",
+    workflow_id: 7,
+    head_sha: "sha" + String(id),
+    head_branch: "main",
+    event: "push",
+    created_at: "2026-10-19T10:00:00Z",
+    run_attempt: 1,
+    conclusion: "success",
+    pull_requests: [],
+  });
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) {
+      // No link header: these three rows are the entire final page.
+      return response({ total_count: 3, workflow_runs: [run(1), run(2), run(3)] });
+    }
+    return original(request, family);
+  };
+  const baseConfig = config();
+  const truncatedConfig = { ...baseConfig, history: { ...baseConfig.history, maxRuns: 2 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: truncatedConfig, now: NOW, transport });
+  assert.equal(result.history.runs.length, 2);
+  assert.equal(result.history.coverage.history.status, "partial");
+  assert.deepEqual(result.history.coverage.history.reasons, ["RUN_LIMIT_REACHED"]);
+});
+
+test("resolves run.path ref suffixes through the workflow_id listing", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const contentsRequests: { path: string; query?: Readonly<Record<string, string>> }[] = [];
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string; readonly query?: Readonly<Record<string, string>> }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) {
+      return response({
+        total_count: 1,
+        workflow_runs: [{
+          id: 100,
+          name: "CI",
+          path: ".github/workflows/ci.yml@main",
+          workflow_id: 7,
+          head_sha: "abc123",
+          head_branch: "main",
+          event: "push",
+          created_at: "2026-10-19T10:00:00Z",
+          run_attempt: 1,
+          conclusion: "success",
+          pull_requests: [],
+        }],
+      });
+    }
+    if (request.path.includes("/contents/")) contentsRequests.push({ path: request.path, query: request.query });
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.runs[0]?.workflowPath, ".github/workflows/ci.yml");
+  assert.equal(result.history.runs[0]?.jobs[0]?.workflowPath, ".github/workflows/ci.yml");
+  assert.equal(contentsRequests.length, 1);
+  assert.equal(contentsRequests[0]?.path, "/repos/o/r/contents/.github/workflows/ci.yml");
+  assert.equal(contentsRequests[0]?.query?.ref, "abc123");
+});
+
+test("keeps a real @ in a workflow filename and strips a refs suffix without workflow_id", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const contentsPaths: string[] = [];
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) {
+      return response({
+        total_count: 2,
+        workflow_runs: [
+          {
+            id: 100,
+            name: "release",
+            path: ".github/workflows/release@2.yml",
+            head_sha: "sha100",
+            head_branch: "feature",
+            event: "push",
+            created_at: "2026-10-19T10:00:00Z",
+            run_attempt: 1,
+            conclusion: "success",
+            pull_requests: [],
+          },
+          {
+            id: 101,
+            name: "CI",
+            path: ".github/workflows/ci.yml@refs/heads/main",
+            head_sha: "sha101",
+            head_branch: "main",
+            event: "push",
+            created_at: "2026-10-19T10:00:00Z",
+            run_attempt: 1,
+            conclusion: "success",
+            pull_requests: [],
+          },
+        ],
+      });
+    }
+    if (request.path.includes("/contents/")) contentsPaths.push(request.path);
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.deepEqual(result.history.runs.map((run) => run.workflowPath), [".github/workflows/release@2.yml", ".github/workflows/ci.yml"]);
+  assert.ok(contentsPaths.some((path) => path.includes("release%402.yml")), "a real @ must stay encoded, not become a ref split");
+  assert.equal(result.history.coverage.workflowDefinitions.status, "complete");
+});
+
+test("hands unused jobs quota to the definitions stage", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) {
+      const workflowRuns = Array.from({ length: 5 }, (_, index) => ({
+        id: 100 + index,
+        name: "CI",
+        path: ".github/workflows/ci.yml",
+        workflow_id: 7,
+        head_sha: "sha" + String(index),
+        head_branch: "main",
+        event: "push",
+        created_at: "2026-10-19T10:00:00Z",
+        run_attempt: 1,
+        conclusion: "success",
+        pull_requests: [],
+      }));
+      return response({ total_count: workflowRuns.length, workflow_runs: workflowRuns });
+    }
+    return original(request, family);
+  };
+  const baseConfig = config();
+  const tightDefinitions = {
+    ...baseConfig,
+    history: { ...baseConfig.history, quotas: { discovery: 40, jobs: 220, definitions: 2, policyAndFiles: 80 } },
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: tightDefinitions, now: NOW, transport });
+  assert.equal(result.history.runs.length, 5);
+  assert.ok(result.history.runs.every((run) => run.definitionResolution === "resolved"));
+  assert.equal(result.history.coverage.workflowDefinitions.status, "complete");
+  assert.ok(result.budget.snapshot().families.definitions.borrowed > 0);
+});
+
 test("propagates authentication failures instead of recording them", async () => {
   const transport = {
     async get(): Promise<GhResponse> {

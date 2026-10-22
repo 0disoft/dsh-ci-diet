@@ -25,6 +25,8 @@ export interface GitHubPullReference {
 export interface GitHubRun {
   readonly id: number;
   readonly name: string | null;
+  /** Present when GitHub links the run to a listed workflow. */
+  readonly workflow_id?: number;
   readonly path: string;
   readonly head_sha: string;
   readonly head_branch: string | null;
