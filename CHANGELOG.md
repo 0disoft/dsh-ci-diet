@@ -115,6 +115,10 @@ Keep a Changelog, and the project uses semantic versioning.
 - Store writes reserve quota and write their bytes under one filesystem lock, so
   two processes can no longer pass the same free-space check and together exceed
   the store limit. The backup reservation and its three files share that lock.
+- Confirmed backup cleanup re-lists under a maintenance lock that revert also
+  holds, and its token now binds each change's state, update time, size, and
+  backup manifest. A concurrent revert or a backup changed after the listing is
+  refused instead of deleted.
 
 ## 0.2.0 (2026-10-21)
 

@@ -14,7 +14,7 @@ import { parseWorkflow } from "../workflow/parse.ts";
 import { collectDependencies } from "./dependencies.ts";
 import { clockOf, idsOf, isExpired } from "../support/clock.ts";
 import type { Clock, IdSource, RuntimeSeams } from "../support/clock.ts";
-import { DEFAULT_APPROVAL_TTL_SECONDS, WRITER_LEASE_STALE_MS } from "../policy/constants.ts";
+import { DEFAULT_APPROVAL_TTL_SECONDS, STORE_WRITE_LOCK_WAIT_MS, WRITER_LEASE_STALE_MS } from "../policy/constants.ts";
 import {
   LEASE_TOKEN_FILE,
   acquireLock,
@@ -642,36 +642,43 @@ export async function revertChange(options: {
       options.store.saveChange({ ...change, state: "CONFLICT", updatedAt: iso(options.now) });
       return { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" };
     }
-    const backup = options.store.readBackup(change.changeId);
-    if (backup === null) {
-      options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
-      return { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" };
+    // Hold the maintenance lock from the backup read through the restore, so a
+    // confirmed backup cleanup cannot remove the bytes this revert depends on.
+    const maintenance = acquireStoreLock(options.store, "maintenance", STORE_WRITE_LOCK_WAIT_MS, { clock: options.clock, ids: options.ids });
+    try {
+      const backup = options.store.readBackup(change.changeId);
+      if (backup === null) {
+        options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
+        return { state: "RECOVERY_REQUIRED", reason: "BACKUP_UNAVAILABLE" };
+      }
+      if (backup.manifest.beforeHash !== change.before.hash || textHash(backup.beforeText) !== change.before.hash) {
+        options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
+        return { state: "RECOVERY_REQUIRED", reason: "BACKUP_HASH_MISMATCH" };
+      }
+      const recheck = readFileSync(target, "utf8");
+      if (textHash(recheck) !== change.after.hash) {
+        options.store.saveChange({ ...change, state: "CONFLICT", updatedAt: iso(options.now) });
+        return { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" };
+      }
+      // Record that the file may be restored before replacing it. A crash or a
+      // journal write failure after this point leaves REVERTING with the bytes in
+      // a known state, and a retry finishes the revert instead of conflicting.
+      throwIfAborted(options.signal);
+      if (change.state !== "REVERTING") {
+        options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
+      }
+      const mode = statSync(target).mode;
+      const restoredHash = await replaceAtomically(target, backup.beforeText, mode, options.signal);
+      if (restoredHash !== change.before.hash) {
+        options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
+        return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };
+      }
+      options.store.saveChange({ ...change, state: "REVERTED", updatedAt: iso(options.now) });
+      const warnings = options.store.appendSummaryEvent({ type: "reverted", changeId: change.changeId }, options.now);
+      return { state: "REVERTED", reason: null, ...(warnings.length > 0 ? { warnings } : {}) };
+    } finally {
+      maintenance.release();
     }
-    if (backup.manifest.beforeHash !== change.before.hash || textHash(backup.beforeText) !== change.before.hash) {
-      options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
-      return { state: "RECOVERY_REQUIRED", reason: "BACKUP_HASH_MISMATCH" };
-    }
-    const recheck = readFileSync(target, "utf8");
-    if (textHash(recheck) !== change.after.hash) {
-      options.store.saveChange({ ...change, state: "CONFLICT", updatedAt: iso(options.now) });
-      return { state: "CONFLICT", reason: "CURRENT_BYTES_CHANGED" };
-    }
-    // Record that the file may be restored before replacing it. A crash or a
-    // journal write failure after this point leaves REVERTING with the bytes in
-    // a known state, and a retry finishes the revert instead of conflicting.
-    throwIfAborted(options.signal);
-    if (change.state !== "REVERTING") {
-      options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
-    }
-    const mode = statSync(target).mode;
-    const restoredHash = await replaceAtomically(target, backup.beforeText, mode, options.signal);
-    if (restoredHash !== change.before.hash) {
-      options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
-      return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };
-    }
-    options.store.saveChange({ ...change, state: "REVERTED", updatedAt: iso(options.now) });
-    const warnings = options.store.appendSummaryEvent({ type: "reverted", changeId: change.changeId }, options.now);
-    return { state: "REVERTED", reason: null, ...(warnings.length > 0 ? { warnings } : {}) };
   }, { clock: options.clock, ids: options.ids });
 }
 

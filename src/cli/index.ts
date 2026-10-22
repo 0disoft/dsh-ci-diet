@@ -946,7 +946,7 @@ function pruneAppliedBackups(store: PatchStore, options: Options, locale: Locale
   const t = createTranslator(locale);
   const candidates = store.appliedBackupCandidates();
   const changeIds = candidates.map((candidate) => candidate.changeId);
-  const token = appliedBackupConfirmToken(changeIds);
+  const token = appliedBackupConfirmToken(candidates);
   if (options.confirm === null) {
     if (options.json) {
       writeOut(JSON.stringify({ candidates, token, automaticPruning: false }, null, 2) + "\n");

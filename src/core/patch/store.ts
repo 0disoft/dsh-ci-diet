@@ -6,7 +6,8 @@ import type { HistoryBundle } from "../history/model.ts";
 import { assertValidDocument, validationErrors } from "../contracts/validate.ts";
 import type { DocumentKind } from "../contracts/validate.ts";
 import { digestOf } from "../../shared/cdj1.ts";
-import { withStoreWriteLock } from "./locks.ts";
+import { acquireStoreLock, withStoreWriteLock } from "./locks.ts";
+import { STORE_WRITE_LOCK_WAIT_MS } from "../policy/constants.ts";
 
 export interface PlanMeta {
   readonly coverageWriteAllowed: boolean;
@@ -107,6 +108,8 @@ export interface AppliedBackupCandidate {
   readonly appliedAt: string;
   readonly bytes: number;
   readonly backupPath: string;
+  /** Digest of the backup manifest, so a changed backup invalidates an old token. */
+  readonly backupHash: string;
 }
 
 export interface AppliedBackupCleanupResult {
@@ -114,9 +117,15 @@ export interface AppliedBackupCleanupResult {
   readonly bytesFreed: number;
 }
 
-/** Human-confirmation token for deleting applied backups; derived from the exact change ids. */
-export function appliedBackupConfirmToken(changeIds: readonly string[]): string {
-  const sorted = [...changeIds].sort();
+/**
+ * Human-confirmation token for deleting applied backups. It binds the exact
+ * change ids to their journal state, update time, size, and backup manifest, so
+ * a listing becomes stale if anything about a selected backup changes.
+ */
+export function appliedBackupConfirmToken(candidates: readonly AppliedBackupCandidate[]): string {
+  const sorted = candidates
+    .map((candidate) => [candidate.changeId, candidate.state, candidate.appliedAt, candidate.bytes, candidate.backupHash].join("|"))
+    .sort();
   return createHash("sha256").update(sorted.join("\n"), "utf8").digest("hex").slice(0, 16);
 }
 
@@ -132,6 +141,15 @@ export class StoreCorruptionError extends Error {
 
 function ageCutoff(now: Date, days: number): number {
   return now.getTime() - days * DAY_MS;
+}
+
+/** Digest of a backup manifest, or null when it is missing or unreadable. */
+function backupManifestHash(directory: string): string | null {
+  try {
+    return createHash("sha256").update(readFileSync(join(directory, "manifest.json"))).digest("hex");
+  } catch {
+    return null;
+  }
 }
 
 function entryBytes(path: string): number {
@@ -606,12 +624,20 @@ export class PatchStore {
    * are never listed, because their backup is the only way back.
    */
   appliedBackupCandidates(): AppliedBackupCandidate[] {
+    return this.withMaintenance(() => this.appliedBackupCandidatesUnlocked());
+  }
+
+  private appliedBackupCandidatesUnlocked(): AppliedBackupCandidate[] {
     const settled = new Set<AppliedChange["state"]>(["APPLIED", "REVERTED"]);
     const candidates: AppliedBackupCandidate[] = [];
     for (const change of this.listChanges()) {
       if (!settled.has(change.state)) continue;
       const directory = this.path("backups", change.changeId);
       if (!existsSync(directory)) continue;
+      const backupHash = backupManifestHash(directory);
+      // A backup without a readable manifest cannot be verified or safely
+      // deleted on confirmation; leave it for the recovery path.
+      if (backupHash === null) continue;
       candidates.push({
         changeId: change.changeId,
         planId: change.planId,
@@ -620,6 +646,7 @@ export class PatchStore {
         appliedAt: change.updatedAt,
         bytes: deepBytes(directory),
         backupPath: directory,
+        backupHash,
       });
     }
     return candidates.sort((a, b) => (a.appliedAt < b.appliedAt ? -1 : 1));
@@ -629,26 +656,42 @@ export class PatchStore {
    * Delete applied backups only for the exact ids a human confirmed. There is
    * no age-based path here: the token binds the listing to the deletion, and a
    * stale token refuses instead of deleting a backup that appeared later.
+   *
+   * The listing, revalidation, and deletion all run under one maintenance lock,
+   * so a revert cannot read a backup that prune deletes between its read and
+   * the restore.
    */
   pruneAppliedBackups(changeIds: readonly string[], confirmToken: string): AppliedBackupCleanupResult {
-    const candidates = this.appliedBackupCandidates();
-    const byId = new Map(candidates.map((candidate) => [candidate.changeId, candidate]));
-    for (const changeId of changeIds) {
-      if (!byId.has(changeId)) throw new Error("STORAGE_BACKUP_NOT_SETTLED: " + changeId);
+    return this.withMaintenance(() => {
+      const candidates = this.appliedBackupCandidatesUnlocked();
+      const byId = new Map(candidates.map((candidate) => [candidate.changeId, candidate]));
+      const selected: AppliedBackupCandidate[] = [];
+      for (const changeId of changeIds) {
+        const candidate = byId.get(changeId);
+        if (candidate === undefined) throw new Error("STORAGE_BACKUP_NOT_SETTLED: " + changeId);
+        selected.push(candidate);
+      }
+      if (confirmToken !== appliedBackupConfirmToken(selected)) {
+        throw new Error("STORAGE_BACKUP_TOKEN_MISMATCH");
+      }
+      let removedBackups = 0;
+      let bytesFreed = 0;
+      for (const candidate of selected) {
+        rmSync(this.path("backups", requireId(candidate.changeId, "changeId")), { recursive: true, force: true });
+        removedBackups += 1;
+        bytesFreed += candidate.bytes;
+      }
+      return { removedBackups, bytesFreed };
+    });
+  }
+
+  private withMaintenance<T>(run: () => T): T {
+    const lock = acquireStoreLock(this, "maintenance", STORE_WRITE_LOCK_WAIT_MS);
+    try {
+      return run();
+    } finally {
+      lock.release();
     }
-    if (confirmToken !== appliedBackupConfirmToken(changeIds)) {
-      throw new Error("STORAGE_BACKUP_TOKEN_MISMATCH");
-    }
-    let removedBackups = 0;
-    let bytesFreed = 0;
-    for (const changeId of changeIds) {
-      const candidate = byId.get(changeId);
-      if (candidate === undefined) continue;
-      rmSync(this.path("backups", requireId(changeId, "changeId")), { recursive: true, force: true });
-      removedBackups += 1;
-      bytesFreed += candidate.bytes;
-    }
-    return { removedBackups, bytesFreed };
   }
 
   /** Current usage together with the configured quota verdict. */

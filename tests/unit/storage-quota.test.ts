@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -120,7 +120,7 @@ test("lists only settled backups and deletes them only with the exact listing to
     const candidates = store.appliedBackupCandidates();
     assert.deepEqual(candidates.map((candidate) => candidate.changeId), [appliedId]);
     assert.ok(candidates[0]!.bytes > 0);
-    const token = appliedBackupConfirmToken([appliedId]);
+    const token = appliedBackupConfirmToken(candidates);
     assert.throws(() => store.pruneAppliedBackups([appliedId], "wrong"), /STORAGE_BACKUP_TOKEN_MISMATCH/);
     assert.throws(() => store.pruneAppliedBackups(["c_" + "7".repeat(16)], token), /STORAGE_BACKUP_NOT_SETTLED/);
     const cleanup = store.pruneAppliedBackups([appliedId], token);
@@ -128,6 +128,22 @@ test("lists only settled backups and deletes them only with the exact listing to
     assert.equal(existsSync(join(store.root, "backups", appliedId)), false);
     assert.equal(existsSync(join(store.root, "backups", preparingId)), true);
     assert.deepEqual(store.appliedBackupCandidates(), []);
+  });
+});
+
+test("a changed backup invalidates the confirmation token", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const appliedId = "c_" + "9".repeat(16);
+    store.saveChange(change(appliedId, "APPLIED"));
+    store.writeBackup(appliedId, "before\n", "after\n", ".github/workflows/ci.yml", NOW);
+    const token = appliedBackupConfirmToken(store.appliedBackupCandidates());
+    const manifestPath = join(store.root, "backups", appliedId, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Record<string, unknown>;
+    manifest.createdAt = "2026-10-21T00:00:00Z";
+    writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n");
+    assert.throws(() => store.pruneAppliedBackups([appliedId], token), /STORAGE_BACKUP_TOKEN_MISMATCH/);
+    assert.equal(existsSync(join(store.root, "backups", appliedId)), true);
   });
 });
 
@@ -148,7 +164,7 @@ test("prune --applied-backups lists a token, refuses a stale token, then deletes
     assert.equal(json.status, 0, json.stderr);
     const payload = JSON.parse(json.stdout) as { token: string; candidates: { changeId: string }[] };
     assert.equal(payload.candidates.length, 1);
-    assert.equal(payload.token, appliedBackupConfirmToken([appliedId]));
+    assert.equal(payload.token, appliedBackupConfirmToken(store.appliedBackupCandidates()));
     const stale = run("--applied-backups", "--confirm", "deadbeef");
     assert.equal(stale.status, 1, stale.stderr);
     assert.match(stale.stderr, /token/i);
