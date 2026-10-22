@@ -127,7 +127,7 @@ function parseArgs(argv: readonly string[]): Options {
   let command = "";
   let cwd = context.cwd;
   let json = false;
-  let out: string | null = null;
+  let outPath: string | null = null;
   let rules: readonly RuleId[] | null = null;
   let requireComplete = false;
   let lang: string | null = null;
@@ -138,7 +138,7 @@ function parseArgs(argv: readonly string[]): Options {
   let days: number | null = null;
   let accountMinutesUsed: number | null = null;
   let includedMinutes: number | null = null;
-  let stateDir: string | null = null;
+  let stateDirPath: string | null = null;
   let configPath: string | null = null;
   let workflow: string | null = null;
   let rule: RuleId | null = null;
@@ -179,7 +179,7 @@ function parseArgs(argv: readonly string[]): Options {
       cwd = takeValue(index, "--cwd");
       index += 1;
     } else if (arg === "--out") {
-      out = takeValue(index, "--out");
+      outPath = takeValue(index, "--out");
       index += 1;
     } else if (arg === "--lang") {
       lang = takeValue(index, "--lang");
@@ -215,7 +215,7 @@ function parseArgs(argv: readonly string[]): Options {
       }
       rules = requested as readonly RuleId[];
     } else if (arg === "--state-dir") {
-      stateDir = resolve(context.cwd, takeValue(index, "--state-dir"));
+      stateDirPath = takeValue(index, "--state-dir");
       index += 1;
     } else if (arg === "--config") {
       configPath = takeValue(index, "--config");
@@ -276,6 +276,8 @@ function parseArgs(argv: readonly string[]): Options {
   }
 
   const effectiveCwd = resolve(context.cwd, cwd);
+  const out = outPath === null ? null : resolve(effectiveCwd, outPath);
+  const stateDir = stateDirPath === null ? null : resolve(effectiveCwd, stateDirPath);
   return {
     command,
     cwd: effectiveCwd,

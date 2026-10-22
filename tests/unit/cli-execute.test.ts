@@ -42,6 +42,32 @@ test("executeCli resolves relative output paths against the injected cwd", async
   }
 });
 
+test("executeCli resolves --out and --state-dir against --cwd", async () => {
+  const root = makeRoot();
+  const base = mkdtempSync(join(tmpdir(), "ci-diet-cli-base-"));
+  try {
+    const code = await executeCli(["scan", "--json", "--cwd", root, "--out", "report.json"], {
+      cwd: base,
+      stdout: capture(),
+      stderr: capture(),
+    });
+    assert.equal(code, 0);
+    assert.ok(existsSync(join(root, "report.json")));
+    assert.equal(existsSync(join(base, "report.json")), false);
+    const prune = await executeCli(["changes", "--cwd", root, "--state-dir", "state"], {
+      cwd: base,
+      stdout: capture(),
+      stderr: capture(),
+    });
+    assert.equal(prune, 0);
+    assert.ok(existsSync(join(root, "state")));
+    assert.equal(existsSync(join(base, "state")), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test("executeCli stamps reports with the injected clock", async () => {
   const root = makeRoot();
   try {

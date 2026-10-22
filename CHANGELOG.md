@@ -21,9 +21,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 - The CLI accepts an injected process boundary (`executeCli(argv, context)`):
   cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
-  and `--state-dir` paths now resolve against the effective working directory,
-  and `scan` stamps the report with the injected clock. Production behavior is
-  unchanged because the defaults are the real process.
+  and `--state-dir` paths resolve against the effective working directory,
+  including a relative `--cwd`, and `scan` stamps the report with the injected
+  clock. Production behavior is unchanged because the defaults are the real
+  process.
 - `--config <file>` loads a partial JSON configuration, merges it over the
   built-in defaults, and validates the result against the frozen contract before
   any command runs. Storage, history, and analysis limits now come from that
