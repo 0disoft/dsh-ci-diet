@@ -51,6 +51,41 @@ export function isHistoryTruncated(coverage: Pick<Dimension, "status" | "reasons
   return coverage.status === "partial" || coverage.reasons.some((reason) => reason === "RUN_LIMIT_REACHED" || reason === "ARTIFACT_RUN_LIMIT_REACHED");
 }
 
+const SHELL_SAFE_ARG = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/**
+ * Quote one argument for the shell the copied command will be pasted into.
+ * The path is user-controlled, so it must never reach a shell as syntax.
+ */
+export function shellQuoteArg(value: string, platform: NodeJS.Platform = process.platform): string {
+  if (SHELL_SAFE_ARG.test(value)) return value;
+  if (platform === "win32") {
+    // Windows agents paste into PowerShell, where single quotes suppress all expansion
+    // and a literal single quote is written by doubling it.
+    return "'" + value.replaceAll("'", "''") + "'";
+  }
+  return "'" + value.replaceAll("'", "'\\''") + "'";
+}
+
+export interface NextCommandInput {
+  rule: string;
+  workflowPath: string;
+  job?: string | undefined;
+  step?: number | undefined;
+  minutes?: number | undefined;
+  claims?: readonly string[] | undefined;
+}
+
+/** Build the argv-style command a human copies, with every value shell-quoted. */
+export function buildNextCommand(input: NextCommandInput, platform: NodeJS.Platform = process.platform): string {
+  const argv: string[] = ["ci-diet", "plan", "--rule", input.rule, "--workflow", input.workflowPath];
+  if (input.job !== undefined) argv.push("--job", input.job);
+  if (input.step !== undefined) argv.push("--step", String(input.step));
+  if (input.minutes !== undefined) argv.push("--minutes", String(input.minutes));
+  if ((input.claims ?? []).length > 0) argv.push("--claims", (input.claims ?? []).join(","));
+  return argv.map((arg) => shellQuoteArg(arg, platform)).join(" ");
+}
+
 function text(value: string) {
   return [{ type: "text" as const, text: value }];
 }
@@ -434,11 +469,14 @@ export function apply(ctx: Context, config: Config) {
           blockers.push(error instanceof Error ? error.message : "PLAN_REJECTED");
         }
       }
-      const nextCommand = "ci-diet plan --rule " + rule + " --workflow " + workflowPath +
-        (args.job === undefined ? "" : " --job " + args.job) +
-        (args.step === undefined ? "" : " --step " + args.step) +
-        (args.minutes === undefined ? "" : " --minutes " + args.minutes) +
-        ((args.claims ?? []).length === 0 ? "" : " --claims " + (args.claims as string[]).join(","));
+      const nextCommand = buildNextCommand({
+        rule,
+        workflowPath,
+        job: args.job as string | undefined,
+        step: args.step as number | undefined,
+        minutes: args.minutes as number | undefined,
+        claims: args.claims as string[] | undefined,
+      });
       return {
         workflowPath,
         edits,

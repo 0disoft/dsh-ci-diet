@@ -4,7 +4,7 @@ import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { apply, isHistoryTruncated } from "../../src/dsh/host/plugin.ts";
+import { apply, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
 
 interface Registered {
   readonly name: string;
@@ -109,6 +109,39 @@ test("reports truncated history from the history coverage dimension", () => {
   assert.equal(isHistoryTruncated({ status: "partial", reasons: ["PARTIAL_COLLECTION"] }), true);
   assert.equal(isHistoryTruncated({ status: "unavailable", reasons: ["RUN_LIMIT_REACHED"] }), true);
   assert.equal(isHistoryTruncated({ status: "unavailable", reasons: ["ARTIFACT_RUN_LIMIT_REACHED"] }), true);
+});
+
+test("nextCommand quotes workflow paths so shell syntax cannot execute", () => {
+  const hostile = ".github/workflows/ci;printf REVIEW_OK;#.yml";
+  assert.equal(
+    buildNextCommand({ rule: "CD008", workflowPath: hostile }, "linux"),
+    "ci-diet plan --rule CD008 --workflow '.github/workflows/ci;printf REVIEW_OK;#.yml'",
+  );
+  assert.equal(
+    buildNextCommand({ rule: "CD008", workflowPath: ".github/workflows/my ci.yml" }, "linux"),
+    "ci-diet plan --rule CD008 --workflow '.github/workflows/my ci.yml'",
+  );
+  assert.equal(shellQuoteArg("a'b.yml", "linux"), "'a'\\''b.yml'");
+  assert.equal(
+    buildNextCommand({ rule: "CD008", workflowPath: "$(touch pwned).yml" }, "linux"),
+    "ci-diet plan --rule CD008 --workflow '$(touch pwned).yml'",
+  );
+  assert.equal(shellQuoteArg(".github/workflows/ci.yml", "linux"), ".github/workflows/ci.yml");
+});
+
+test("nextCommand quotes for PowerShell on Windows", () => {
+  assert.equal(shellQuoteArg("a'b.yml", "win32"), "'a''b.yml'");
+  assert.equal(
+    buildNextCommand({ rule: "CD008", workflowPath: "$(touch pwned).yml", job: "test job" }, "win32"),
+    "ci-diet plan --rule CD008 --workflow '$(touch pwned).yml' --job 'test job'",
+  );
+});
+
+test("nextCommand forwards optional arguments and joins claims", () => {
+  assert.equal(
+    buildNextCommand({ rule: "CD008", workflowPath: ".github/workflows/ci.yml", job: "build", step: 2, minutes: 15, claims: ["A", "B"] }, "linux"),
+    "ci-diet plan --rule CD008 --workflow .github/workflows/ci.yml --job build --step 2 --minutes 15 --claims A,B",
+  );
 });
 
 test("ci_diet_plan previews retention edits without writing", async () => {
