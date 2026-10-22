@@ -172,6 +172,13 @@ reported only for the observed subset. Write eligibility additionally requires
 the edited job's cohort to have at least 20 samples and complete premise and
 policy evidence.
 
+Matrix and runner legs stay distinct cohorts, but one finding and one
+recommendation cover the whole job. The recommendation is the slowest measured
+leg's value, so a fast leg can never justify a timeout that would kill a slow
+leg. Every leg must reach 20 samples for write eligibility; a leg below the
+candidate threshold keeps the job review-only. The published identity lists the
+matrix values covered.
+
 The recommendation is `ceil(max(2 * p95Seconds, p95Seconds + 300) / 60)` minutes.
 If that exceeds the user's maximum, block with a "recommendation cap conflict"
 instead of clamping. If any successful sample exceeded the recommendation,
@@ -196,7 +203,8 @@ Seven days is a proposal, not a default. Apply it only when it is below the
 confirmed effective maximum and at or above the consumer minimum. If the
 maximum is 3 days, do not apply 7; show the conflict. If the maximum is
 unknown, keep 7 as an explanatory proposal with `patchability=review-only`.
-`0` means the repository default, never zero-day retention.
+`0` means the repository default, never zero-day retention, so a stored 0 is
+lowered to the proposal like any larger literal.
 
 When the upload step has no `with`, only a supported block mapping may gain an
 inserted parent mapping that creates `with` and `retention-days` together. Multiple
