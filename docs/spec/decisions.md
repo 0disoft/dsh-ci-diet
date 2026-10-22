@@ -213,3 +213,41 @@ new record, not an edit to the rationale.
   `message` still renders its stored text.
 - Reversal: removing the extension is a schema change with the same review
   process; `contracts.lock.json` is regenerated with the pack check.
+## ADR-21: Settings are a Settings page over the public config channel
+
+- Scope: where a person edits the engine settings used by the DSH tools, and what
+  that page is allowed to touch.
+- Decision: the package ships a Web client half through `exports "./client"` and
+  `dsh.client`. It registers one `settings.section` entry, **CI Diet**, in the
+  DSH Settings sidebar and renders the analysis rules, history caps, storage
+  limits, cost estimate, network switch, and state directory.
+- The page reads and writes one `ConfigForm` obtained with
+  `ctx.configForms.get("ciDiet.bootstrap")`, the id of the bundle's loader entry.
+  `ctx.configForms` is a public settings channel: the host validates the complete
+  `Config` contract, merges the change, and refuses a stale revision. The page
+  stages edits locally and sends them as one `mutate` batch with the snapshot
+  revision; a per-field reset sends `unset`. It shows the scope and the point at
+  which a change applies, and it has no apply, approval, or revert controls.
+- Every field maps to a live Host `Config` field consumed by the same
+  `engineSettingsOf` path the CLI contract uses, so defaults and validation do
+  not fork between CLI and plugin. The CLI keeps its own `--config`, which the
+  page never writes. `localApplyEnabled` is not exposed because no apply tool
+  exists. `stateDir` does not migrate an existing store.
+- The page is translated through `ctx.locale` with complete en, ko, zh-Hans, hi,
+  es, and fr dictionaries, per ADR-19. Client text is registered when the plugin
+  loads; a language change needs a reload.
+- Rationale: ADR-16 deferred DSH screens because they would read report data
+  through `ctx.remote` and a host-compiled Typert descriptor. A settings page
+  reads no report data and needs no private remote shape. `configForms` is
+  already the public mechanism behind the host-rendered plugin cards, so the
+  page adds a surface without inventing a protocol. Keeping the page out of
+  apply and approval preserves the single-use approval boundary in the CLI.
+- Consequence: ADR-15's "no client bundle yet" and ADR-16's deferral now describe
+  only report and apply data screens, which remain deferred. A new engine field
+  needs the contract, the host schema, a page descriptor, and six translations in
+  the same change. The client bundle is built at pack time into `client/` and
+  requires only `react` from the loader; it must not require a Harness Client
+  package.
+- Reversal: dropping the client export removes the page and leaves the Plugins
+  card and CLI untouched. A report screen is still a separate decision under
+  ADR-16, not an extension of this page.

@@ -5,6 +5,18 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- A **Settings → CI Diet** page registers through the public `settings.section`
+  slot and edits the engine configuration used by the DSH tools. It reads and
+  writes the host `ConfigForm` for `ciDiet.bootstrap`, so the host validates the
+  complete contract and refuses a stale revision. Edits are staged and saved as
+  one atomic batch with a per-field reset, the page labels its scope and when a
+  change applies, and it has no apply, approval, or revert controls. All six
+  display languages ship complete dictionaries.
+- The package exports `./client` and declares `dsh.client`; the lazy-CJS bundle is
+  built at pack time into `client/` and requires only `react` from the loader.
+
 ### Security
 
 - The copied `nextCommand` shell-quotes every argument, so a workflow filename
@@ -19,10 +31,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
-- The DSH plugin marks `networkEnabled` and `stateDir` as live settings. The
-  Plugins page can edit them without reloading the plugin, and every tool call
-  reads the current value. `localApplyEnabled` remains an ordinary reserved
-  field until an apply tool exists.
+- The DSH plugin marks every engine setting as live: network access, state
+  directory, the six analysis rules, history caps, storage limits, and the cost
+  estimate. The Plugins page and the new Settings page can edit them without
+  reloading the plugin, and every tool call reads the current value.
+  `localApplyEnabled` remains an ordinary reserved field until an apply tool
+  exists and is not exposed.
 - The CLI accepts an injected process boundary (`executeCli(argv, context)`):
   cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
   and `--state-dir` paths resolve against the effective working directory,

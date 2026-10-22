@@ -15,16 +15,28 @@ The DSH package declares `dsh.bundle.patch`, so installing it adds one loader
 entry, `ciDiet.bootstrap`, with both switches off by default. Nothing runs at
 boot until you enable a switch.
 
-`networkEnabled` and `stateDir` are live settings. Edit them in the DSH Plugins
-page under the `ciDiet.bootstrap` entry; the next tool call reads the new value
-without reloading the plugin. `localApplyEnabled` stays an ordinary field until
-the plugin ships an apply tool, so it is not offered as a setting.
+The package also ships a Web client half (`exports "./client"`). After install,
+open **Settings → CI Diet**. The page edits every engine setting used by the DSH
+tools and labels both the scope and the time it takes effect. It has no apply,
+approval, or revert controls; those stay in the CLI.
 
-| Config key | Default | Effect |
-| --- | --- | --- |
-| `networkEnabled` | `false` | Allows `ci_diet_sync` to call the read-only GitHub API; live setting |
-| `localApplyEnabled` | `false` | Reserved for applying plans from the Web UI |
-| `stateDir` | empty | Overrides the per-user state directory; live setting |
+All engine fields are live: the next tool call reads the current value without
+reloading the plugin. The page validates numbers against the same contract the
+CLI uses, saves the batch atomically, and offers a per-field reset. A rejected
+write leaves the stored configuration unchanged. The CLI keeps its own
+`--config` file and flags; the page does not write them.
+
+| Group | Fields |
+| --- | --- |
+| Connection | `networkEnabled`, `stateDir` |
+| Analysis rules | `ruleCd001` … `ruleCd008`; at least one stays enabled |
+| History collection | `historyLookbackDays` (1–30), `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests` (1–4), `historyRequestTimeoutMs` |
+| Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; 0 disables that cap |
+| Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
+
+`localApplyEnabled` stays an ordinary reserved field until the plugin ships an
+apply tool, so the page does not offer it. `stateDir` changes do not migrate an
+existing store; point it at a new directory only before a fresh sync.
 
 ## Languages
 

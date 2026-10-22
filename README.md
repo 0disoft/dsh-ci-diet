@@ -65,10 +65,15 @@ npm install --global dsh-ci-diet
 dsh plugin --profile web add dsh-ci-diet
 ```
 
-The plugin adds one disabled loader entry; enable `networkEnabled` only if you
-want history sync. Installing the package globally is optional: `npx dsh-ci-diet`
-runs the same CLI, and the DSH plugin only needs the package in the profile.
-Release tags are on GitHub; the matching npm version is `0.2.0`.
+The plugin adds one disabled loader entry and a **Settings → CI Diet** page.
+The page edits every engine setting used by the DSH tools: analysis rules, history
+caps, storage limits, the cost estimate, network access, and the state directory.
+Values use the same contract validation and defaults as `ci-diet --config`, apply
+to the next tool call without a restart, and never rewrite the CLI's own config.
+`localApplyEnabled` is not exposed because there is no apply tool yet. Installing
+the package globally is optional: `npx dsh-ci-diet` runs the same CLI, and the DSH
+plugin only needs the package in the profile. Release tags are on GitHub; the
+matching npm version is `0.2.0`.
 
 ## Run it
 
