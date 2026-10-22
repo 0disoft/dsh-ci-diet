@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { systemClock } from "../core/support/clock.ts";
 import type { Clock } from "../core/support/clock.ts";
@@ -15,6 +15,7 @@ import { buildHistoryReport } from "../core/analysis/report.ts";
 import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagnostics.ts";
 import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN, PROPOSED_RETENTION_DAYS, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../core/policy/constants.ts";
 import { buildRequestedPlan } from "../core/patch/request-plan.ts";
+import { renderEditDiff } from "../core/patch/diff.ts";
 import { claimsFromTokens } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import { ConfigFileError, loadConfigFile } from "../core/config/load.ts";
@@ -685,6 +686,11 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   const lines: string[] = [];
   lines.push(t("cli.plan.created", { plan: plan.planId, workflow: file.path, rule }));
   lines.push(t("cli.plan.target", { path: join(binding.workspaceRoot, file.path) }));
+  lines.push(t("cli.plan.diff"));
+  for (const diffLine of renderEditDiff(file.text, plan.payload.edits)) {
+    const marker = diffLine.kind === "removed" ? "- " : diffLine.kind === "added" ? "+ " : "  ";
+    lines.push(marker + diffLine.text);
+  }
   lines.push(t("cli.plan.digest", { digest: plan.planDigest }));
   lines.push(t("cli.plan.confirm", { confirmation: approvalConfirmation(plan) }));
   lines.push(t("cli.plan.next", { plan: plan.planId }));
@@ -794,6 +800,38 @@ function showChanged(options: Options, locale: Locale): number {
 function plansList(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   const store = openStore(stateDirOf(options), locale, options.config.storage);
+  if (options.plan !== null) {
+    const stored = store.readPlan(options.plan);
+    if (stored === null) {
+      writeErr(t("cli.plan.notFound", { plan: options.plan }) + "\n");
+      return EXIT_USAGE;
+    }
+    const payload = stored.plan.payload;
+    const lines: string[] = [];
+    lines.push(t("cli.plan.created", { plan: stored.plan.planId, workflow: payload.workflowPath, rule: payload.ruleIds.join(", ") }));
+    lines.push(t("cli.plan.digest", { digest: stored.plan.planDigest }));
+    const binding = store.readBinding(payload.bindingId);
+    let source: string | null = null;
+    if (binding !== null) {
+      try {
+        source = readFileSync(join(binding.workspaceRoot, payload.workflowPath), "utf8");
+      } catch {
+        source = null;
+      }
+    }
+    if (source === null) {
+      lines.push(t("cli.plan.diffUnavailable"));
+    } else {
+      lines.push(t("cli.plan.target", { path: join(binding?.workspaceRoot ?? "", payload.workflowPath) }));
+      lines.push(t("cli.plan.diff"));
+      for (const diffLine of renderEditDiff(source, payload.edits)) {
+        const marker = diffLine.kind === "removed" ? "- " : diffLine.kind === "added" ? "+ " : "  ";
+        lines.push(marker + diffLine.text);
+      }
+    }
+    reportText(JSON.stringify(stored.plan, null, 2) + "\n", options, lines);
+    return EXIT_OK;
+  }
   const plans = store.listPlans().map((entry) => ({
     planId: entry.plan.planId,
     state: entry.plan.status.state,

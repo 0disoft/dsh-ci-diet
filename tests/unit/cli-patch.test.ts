@@ -185,6 +185,30 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   assert.match(changes.stdout, /REVERTED/);
 });
 
+test("CLI shows the proposed lines and re-shows a saved plan", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  assert.match(planned.stdout, /Proposed change:/);
+  assert.match(planned.stdout, /^\+ concurrency:$/m);
+  const planId = /Plan (\S+) created/.exec(planned.stdout)?.[1];
+  assert.ok(planId);
+
+  const shown = cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.match(shown.stdout, /Proposed change:/);
+  assert.match(shown.stdout, /^\+ concurrency:$/m);
+
+  const missing = cli(["plans", "--plan", "p_missing", "--state-dir", stateDir], root);
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /No stored plan p_missing/);
+});
+
 test("CLI enforces apply.allowedRules for plan and apply", () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
@@ -591,4 +615,3 @@ test("CLI plan explains a requested workflow skipped by the configured size limi
   assert.equal(result.status, 1);
   assert.match(result.stderr, /configured analysis limit/);
 });
-

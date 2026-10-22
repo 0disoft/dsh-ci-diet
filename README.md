@@ -90,8 +90,10 @@ ci-diet revert --change <changeId>       # restores the backed-up bytes
 `plan` refuses to write when the finding is not patch-eligible, when coverage
 does not allow a write, or when the policy snapshot a rule depends on is stale.
 CD005 needs `--job` and `--minutes`; CD008 needs `--job` and `--step`, plus
-`--claims artifact-purpose:temporary,consumer-min-days:7`. Nothing is committed,
-pushed, or applied without the explicit `approve` step.
+`--claims artifact-purpose:temporary,consumer-min-days:7`. The command prints the
+proposed lines as a diff, and `ci-diet plans --plan <planId>` shows a saved plan
+again. Nothing is committed, pushed, or applied without the explicit `approve`
+step.
 
 `--config <file>` merges a partial JSON configuration over the built-in defaults
 for any command, so a repository can lower the workflow size limit or the

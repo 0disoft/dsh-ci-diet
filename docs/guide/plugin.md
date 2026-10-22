@@ -100,11 +100,15 @@ ci-diet approve --plan <planId> --confirm <digestTail>
 ci-diet apply --plan <planId>
 ci-diet revert --change <changeId>
 ci-diet changes
-ci-diet plans
+ci-diet plans [--plan <planId>]
 ci-diet report [--report <id>] [--format text|json|html] [--out <file>]
 ci-diet diagnose [--json] [--out <file>] [--require-complete]
 ci-diet prune
 ```
+
+`plan` prints the proposed lines as a small diff. `ci-diet plans --plan <planId>`
+re-reads a saved plan and prints the same diff from its byte edits; when the
+workspace is gone, it says so and the plan JSON still lists the edits.
 
 Exit codes: `0` success (a partial report is still success), `1` usage or
 unexpected error, `2` contract violation, `3` incomplete evidence or refused

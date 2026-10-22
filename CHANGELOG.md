@@ -16,6 +16,9 @@ Keep a Changelog, and the project uses semantic versioning.
   display languages ship complete dictionaries.
 - The package exports `./client` and declares `dsh.client`; the lazy-CJS bundle is
   built at pack time into `client/` and requires only `react` from the loader.
+- `ci-diet plan` prints the proposed lines as a small diff, and
+  `ci-diet plans --plan <planId>` re-shows a saved plan from its byte edits. This
+  makes the reviewed change visible before the approval step.
 - The `ci_diet_prune` model tool runs cleanup with the live storage settings:
   report, plan, and cache retention days plus the cache byte cap. It reports the
   freed bytes and quota state and never deletes applied-change backups, which
