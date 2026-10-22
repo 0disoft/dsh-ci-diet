@@ -105,3 +105,50 @@ test("refuses to expand past the combination cap", () => {
   assert.equal(workflowJobs.length, 2);
   assert.equal(recoverJobKey("0-0", workflowJobs), null);
 });
+
+test("uses the first matrix combination that renders a duplicate name", () => {
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    name: CI $" + "{{ matrix.os }}",
+    "    strategy:",
+    "      matrix:",
+    "        os: [ubuntu-latest]",
+    "        arch: [x64, arm64]",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo ok",
+    "",
+  ].join("\n");
+  const workflowJobs = parseWorkflow("matrix-duplicate-name.yml", text).jobs;
+  const match = recoverJobKey("CI ubuntu-latest", workflowJobs);
+  assert.ok(match);
+  assert.equal(match.level, "matrix-expanded");
+  assert.deepEqual(match.matrix, { os: "ubuntu-latest", arch: "x64" });
+});
+
+test("prefers a literal job key over an earlier matrix rendering the same name", () => {
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    name: $" + "{{ matrix.os }}",
+    "    strategy:",
+    "      matrix:",
+    "        os: [lint]",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo ok",
+    "  lint:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo ok",
+    "",
+  ].join("\n");
+  const workflowJobs = parseWorkflow("matrix-literal-precedence.yml", text).jobs;
+  const match = recoverJobKey("lint", workflowJobs);
+  assert.ok(match);
+  assert.equal(match.key, "lint");
+  assert.equal(match.level, "key-equals-name");
+});

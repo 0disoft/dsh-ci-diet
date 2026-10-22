@@ -3,6 +3,7 @@ import { composeCoverage } from "../analysis/coverage.ts";
 import type { HistoryBundle } from "../history/model.ts";
 import { notApplicableSeconds, unknownSeconds } from "../savings/metrics.ts";
 import { isAnalyzable, recoverJobKey } from "../workflow/index.ts";
+import type { WorkflowDefinition, WorkflowJob } from "../workflow/model.ts";
 import { RULE_VERSION } from "../version.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
@@ -185,21 +186,21 @@ function sampleRefs(cohorts: readonly Cohort[], limit: number): string[] {
  * The recommendations that back any CD005 finding for this job. A plan may
  * only write one of these values: picking a job or a number that no finding
  * measured is exactly the mistake this function exists to prevent.
+ *
+ * Recommendations are a pure function of the history bundle, and target
+ * resolution asks for them once per plan, so the aggregate index is cached per
+ * bundle. History bundles are immutable by convention.
  */
-export function cd005Recommendations(
-  history: HistoryBundle,
-  workflowPath: string,
-  workflowHash: string,
-  jobKey: string,
-): Cd005Evidence[] {
-  const out: Cd005Evidence[] = [];
+const RECOMMENDATION_CACHE = new WeakMap<HistoryBundle, Map<string, Cd005Evidence>>();
+
+function recommendationIndex(history: HistoryBundle): Map<string, Cd005Evidence> {
+  const cached = RECOMMENDATION_CACHE.get(history);
+  if (cached !== undefined) return cached;
+  const index = new Map<string, Cd005Evidence>();
   for (const group of groupByJob(collectCohorts(history).values()).values()) {
-    if (group.workflowPath !== workflowPath) continue;
-    if (group.workflowHash !== workflowHash) continue;
-    if (group.jobKey !== jobKey) continue;
     const aggregate = aggregateJob(group);
     if (aggregate === null) continue;
-    out.push({
+    index.set(group.workflowPath + "|" + group.workflowHash + "|" + group.jobKey, {
       sampleCount: aggregate.totalSamples,
       p95Seconds: aggregate.p95Seconds,
       recommendedMinutes: aggregate.recommendedMinutes,
@@ -207,7 +208,18 @@ export function cd005Recommendations(
       event: aggregate.event,
     });
   }
-  return out;
+  RECOMMENDATION_CACHE.set(history, index);
+  return index;
+}
+
+export function cd005Recommendations(
+  history: HistoryBundle,
+  workflowPath: string,
+  workflowHash: string,
+  jobKey: string,
+): Cd005Evidence[] {
+  const evidence = recommendationIndex(history).get(workflowPath + "|" + workflowHash + "|" + jobKey);
+  return evidence === undefined ? [] : [evidence];
 }
 
 function evaluateCd005(context: RuleContext): RuleEvaluation {
@@ -220,13 +232,30 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
 
   const cohorts = collectCohorts(context.history);
 
+  // The current definition and job are looked up by their cohort key once per
+  // evaluation instead of scanning context.workflows for every cohort.
+  const definitions = new Map<string, WorkflowDefinition | null>();
+  const definitionJobs = new Map<string, WorkflowJob>();
+  for (const workflow of context.workflows) {
+    const definitionKey = workflow.path + "|" + workflow.sha256;
+    if (definitions.has(definitionKey)) continue;
+    const analyzable = isAnalyzable(workflow) ? workflow : null;
+    definitions.set(definitionKey, analyzable);
+    if (analyzable === null) continue;
+    for (const job of analyzable.jobs) {
+      const jobKey = definitionKey + "|" + job.key;
+      if (!definitionJobs.has(jobKey)) definitionJobs.set(jobKey, job);
+    }
+  }
+
   const findings: Finding[] = [];
   for (const group of groupByJob(cohorts.values()).values()) {
     const aggregate = aggregateJob(group);
     if (aggregate === null) continue;
-    const definition = definitionFor(context, group.workflowPath, group.workflowHash);
+    const definitionKey = group.workflowPath + "|" + group.workflowHash;
+    const definition = definitions.get(definitionKey) ?? null;
     if (definition === null) continue;
-    const job = definition.jobs.find((candidate) => candidate.key === group.jobKey);
+    const job = definitionJobs.get(definitionKey + "|" + group.jobKey);
     if (job === undefined) continue;
     const state: JobState = {
       timeoutMinutes: job.timeoutMinutes,
@@ -347,19 +376,6 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
     findings,
     removals: [],
   };
-}
-
-/**
- * The current definition must match the cohort's hash: a cohort measured on
- * older workflow content cannot be judged against today's timeout state.
- */
-function definitionFor(context: RuleContext, workflowPath: string, workflowHash: string) {
-  for (const workflow of context.workflows) {
-    if (workflow.path !== workflowPath) continue;
-    if (workflow.sha256 !== workflowHash) continue;
-    return isAnalyzable(workflow) ? workflow : null;
-  }
-  return null;
 }
 
 function skipped(inputHash: string, reasons: readonly string[]): RuleEvaluation {
