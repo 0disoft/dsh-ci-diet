@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 import type { AnalysisReport, AppliedChange, Attestation, PatchPlan, PlanStatus, RepositoryBinding } from "../contracts/schema.ts";
 import type { HistoryBundle } from "../history/model.ts";
 import { assertValidDocument, validationErrors } from "../contracts/validate.ts";
@@ -166,10 +166,36 @@ export class PatchStore {
 
   static open(root: string, limits: StorageLimits | null = null): PatchStore {
     const store = new PatchStore(root, limits);
-    for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots/history"]) {
-      mkdirSync(join(root, directory), { recursive: true });
+    store.ensureDirectory(root);
+    for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history"]) {
+      store.ensureDirectory(join(root, directory));
     }
     return store;
+  }
+
+  private isWithinRoot(path: string): boolean {
+    return path === this.root || path.startsWith(this.root.endsWith(sep) ? this.root : this.root + sep);
+  }
+
+  /**
+   * The store belongs to one user, so its directories are 0700 and its files
+   * 0600 on POSIX regardless of umask; Windows has no POSIX bits (ACLs apply).
+   * An existing directory with wider modes is tightened on the next open.
+   */
+  private ensureDirectory(path: string): void {
+    mkdirSync(path, { recursive: true });
+    if (process.platform === "win32") return;
+    let current = path;
+    while (this.isWithinRoot(current)) {
+      try {
+        chmodSync(current, 0o700);
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT") throw error;
+      }
+      if (current === this.root) break;
+      current = dirname(current);
+    }
   }
 
   private path(...parts: string[]): string {
@@ -182,10 +208,11 @@ export class PatchStore {
 
   private writeText(path: string, text: string): void {
     this.ensureCapacity(Buffer.byteLength(text, "utf8"));
-    mkdirSync(dirname(path), { recursive: true });
+    this.ensureDirectory(dirname(path));
     const temporary = path + ".tmp-" + process.pid + "-" + Math.random().toString(16).slice(2);
     try {
-      writeFileSync(temporary, text, "utf8");
+      // Rename keeps the mode, so one 0600 temp file settles the record's mode.
+      writeFileSync(temporary, text, { encoding: "utf8", mode: 0o600 });
       const handle = openSync(temporary, "r");
       try {
         try {
@@ -381,7 +408,7 @@ export class PatchStore {
       Buffer.byteLength(beforeText, "utf8") + Buffer.byteLength(afterText, "utf8") + 2048,
     );
     const directory = this.path("backups", requireId(changeId, "changeId"));
-    mkdirSync(directory, { recursive: true });
+    this.ensureDirectory(directory);
     this.writeText(join(directory, "before.yml"), beforeText);
     this.writeText(join(directory, "after.yml"), afterText);
     const manifest: BackupManifest = {
@@ -437,8 +464,17 @@ export class PatchStore {
     const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
     this.ensureCapacity(Buffer.byteLength(line, "utf8"));
     const path = this.path("events", "events.jsonl");
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, line, { encoding: "utf8", flag: "a" });
+    this.ensureDirectory(dirname(path));
+    writeFileSync(path, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+    if (process.platform !== "win32") {
+      // The log is appended to, so an older 0644 file is repaired in place.
+      try {
+        chmodSync(path, 0o600);
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT") throw error;
+      }
+    }
   }
 
   /** Auxiliary summaries must not replace an authoritative success or refusal. */

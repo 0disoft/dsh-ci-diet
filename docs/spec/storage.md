@@ -39,9 +39,12 @@ next to the target; a second concurrent apply, or a foreign lock left by another
 process, fails with `WRITE_CONFLICT` before any byte is written. Plan and
 approval records never take the lease; only apply and revert do.
 
-The store belongs to one user. Defaults are POSIX `0700` directories and
-`0600` backups; Windows ACLs and inheritance are confirmed in the Windows
-spike. No strong isolation between plugins of the same OS account and no
+The store belongs to one user. On POSIX the store root and every managed
+directory are `0700`, and every file, including temp files and backups, is
+`0600`; the modes are set explicitly rather than inherited from the umask, and
+an existing directory or record with wider modes is tightened on the next open
+or write. Windows ACLs and inheritance are confirmed in the Windows spike, and
+POSIX modes are skipped there. No strong isolation between plugins of the same OS account and no
 encrypted-at-rest storage is claimed. A synced shared folder is never selected
 as the default backup location. Relative paths, junctions, and symlinks that
 escape the configured root are rejected.
