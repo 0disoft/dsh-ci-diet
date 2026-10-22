@@ -146,6 +146,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- The Settings page now translates every visible field label. The state directory
+  row and the six rule checkboxes fell back to raw dictionary keys because their
+  entries were missing or named differently, which a live DSH check exposed; the
+  dictionaries and the label coverage test now cover both.
 - Re-showing a saved plan verifies that the workflow bytes still match the
   plan's source hash. Missing workspace or workflow bytes, or changed bytes, hide
   the diff, keep the plan JSON, explain the state, and exit 3 instead of

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-import { SETTINGS_FIELDS, collectSettingsEdits } from "../../src/client/fields.ts";
+import { RULE_CHOICES, SETTINGS_FIELDS, collectSettingsEdits } from "../../src/client/fields.ts";
 import { DICTIONARIES, NS } from "../../src/client/i18n.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
@@ -248,6 +248,16 @@ test("all six languages expose the same non-empty keys", () => {
       assert.ok(value.trim().length > 0, code + "." + key + " is empty");
       assert.equal(value, value.trim(), code + "." + key + " has surrounding whitespace");
     }
+  }
+});
+
+test("every field and rule label has a dictionary entry", () => {
+  const dictionary = DICTIONARIES.en as Record<string, string>;
+  for (const field of SETTINGS_FIELDS) {
+    assert.ok(dictionary["field." + field.key] !== undefined, "missing label for " + field.key);
+  }
+  for (const id of RULE_CHOICES) {
+    assert.ok(dictionary["field.rule" + id] !== undefined, "missing rule label for " + id);
   }
 });
 
