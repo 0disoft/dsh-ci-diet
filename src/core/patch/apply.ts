@@ -7,11 +7,12 @@ import type { RepositoryBinding } from "../contracts/schema.ts";
 import { checkApply } from "./verify.ts";
 import type { ApplyReasonCode } from "./verify.ts";
 import { PatchStore, textHash } from "./store.ts";
-import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
+import { digestOf } from "../../shared/cdj1.ts";
 import type { ApprovalNonce, StoredPlan } from "./store.ts";
 import { buildPolicySnapshots } from "./plan.ts";
 import { semanticProblems } from "./semantic.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
+import { collectDependencies } from "./dependencies.ts";
 
 export interface ApplyOptions {
   readonly store: PatchStore;
@@ -86,18 +87,19 @@ function assertRegularFile(path: string): void {
   if (!stats.isFile()) throw new Error("WRITE_CONFLICT: target is not a regular file");
 }
 
-/** Recompute the dependency hash from the files that exist right now. */
-function dependencyHashFromDisk(binding: RepositoryBinding, dependencies: PatchPlan["payload"]["dependencies"]): string {
-  const rows = dependencies.map((dependency) => {
-    try {
-      const path = resolveInside(binding.workspaceRoot, dependency.ref);
-      assertRegularFile(path);
-      return { ref: dependency.ref, sha256: "sha256:" + sha256Hex(readFileSync(path, "utf8")) };
-    } catch {
-      return { ref: dependency.ref, sha256: "sha256:unresolved" };
-    }
-  });
-  return digestOf({ dependencies: rows });
+/**
+ * Re-collect the files the workflow names right now instead of trusting the
+ * refs stored in the plan: a symlink can be repointed at different bytes
+ * without changing the path the plan recorded.
+ */
+function dependencyHashNow(binding: RepositoryBinding, workflowPath: string, text: string): string {
+  try {
+    const workflow = parseWorkflow(workflowPath, text);
+    return digestOf({ dependencies: collectDependencies(binding.workspaceRoot, workflow).dependencies });
+  } catch {
+    // Bytes that cannot be parsed cannot match the approved dependency set.
+    return "sha256:unparsable";
+  }
 }
 
 /** What a takeover observed about the lease before it tried to move it. */
@@ -559,7 +561,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
       plan,
       now: options.now,
       currentText: beforeText,
-      currentDependencyHash: dependencyHashFromDisk(binding, plan.payload.dependencies),
+      currentDependencyHash: dependencyHashNow(binding, plan.payload.workflowPath, beforeText),
       coverageWriteAllowed: stored.meta.coverageWriteAllowed,
       nonceValid,
       backupAvailable: true,

@@ -1,7 +1,7 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { WorkflowDefinition, WorkflowJob, WorkflowStep } from "../workflow/model.ts";
-import { sha256Hex } from "../../shared/cdj1.ts";
 
 /** Files a workflow runs from the repository, pinned by content hash. */
 export interface DependencyRef {
@@ -139,9 +139,10 @@ function resolveDirectory(realRoot: string, base: string, candidate: string): st
   return real;
 }
 
+/** Hash the bytes on disk, not their UTF-8 decoding: binary files must not collide. */
 function hashFile(realPath: string): string | null {
   try {
-    return "sha256:" + sha256Hex(readFileSync(realPath, "utf8"));
+    return "sha256:" + createHash("sha256").update(readFileSync(realPath)).digest("hex");
   } catch {
     return null;
   }
