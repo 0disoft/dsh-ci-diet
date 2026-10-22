@@ -5,7 +5,7 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in 0.3.0. The CLI, the DSH model tools, and the DSH Web
+Status: implemented in 0.3.1. The CLI, the DSH model tools, and the DSH Web
 Settings screen are available; the report and apply screens are still open. The
 machine-readable contracts in `contracts/` are the authority where prose and
 schema disagree.

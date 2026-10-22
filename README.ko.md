@@ -2,7 +2,7 @@
 
 낭비된 GitHub Actions 러너 시간을 찾고, 작고 검토 가능한 패치를 제안합니다.
 
-상태: **알파, `dsh-ci-diet@0.3.0` 릴리스 준비됨**. 계약, 명세, 분석 엔진,
+상태: **알파, `dsh-ci-diet@0.3.1` npm 게시됨**. 계약, 명세, 분석 엔진,
 패치 엔진, CLI, DSH 플러그인 도구, 자체 완결형 HTML 보고서는 구현과 테스트를
 마쳤습니다. DSH Web 클라이언트는 설정 화면을 제공하고, 보고서·적용 화면은 아직
 남아 있습니다.
@@ -60,23 +60,23 @@ CI Diet는 두 가지를 읽고 비교합니다.
 ## 설치
 
 CLI는 Node `^22.19.0 || >=24.0.0`이 필요합니다. DSH 플러그인은 DSH
-`>=0.2.1-rc.2 <0.3.0-0` 또는 `>=0.2.2-rc.1 <0.3.0-0`이 필요합니다. `0.3.0`
+`>=0.2.1-rc.2 <0.3.0-0` 또는 `>=0.2.2-rc.1 <0.3.0-0`이 필요합니다. `0.3.1`
 릴리스는 DSH `0.2.1-rc.2`에서 검증했으며 DSH `0.3.0`은 아직 지원하지 않습니다.
 
 CLI 설치:
 
 ```
-npm install --global dsh-ci-diet@0.3.0
+npm install --global dsh-ci-diet@0.3.1
 ci-diet --version
 ```
 
-전역 설치를 원하지 않으면 `npx dsh-ci-diet@0.3.0`으로 같은 CLI를 실행할 수
+전역 설치를 원하지 않으면 `npx dsh-ci-diet@0.3.1`으로 같은 CLI를 실행할 수
 있습니다.
 
 DSH 플러그인 설치:
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.0
+dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
@@ -143,8 +143,8 @@ lockfile 변경을 따라가지 못하는 리터럴 캐시 키가 대상입니�
 `.github/workflows/publish.yml`이 실행됩니다.
 
 ```
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 워크플로는 태그와 `package.json` 버전을 대조하고(`node

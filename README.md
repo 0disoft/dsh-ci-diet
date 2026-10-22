@@ -2,7 +2,7 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **alpha**, `dsh-ci-diet@0.3.0` is released on npm. The contracts,
+Status: **alpha**, `dsh-ci-diet@0.3.1` is released on npm. The contracts,
 specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
 self-contained HTML report are implemented and tested. The DSH Web client has a
 Settings screen; the report and apply screens are still open.
@@ -61,22 +61,22 @@ is not shipped.
 ## Install
 
 The CLI needs Node `^22.19.0 || >=24.0.0`. The DSH plugin needs DSH
-`>=0.2.1-rc.2 <0.3.0-0` or `>=0.2.2-rc.1 <0.3.0-0`. Release `0.3.0` was tested
+`>=0.2.1-rc.2 <0.3.0-0` or `>=0.2.2-rc.1 <0.3.0-0`. Release `0.3.1` was tested
 against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported yet.
 
 Install the CLI:
 
 ```
-npm install --global dsh-ci-diet@0.3.0
+npm install --global dsh-ci-diet@0.3.1
 ci-diet --version
 ```
 
-If you do not want a global install, `npx dsh-ci-diet@0.3.0` runs the same CLI.
+If you do not want a global install, `npx dsh-ci-diet@0.3.1` runs the same CLI.
 
 Install the DSH plugin into a profile:
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.0
+dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
@@ -153,8 +153,8 @@ Pushing a tag that matches the version in `package.json` triggers
 `.github/workflows/publish.yml`:
 
 ```
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 The workflow compares the tag with `package.json` (`node

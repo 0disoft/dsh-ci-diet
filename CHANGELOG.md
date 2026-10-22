@@ -3,7 +3,7 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
-## 0.3.0 (2026-10-23)
+## 0.3.1 (2026-10-23)
 
 ### Added
 
@@ -153,6 +153,9 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- The release workflow builds workflow paths with the host separator, so the
+  unit suite passes on Linux as well as Windows. The previously tagged 0.3.0
+  was never published; 0.3.1 is its first public release.
 - The Settings page now translates every visible field label. The state directory
   row and the six rule checkboxes fell back to raw dictionary keys because their
   entries were missing or named differently, which a live DSH check exposed; the
