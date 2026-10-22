@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
+import { claimsFromTokens, evaluatePatchEligibility } from "../../src/core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { evaluateRules } from "../../src/core/rules/index.ts";
 import { parseWorkflow } from "../../src/core/workflow/index.ts";
@@ -207,6 +208,39 @@ test("CD001 blocks a run whose pull request base branch was not synced", () => {
   const evaluation = rule(evaluateRules(context(history)), "CD001");
   assert.equal(evaluation.findings[0]?.patchability, "review-only");
   assert.ok(evaluation.findings[0]?.blockers.includes("PULL_REQUEST_BASE_BRANCH_UNKNOWN"));
+});
+
+test("CD001 keeps a mixed pull_request_target workflow unplannable", () => {
+  const parsed = definition([
+    "name: pr",
+    "on:",
+    "  pull_request:",
+    "  pull_request_target:",
+    "jobs:",
+    "  test:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo hi",
+  ].join("\n"));
+  const history = bundle(supersededRuns(parsed, "240"), pull("main"), { classicProtection: false });
+  const ctx = context(history);
+  const evaluation = rule(evaluateRules(ctx), "CD001");
+  const subject = evaluation.findings[0];
+  assert.ok(subject);
+  assert.equal(subject.patchability, "review-only");
+  assert.ok(subject.blockers.includes("WORKFLOW_TRIGGERS_NOT_PR_ONLY"));
+  const eligibility = evaluatePatchEligibility({
+    rule: "CD001",
+    finding: subject,
+    coverage: ctx.coverage,
+    claims: claimsFromTokens(["ci-only", "replace-safe"]),
+    history,
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+    now: new Date(NOW),
+  });
+  assert.equal(eligibility.allowed, false);
+  assert.ok(eligibility.reasons.includes("WORKFLOW_TRIGGERS_NOT_PR_ONLY"));
 });
 
 test("CD001 keeps an existing concurrency policy review-only", () => {

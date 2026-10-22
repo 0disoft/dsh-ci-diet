@@ -91,7 +91,8 @@ Automatic planning is allowed only when the workflow's `on` keys are exactly
 also present. Blocked as well: an existing concurrency block, cleanup
 dependencies, environments, deploy, signing, publish, migration, or unexplained
 side effects. The workflow Attestation must cover `ciOnly` and `replaceSafe`, and
-every opaque action, script, and reusable reference must be recorded.
+every opaque action, script, and reusable reference must be recorded. An
+attestation can never relax the exact-`pull_request` requirement.
 
 The plan is also blocked when the workflow owns a required check, when
 protection data cannot be read, when classic branch protection is enabled or

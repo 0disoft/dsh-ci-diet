@@ -14,7 +14,7 @@ import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
 import { applyPlan, takeOverWriterLease } from "../../src/core/patch/apply.ts";
 import { checkApply } from "../../src/core/patch/verify.ts";
-import { claimsFromTokens, evaluatePatchEligibility } from "../../src/core/patch/eligibility.ts";
+import { attestationSatisfiesRule, claimsFromTokens, evaluatePatchEligibility } from "../../src/core/patch/eligibility.ts";
 import { skuForLabels } from "../../src/core/history/model.ts";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { digestOf } from "../../src/shared/cdj1.ts";
@@ -401,7 +401,7 @@ test("classifies runner labels conservatively", () => {
 test("CD001 eligibility needs human claims and lifts only attestable blockers", () => {
   const cd001 = finding({
     ruleId: "CD001",
-    blockers: ["WORKFLOW_TRIGGERS_NOT_PR_ONLY"],
+    blockers: ["PROTECTION_RULES_UNAVAILABLE", "REQUIRED_CHECK_OWNERSHIP_UNKNOWN"],
     patchability: "eligible",
   });
   const withoutClaims = evaluatePatchEligibility({
@@ -416,7 +416,7 @@ test("CD001 eligibility needs human claims and lifts only attestable blockers", 
   });
   assert.equal(withoutClaims.allowed, false);
   assert.ok(withoutClaims.reasons.includes("CLAIM_CI_ONLY_MISSING"));
-  assert.ok(withoutClaims.reasons.includes("WORKFLOW_TRIGGERS_NOT_PR_ONLY"));
+  assert.ok(withoutClaims.reasons.includes("REQUIRED_CHECK_OWNERSHIP_UNKNOWN"));
 
   const withClaims = evaluatePatchEligibility({
     rule: "CD001",
@@ -430,6 +430,29 @@ test("CD001 eligibility needs human claims and lifts only attestable blockers", 
   });
   assert.equal(withClaims.allowed, true, withClaims.reasons.join(","));
   assert.deepEqual(withClaims.remainingBlockers, []);
+});
+
+test("CD001 eligibility never lifts a non-pull_request trigger", () => {
+  const findingWithMixedTrigger = finding({
+    ruleId: "CD001",
+    blockers: ["WORKFLOW_TRIGGERS_NOT_PR_ONLY"],
+    patchability: "eligible",
+  });
+  const claims = claimsFromTokens(["ci-only", "replace-safe"]);
+  const result = evaluatePatchEligibility({
+    rule: "CD001",
+    finding: findingWithMixedTrigger,
+    coverage: coverage(),
+    claims,
+    history: history(),
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+    now: NOW,
+  });
+  assert.equal(result.allowed, false);
+  assert.ok(result.reasons.includes("WORKFLOW_TRIGGERS_NOT_PR_ONLY"));
+  assert.deepEqual(result.remainingBlockers, ["WORKFLOW_TRIGGERS_NOT_PR_ONLY"]);
+  assert.equal(attestationSatisfiesRule("CD001", claims), true, "apply still checks only its own claims");
 });
 
 test("a blocked finding is never planned", () => {

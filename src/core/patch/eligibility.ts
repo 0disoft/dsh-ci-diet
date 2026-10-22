@@ -36,7 +36,8 @@ export interface PatchEligibility {
 
 const CLAIM_LIFTS: Record<PatchRule, Readonly<Record<string, "ci-only" | "replace-safe">>> = {
   CD001: {
-    WORKFLOW_TRIGGERS_NOT_PR_ONLY: "ci-only",
+    // A trigger list is a fact about the workflow, not something an attestation
+    // can repair: patch-model.md requires `on` to be exactly pull_request.
     PROTECTION_RULES_UNAVAILABLE: "replace-safe",
     REQUIRED_CHECK_OWNERSHIP_UNKNOWN: "replace-safe",
   },
