@@ -28,6 +28,10 @@ Keep a Changelog, and the project uses semantic versioning.
   built-in defaults, and validates the result against the frozen contract before
   any command runs. Storage, history, and analysis limits now come from that
   effective configuration instead of hardcoded defaults.
+- Applying a plan is split into a read-only inspection phase (target, approval,
+  journal, policy, and byte verification) and a commit phase that only records
+  intent and replaces the file. The refusal paths and transaction order are
+  unchanged.
 - Patch and analysis limits live in one shared policy module. Plan lifetime, policy
   freshness, approval lifetime, and attestation lifetime accept the configured
   values; CLI lookback and timeout bounds use the same constants as the contract.

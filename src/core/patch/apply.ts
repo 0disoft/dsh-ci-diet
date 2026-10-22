@@ -568,6 +568,139 @@ function handleReplaceFailure(
   throw failure;
 }
 
+type ApplyInspection =
+  | { readonly kind: "refused"; readonly result: ApplyResult }
+  | { readonly kind: "ready"; readonly beforeText: string; readonly beforeHash: string; readonly text: string; readonly hash: string };
+
+/**
+ * Read-only decision phase: bring the target, approval, and journal up to date,
+ * then verify every precondition and recompute the bytes the commit would write.
+ * Nothing past this point may discover a refusal, so commitApply has no branch
+ * that has to decide whether the file was touched.
+ */
+async function inspectApply(
+  options: ApplyOptions,
+  plan: PatchPlan,
+  stored: StoredPlan,
+  binding: RepositoryBinding,
+  target: string,
+): Promise<ApplyInspection> {
+  assertRegularFile(target);
+  const beforeText = readFileSync(target, "utf8");
+  const beforeHash = textHash(beforeText);
+  const nonce = options.store.readNonce(plan.planId);
+  const nonceValid = isNonceValid(nonce, plan, options);
+
+  // A previous run may have replaced the file and crashed before the journal
+  // recorded APPLIED. The target hash is the ground truth for that window.
+  const recovered = convergeInterruptedApply(options, plan, beforeText, beforeHash, nonce);
+  if (recovered !== null) return { kind: "refused", result: recovered };
+
+  // One approval authorizes one apply transaction. A crash is handled above by
+  // convergence; anything else past NOT_APPLIED must stay refused, even when
+  // the nonce file survived a failed cleanup.
+  if (journalBlocksApply(options.store, plan.planId)) {
+    const reasons: readonly ApplyReasonCode[] = ["NONCE_INVALID"];
+    const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
+    return { kind: "refused", result: { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
+  }
+
+  const reasons = checkApply({
+    plan,
+    now: options.now,
+    currentText: beforeText,
+    currentDependencyHash: dependencyHashNow(binding, plan.payload.workflowPath, beforeText),
+    coverageWriteAllowed: stored.meta.coverageWriteAllowed,
+    nonceValid,
+    backupAvailable: true,
+    ...(options.policyMaxAgeSeconds !== undefined ? { policyMaxAgeMs: options.policyMaxAgeSeconds * 1000 } : {}),
+    attestations: currentAttestations(options.store, plan),
+    currentPolicies: currentPolicies(options.store, binding, options.now),
+  });
+  if (reasons.length > 0) {
+    const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
+    return { kind: "refused", result: { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
+  }
+
+  // Recompute the edited bytes now: never trust a preview file that may be stale.
+  const { applyEdits } = await import("./edits.ts");
+  const applied = applyEdits(beforeText, plan.payload.edits);
+  if (applied.hash !== plan.payload.resultHash || applied.hash === beforeHash) {
+    return { kind: "refused", result: { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null } };
+  }
+  const original = parseWorkflow(plan.payload.workflowPath, beforeText);
+  const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
+  if (problems.length > 0) {
+    const warnings = options.store.appendSummaryEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
+    return { kind: "refused", result: { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
+  }
+  return { kind: "ready", beforeText, beforeHash, text: applied.text, hash: applied.hash };
+}
+
+/**
+ * Mutation phase. Every decision was made by inspectApply, so this function only
+ * records the intent, rechecks the source immediately before the rename, and
+ * finishes the journal. It keeps the original order: backup, PREPARED, recheck,
+ * APPLYING, replace, APPLIED, consume.
+ */
+async function commitApply(
+  options: ApplyOptions,
+  plan: PatchPlan,
+  binding: RepositoryBinding,
+  target: string,
+  inspection: Extract<ApplyInspection, { kind: "ready" }>,
+): Promise<ApplyResult> {
+  // Past this point a replace is committed: do not abort between the journal
+  // entry and the rename, because the user asked for a recoverable transaction.
+  throwIfAborted(options.signal);
+  const changeId = options.store.changeIdFor(plan.planId, options.now);
+  const manifest = options.store.writeBackup(changeId, inspection.beforeText, inspection.text, plan.payload.workflowPath, options.now);
+  if (manifest.beforeHash !== textHash(inspection.beforeText) || manifest.afterHash !== inspection.hash) {
+    return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
+  }
+  const backup = options.store.readBackup(changeId);
+  if (backup === null || backup.manifest.beforeHash !== manifest.beforeHash) {
+    return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
+  }
+
+  const reference = plan.status.approvalNonceId ?? "";
+  const prepared = changeRecord(plan, changeId, "PREPARED", binding, inspection.beforeText, inspection.text, reference, options.now);
+  options.store.saveChange(prepared);
+
+  // The bytes may have changed while the backup was written. Read again and
+  // refuse rather than overwrite a concurrent user edit.
+  const recheck = readFileSync(target, "utf8");
+  if (textHash(recheck) !== inspection.beforeHash) {
+    options.store.saveChange({ ...prepared, state: "NOT_APPLIED", updatedAt: iso(options.now) });
+    const warnings = options.store.appendSummaryEvent({ type: "source_changed_before_replace", planId: plan.planId, changeId }, options.now);
+    return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
+  }
+
+  // Journal the in-doubt state before touching the file, so a crash after the
+  // rename is recoverable from the journal instead of looking untouched.
+  const applying: AppliedChange = { ...prepared, state: "APPLYING", updatedAt: iso(options.now) };
+  options.store.saveChange(applying);
+
+  const mode = statSync(target).mode;
+  let afterHash: string;
+  try {
+    afterHash = await replaceAtomically(target, inspection.text, mode, options.signal);
+  } catch (error) {
+    return handleReplaceFailure(options, plan, applying, target, inspection.beforeHash, inspection.hash, reference, error);
+  }
+  if (afterHash !== inspection.hash) {
+    return handleReplaceFailure(options, plan, applying, target, inspection.beforeHash, inspection.hash, reference,
+      new Error("RECOVERY_REQUIRED: bytes on disk do not match the planned result"));
+  }
+
+  const change: AppliedChange = { ...applying, state: "APPLIED", updatedAt: iso(options.now) };
+  options.store.saveChange(change);
+  // Consume only after the target holds the after-hash: a crash before this
+  // point leaves a still-usable approval for the recovery path.
+  const warnings = consumeAfterApply(options, plan, reference);
+  warnings.push(...options.store.appendSummaryEvent({ type: "applied", planId: plan.planId, changeId, resultHash: afterHash }, options.now));
+  return { state: "applied", reasons: [], change, resultText: inspection.text, ...(warnings.length > 0 ? { warnings } : {}) };
+}
 export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
   throwIfAborted(options.signal);
   const stored: StoredPlan | null = options.store.readPlan(options.planId);
@@ -580,106 +713,9 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
   return withWriterLease(options.store, async () => {
     throwIfAborted(options.signal);
     const target = targetPath(binding, plan);
-    assertRegularFile(target);
-    const beforeText = readFileSync(target, "utf8");
-    const beforeHash = textHash(beforeText);
-    const nonce = options.store.readNonce(plan.planId);
-    const nonceValid = isNonceValid(nonce, plan, options);
-
-    // A previous run may have replaced the file and crashed before the journal
-    // recorded APPLIED. The target hash is the ground truth for that window.
-    const recovered = convergeInterruptedApply(options, plan, beforeText, beforeHash, nonce);
-    if (recovered !== null) return recovered;
-
-    // One approval authorizes one apply transaction. A crash is handled above by
-    // convergence; anything else past NOT_APPLIED must stay refused, even when
-    // the nonce file survived a failed cleanup.
-    if (journalBlocksApply(options.store, plan.planId)) {
-      const reasons: readonly ApplyReasonCode[] = ["NONCE_INVALID"];
-      const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
-      return { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
-    }
-
-    const reasons = checkApply({
-      plan,
-      now: options.now,
-      currentText: beforeText,
-      currentDependencyHash: dependencyHashNow(binding, plan.payload.workflowPath, beforeText),
-      coverageWriteAllowed: stored.meta.coverageWriteAllowed,
-      nonceValid,
-      backupAvailable: true,
-      ...(options.policyMaxAgeSeconds !== undefined ? { policyMaxAgeMs: options.policyMaxAgeSeconds * 1000 } : {}),
-      attestations: currentAttestations(options.store, plan),
-      currentPolicies: currentPolicies(options.store, binding, options.now),
-    });
-    if (reasons.length > 0) {
-      const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
-      return { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
-    }
-
-    // Recompute the edited bytes now: never trust a preview file that may be stale.
-    const { applyEdits } = await import("./edits.ts");
-    const applied = applyEdits(beforeText, plan.payload.edits);
-    if (applied.hash !== plan.payload.resultHash || applied.hash === textHash(beforeText)) {
-      return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null };
-    }
-    const original = parseWorkflow(plan.payload.workflowPath, beforeText);
-    const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
-    if (problems.length > 0) {
-      const warnings = options.store.appendSummaryEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
-      return { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
-    }
-
-    // Past this point a replace is committed: do not abort between the journal
-    // entry and the rename, because the user asked for a recoverable transaction.
-    throwIfAborted(options.signal);
-    const changeId = options.store.changeIdFor(plan.planId, options.now);
-    const manifest = options.store.writeBackup(changeId, beforeText, applied.text, plan.payload.workflowPath, options.now);
-    if (manifest.beforeHash !== textHash(beforeText) || manifest.afterHash !== applied.hash) {
-      return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
-    }
-    const backup = options.store.readBackup(changeId);
-    if (backup === null || backup.manifest.beforeHash !== manifest.beforeHash) {
-      return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
-    }
-
-    const reference = plan.status.approvalNonceId ?? "";
-    const prepared = changeRecord(plan, changeId, "PREPARED", binding, beforeText, applied.text, reference, options.now);
-    options.store.saveChange(prepared);
-
-    // The bytes may have changed while the backup was written. Read again and
-    // refuse rather than overwrite a concurrent user edit.
-    const recheck = readFileSync(target, "utf8");
-    if (textHash(recheck) !== beforeHash) {
-      options.store.saveChange({ ...prepared, state: "NOT_APPLIED", updatedAt: iso(options.now) });
-      const warnings = options.store.appendSummaryEvent({ type: "source_changed_before_replace", planId: plan.planId, changeId }, options.now);
-      return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
-    }
-
-    // Journal the in-doubt state before touching the file, so a crash after the
-    // rename is recoverable from the journal instead of looking untouched.
-    const applying: AppliedChange = { ...prepared, state: "APPLYING", updatedAt: iso(options.now) };
-    options.store.saveChange(applying);
-
-    const mode = statSync(target).mode;
-    let afterHash: string;
-    try {
-      afterHash = await replaceAtomically(target, applied.text, mode, options.signal);
-    } catch (error) {
-      return handleReplaceFailure(options, plan, applying, target, beforeHash, applied.hash, reference, error);
-    }
-    if (afterHash !== applied.hash) {
-      return handleReplaceFailure(options, plan, applying, target, beforeHash, applied.hash, reference,
-        new Error("RECOVERY_REQUIRED: bytes on disk do not match the planned result"));
-    }
-
-    const change: AppliedChange = { ...applying, state: "APPLIED", updatedAt: iso(options.now) };
-    options.store.saveChange(change);
-    // Consume only after the target holds the after-hash: a crash before this
-    // point leaves a still-usable approval for the recovery path.
-    const warnings = consumeAfterApply(options, plan, reference);
-    warnings.push(...options.store.appendSummaryEvent({ type: "applied", planId: plan.planId, changeId, resultHash: afterHash }, options.now));
-    return { state: "applied", reasons: [], change, resultText: applied.text, ...(warnings.length > 0 ? { warnings } : {}) };
+    const inspection = await inspectApply(options, plan, stored, binding, target);
+    if (inspection.kind === "refused") return inspection.result;
+    return commitApply(options, plan, binding, target, inspection);
   }, { clock: options.clock, ids: options.ids });
 }
 
