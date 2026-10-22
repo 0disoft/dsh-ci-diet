@@ -488,8 +488,19 @@ export class PatchStore {
     return { manifest, beforeText: readFileSync(beforePath, "utf8"), afterText: readFileSync(afterPath, "utf8") };
   }
 
-  saveHistory(bindingId: string, history: HistoryBundle): void {
-    this.writeJson(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"), history);
+  /**
+   * Save a history snapshot only when it is at least as new as the stored one.
+   * Two syncs can overlap; finishing last must not replace a newer window with
+   * an older one and silently shrink what later rules can see. Equal windows
+   * still replace, so a retry can complete a partial collection.
+   */
+  saveHistory(bindingId: string, history: HistoryBundle): boolean {
+    return withStoreWriteLock(this, () => {
+      const current = this.readLatestHistory(bindingId);
+      if (current !== null && Date.parse(current.requestedTo) > Date.parse(history.requestedTo)) return false;
+      this.writeJsonUnlocked(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"), history);
+      return true;
+    });
   }
 
   readLatestHistory(bindingId: string): HistoryBundle | null {

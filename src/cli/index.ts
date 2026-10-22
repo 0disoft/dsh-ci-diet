@@ -497,8 +497,10 @@ async function sync(options: Options, locale: Locale): Promise<number> {
 
   const store = openStore(stateDirOf(options), locale, options.config.storage);
   store.saveBinding(upgraded.binding);
-  store.saveReport(report);
-  store.saveHistory(upgraded.binding.bindingId, history);
+  // Keep the report and its history snapshot together: when an older sync
+  // finishes last, its history is refused and so is its report.
+  const historyStored = store.saveHistory(upgraded.binding.bindingId, history);
+  if (historyStored) store.saveReport(report);
 
   const lines: string[] = [];
   lines.push(t("cli.sync.root", { name: history.repositoryFullName, root: upgraded.binding.workspaceRoot }));

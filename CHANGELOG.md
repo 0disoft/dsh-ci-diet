@@ -123,6 +123,9 @@ Keep a Changelog, and the project uses semantic versioning.
   nonce when that write loses, so a prune or a second writer cannot leave an
   approved nonce pointing at a stale or missing plan. Plan pruning skips a plan
   while its approval claim is held.
+- History snapshots keep the newest requested window, and sync publishes a
+  report only when its snapshot was stored. An overlapping older sync can no
+  longer shrink the stored history or attach a stale report to it.
 
 ## 0.2.0 (2026-10-21)
 

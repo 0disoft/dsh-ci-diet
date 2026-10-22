@@ -235,8 +235,9 @@ export function apply(ctx: Context, config: Config) {
       exec.signal.throwIfAborted();
       const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       store.saveBinding(binding);
-      store.saveReport(built.report);
-      store.saveHistory(binding.bindingId, synced.history);
+      // An older overlapping sync must not publish its history or its report.
+      const historyStored = store.saveHistory(binding.bindingId, synced.history);
+      if (historyStored) store.saveReport(built.report);
       const truncated = isHistoryTruncated(synced.history.coverage.history);
       return {
         repository: synced.history.repositoryFullName,

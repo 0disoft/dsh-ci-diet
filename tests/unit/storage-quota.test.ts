@@ -7,6 +7,8 @@ import { test } from "node:test";
 import { acquireStoreLock, withStoreWriteLock } from "../../src/core/patch/locks.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../src/core/patch/store.ts";
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
+import type { HistoryBundle } from "../../src/core/history/model.ts";
+import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { isolatedEnv } from "../helpers/test-env.ts";
 
 const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
@@ -32,6 +34,24 @@ function change(changeId: string, state: AppliedChange["state"]): AppliedChange 
     approvalChannel: "human-cli",
     approvalReference: "nonce-1",
     updatedAt: "2026-10-20T00:00:00Z",
+  };
+}
+
+function history(requestedTo: string): HistoryBundle {
+  return {
+    repositoryId: "git:" + "a".repeat(32),
+    repositoryFullName: "owner/repo",
+    defaultBranch: "main",
+    requestedFrom: "2026-10-01T00:00:00Z",
+    requestedTo,
+    runs: [],
+    pulls: new Map(),
+    workflows: [],
+    artifacts: [],
+    retention: null,
+    protection: null,
+    coverage: buildCoverage({ apiVersion: "2026-03-10", ghVersion: "gh 2", requestedFrom: "2026-10-01T00:00:00Z", requestedTo }, {}),
+    missingScopes: [],
   };
 }
 
@@ -83,6 +103,20 @@ test("reports a warning near the quota and a block once usage reaches it", () =>
     const blocked = store.storageStatus();
     assert.equal(blocked.blocked, true);
     assert.throws(() => store.ensureCapacity(1), StoreQuotaError);
+  });
+});
+
+test("an older history snapshot cannot replace a newer one", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"), limits());
+    const bindingId = "b_" + "1".repeat(24);
+    const older = history("2026-10-20T00:00:00Z");
+    const newer = history("2026-10-21T00:00:00Z");
+    assert.equal(store.saveHistory(bindingId, older), true);
+    assert.equal(store.saveHistory(bindingId, newer), true);
+    assert.equal(store.saveHistory(bindingId, older), false);
+    assert.equal(store.readLatestHistory(bindingId)?.requestedTo, newer.requestedTo);
+    assert.equal(store.saveHistory(bindingId, history(newer.requestedTo)), true);
   });
 });
 
