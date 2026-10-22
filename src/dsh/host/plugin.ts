@@ -366,6 +366,54 @@ export function apply(ctx: Context, config: Config) {
   }));
 
   ctx.tools.register(defineTool({
+    name: "ci_diet_prune",
+    description: t("dsh.prune.description"),
+    parameters: {},
+    output: {
+      schema: {
+        type: "object",
+        properties: {
+          removedReports: { type: "number" },
+          removedPlans: { type: "number" },
+          removedCacheEntries: { type: "number" },
+          bytesFreed: { type: "number" },
+          bytes: { type: "number" },
+          files: { type: "number" },
+          limit: { type: "number" },
+          percent: { type: "number" },
+          warning: { type: "boolean" },
+          blocked: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+      render: (_args, value) => text(t("dsh.prune.render", {
+        reports: value.removedReports ?? 0,
+        plans: value.removedPlans ?? 0,
+        cache: value.removedCacheEntries ?? 0,
+        bytes: value.bytesFreed ?? 0,
+        used: value.bytes ?? 0,
+        limit: value.limit ?? 0,
+        percent: value.percent ?? 0,
+      })),
+    },
+    async execute(_args, exec) {
+      exec.signal.throwIfAborted();
+      const settings = engineSettingsOf(readPluginSettings(config));
+      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
+      // Retention and the cache cap come from the live settings; applied-change
+      // backups are never deleted here because the contract requires a human
+      // confirmation token issued by the CLI listing.
+      const pruned = store.prune(new Date(), {
+        reportDays: settings.config.storage.reportDays,
+        planDays: settings.config.storage.planDays,
+        cacheDays: settings.config.storage.cacheDays,
+        cacheMaxBytes: settings.config.storage.cacheMaxBytes,
+      });
+      return { ...pruned, ...store.storageStatus() };
+    },
+  }));
+
+  ctx.tools.register(defineTool({
     name: "ci_diet_plan",
     description: t("dsh.plan.description"),
     parameters: {

@@ -203,6 +203,8 @@ export const hi: Record<MessageKey, string> = {
   "dsh.sync.render": "{repository} सिंक हुआ: {findings} निष्कर्ष। रिपोर्ट {report}।",
   "dsh.report.description": "स्थानीय रूप से सहेजी गई नवीनतम CI Diet रिपोर्ट पढ़ें, बिना फिर से स्कैन या सिंक किए।",
   "dsh.report.render": "{repository} की रिपोर्ट {report} में {findings} निष्कर्ष हैं।",
+  "dsh.prune.description": "कॉन्फ़िगर किए गए रिटेंशन दिनों और कैश सीमा के अनुसार स्थानीय स्टोर से पुराने CI Diet रिकॉर्ड हटाता है। लागू किए गए परिवर्तनों के बैकअप नहीं हटाता; उनके लिए CLI लिस्टिंग टोकन चाहिए।",
+  "dsh.prune.render": "{reports} रिपोर्ट, {plans} योजना और {cache} कैश प्रविष्टियाँ साफ़ कीं; {bytes} बाइट मुक्त हुए। स्टोर अब {used}/{limit} बाइट ({percent}%) रखता है।",
   "dsh.plan.description": "एक पात्र निष्कर्ष के लिए CI Diet जो सटीक बाइट संपादन करेगा उसका पूर्वावलोकन करें। यह टूल कभी फ़ाइल नहीं लिखता और कभी स्वीकृति नहीं देता; मनुष्य ci-diet CLI से योजना छापकर वहाँ स्वीकृति देता है।",
   "dsh.plan.render": "{workflow} के लिए {edits} संपादन प्रस्तावित। मनुष्य इस कमांड से स्वीकृति दे सकता है: {command}",
   "dsh.plan.blocked": "{workflow} के लिए {edits} संपादन प्रस्तावित। अवरुद्ध: {blockers}",

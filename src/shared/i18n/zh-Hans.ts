@@ -203,6 +203,8 @@ export const zhHans: Record<MessageKey, string> = {
   "dsh.sync.render": "已同步 {repository}：发现 {findings} 项，报告 {report}。",
   "dsh.report.description": "读取本地保存的最新 CI Diet 报告，无需重新扫描或同步。",
   "dsh.report.render": "{repository} 的报告 {report} 有 {findings} 项发现。",
+  "dsh.prune.description": "按配置的保留天数和缓存上限删除本地存储中过期的 CI Diet 记录。不会删除已应用更改的备份；删除备份需要 CLI 列表令牌。",
+  "dsh.prune.render": "已清理报告 {reports} 个、计划 {plans} 个、缓存条目 {cache} 个，释放 {bytes} 字节。存储现占用 {used}/{limit} 字节（{percent}%）。",
   "dsh.plan.description": "预览 CI Diet 针对一项合格发现将做出的确切字节编辑。此工具绝不写入文件，也绝不批准任何内容；由人使用 ci-diet CLI 打印计划并在那里批准。",
   "dsh.plan.render": "为 {workflow} 建议 {edits} 处编辑。可由人使用以下命令批准：{command}",
   "dsh.plan.blocked": "为 {workflow} 建议 {edits} 处编辑。已阻止：{blockers}",

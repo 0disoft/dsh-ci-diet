@@ -203,6 +203,8 @@ export const ko: Record<MessageKey, string> = {
   "dsh.sync.render": "{repository} 동기화 완료: 발견 사항 {findings}건, 보고서 {report}.",
   "dsh.report.description": "로컬에 저장된 가장 최근 CI Diet 보고서를 다시 스캔하거나 동기화하지 않고 읽습니다.",
   "dsh.report.render": "{repository}의 보고서 {report}에 발견 사항이 {findings}건 있습니다.",
+  "dsh.prune.description": "설정된 보존 일수와 캐시 상한에 따라 로컬 저장소의 만료된 CI Diet 기록을 삭제합니다. 적용된 변경의 백업은 삭제하지 않으며, 그 삭제는 CLI 목록 토큰이 필요합니다.",
+  "dsh.prune.render": "보고서 {reports}건, 계획 {plans}건, 캐시 항목 {cache}건을 정리하고 {bytes}바이트를 확보했습니다. 저장소 사용량은 {used}/{limit}바이트({percent}%)입니다.",
   "dsh.plan.description": "자격을 갖춘 발견 사항 하나에 대해 CI Diet가 만들 정확한 바이트 편집을 미리 봅니다. 이 도구는 파일을 쓰지 않고 승인하지도 않습니다. 사람이 ci-diet CLI로 계획을 출력해 승인합니다.",
   "dsh.plan.render": "{workflow}에 대한 편집 {edits}건을 제안합니다. 사람이 다음 명령으로 승인할 수 있습니다: {command}",
   "dsh.plan.blocked": "{workflow}에 대한 편집 {edits}건을 제안합니다. 차단됨: {blockers}",

@@ -74,9 +74,23 @@ function workspace(): string {
   return root;
 }
 
-test("registers the four model-facing tools", () => {
+test("registers the five model-facing tools", () => {
   const { tools } = harness();
-  assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
+  assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_prune", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
+});
+
+test("ci_diet_prune applies the configured retention limits", async () => {
+  const { tools, stateDir, refs } = harness();
+  const root = workspace();
+  const signal = new AbortController().signal;
+  await tools.get("ci_diet_scan")!.execute({ cwd: root }, { signal });
+  assert.equal(readdirSync(join(stateDir, "reports")).length, 1);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  (refs.storageReportDays as ReturnType<typeof live<number>>).set(0);
+  const pruned = await tools.get("ci_diet_prune")!.execute({}, { signal }) as { removedReports: number; blocked: boolean };
+  assert.equal(pruned.removedReports, 1);
+  assert.equal(pruned.blocked, false);
+  assert.equal(readdirSync(join(stateDir, "reports")).length, 0);
 });
 
 test("exposes every engine-facing setting as live", () => {

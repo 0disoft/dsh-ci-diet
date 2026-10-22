@@ -202,6 +202,8 @@ export const en = {
   "dsh.sync.render": "Synced {repository}: {findings} finding(s). Report {report}.",
   "dsh.report.description": "Read the most recent CI Diet report stored locally, without scanning or syncing again.",
   "dsh.report.render": "Report {report} for {repository} has {findings} finding(s).",
+  "dsh.prune.description": "Delete expired CI Diet records in the local store using the configured retention days and cache cap. It never deletes applied-change backups; those need the CLI listing token.",
+  "dsh.prune.render": "Pruned {reports} report(s), {plans} plan(s), and {cache} cache entrie(s); freed {bytes} bytes. Store now holds {used} of {limit} bytes ({percent}%).",
   "dsh.plan.description": "Preview the exact byte edits CI Diet would make for one eligible finding. This tool never writes a file and never approves anything; the human prints the plan with the ci-diet CLI and approves it there.",
   "dsh.plan.render": "{edits} edit(s) proposed for {workflow}. The human can approve this with: {command}",
   "dsh.plan.blocked": "{edits} edit(s) proposed for {workflow}. Blocked: {blockers}",

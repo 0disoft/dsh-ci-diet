@@ -16,6 +16,10 @@ Keep a Changelog, and the project uses semantic versioning.
   display languages ship complete dictionaries.
 - The package exports `./client` and declares `dsh.client`; the lazy-CJS bundle is
   built at pack time into `client/` and requires only `react` from the loader.
+- The `ci_diet_prune` model tool runs cleanup with the live storage settings:
+  report, plan, and cache retention days plus the cache byte cap. It reports the
+  freed bytes and quota state and never deletes applied-change backups, which
+  still require the CLI listing token.
 
 ### Security
 
@@ -134,6 +138,10 @@ Keep a Changelog, and the project uses semantic versioning.
   of failing on the next tool call. The page also pins the revision it started
   editing, so a save made after another screen changed the configuration is
   refused instead of overwriting the newer values.
+- The retention and cache settings edited on the Settings page now have an
+  execution path: the `ci_diet_prune` model tool applies them to the same store
+  the other DSH tools use, instead of cleanup existing only in the CLI whose
+  configuration is separate.
 - A failing git origin lookup is no longer reported as a missing remote: the
   CLI and the DSH tool show the git explanation, and coverage reasons keep the
   GitHub error code alongside its message. A gh response with no HTTP block but

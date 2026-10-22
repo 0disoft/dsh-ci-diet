@@ -67,7 +67,16 @@ preference and reload the plugin to see new text.
 | `ci_diet_scan` | no | report | Static scan of `.github/workflows` in a checkout |
 | `ci_diet_sync` | yes | report | Read-only history sync with `gh` |
 | `ci_diet_report` | no | nothing | Summarize the latest stored report |
+| `ci_diet_prune` | no | deletes expired data | Apply the configured retention days and cache cap to the local store |
 | `ci_diet_plan` | no | plan | Evaluate patch eligibility and preview a plan; never approves or applies |
+
+`ci_diet_prune` is the execution path for the storage settings. It deletes
+reports, plans, and cache entries older than `storageReportDays`,
+`storagePlanDays`, and `storageCacheDays`, evicts cache entries beyond
+`storageCacheMaxBytes`, and reports the freed bytes and the current quota state.
+It never deletes applied-change backups: the contract keeps
+`pruneAppliedBackups` off, and removing a backup needs the listing token from
+`ci-diet prune --applied-backups`.
 
 `ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, `step`, and a
 `claims` list. It returns the edits, the plan digest, the coverage level, and

@@ -203,6 +203,8 @@ export const es: Record<MessageKey, string> = {
   "dsh.sync.render": "{repository} sincronizado: {findings} hallazgo(s). Informe {report}.",
   "dsh.report.description": "Lee el informe de CI Diet más reciente guardado localmente, sin volver a analizar ni sincronizar.",
   "dsh.report.render": "El informe {report} de {repository} tiene {findings} hallazgo(s).",
+  "dsh.prune.description": "Elimina los registros caducados de CI Diet del almacén local según los días de retención y el límite de caché configurados. Nunca borra las copias de cambios aplicados; eso requiere el token de listado de la CLI.",
+  "dsh.prune.render": "Se eliminaron {reports} informe(s), {plans} plan(es) y {cache} entrada(s) de caché; se liberaron {bytes} bytes. El almacén ocupa ahora {used} de {limit} bytes ({percent}%).",
   "dsh.plan.description": "Previsualiza las ediciones de bytes exactas que CI Diet haría para un hallazgo elegible. Esta herramienta nunca escribe un archivo ni aprueba nada; la persona imprime el plan con la CLI ci-diet y lo aprueba allí.",
   "dsh.plan.render": "{edits} edición(es) propuestas para {workflow}. La persona puede aprobarlo con: {command}",
   "dsh.plan.blocked": "{edits} edición(es) propuestas para {workflow}. Bloqueado: {blockers}",

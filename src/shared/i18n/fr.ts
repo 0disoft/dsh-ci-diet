@@ -203,6 +203,8 @@ export const fr: Record<MessageKey, string> = {
   "dsh.sync.render": "{repository} synchronisé : {findings} constat(s). Rapport {report}.",
   "dsh.report.description": "Lit le rapport CI Diet le plus récent enregistré localement, sans nouvelle analyse ni synchronisation.",
   "dsh.report.render": "Le rapport {report} de {repository} contient {findings} constat(s).",
+  "dsh.prune.description": "Supprime les enregistrements CI Diet expirés du stockage local selon les jours de rétention et le plafond de cache configurés. Il ne supprime jamais les sauvegardes de changements appliqués ; cela exige le jeton de liste de la CLI.",
+  "dsh.prune.render": "{reports} rapport(s), {plans} plan(s) et {cache} entrée(s) de cache supprimés ; {bytes} octets libérés. Le stockage occupe désormais {used} sur {limit} octets ({percent} %).",
   "dsh.plan.description": "Prévisualise les modifications d’octets exactes que CI Diet appliquerait pour un constat éligible. Cet outil n’écrit jamais de fichier et n’approuve rien ; la personne imprime le plan avec la CLI ci-diet et l’approuve là-bas.",
   "dsh.plan.render": "{edits} modification(s) proposée(s) pour {workflow}. La personne peut approuver avec : {command}",
   "dsh.plan.blocked": "{edits} modification(s) proposée(s) pour {workflow}. Bloqué : {blockers}",
