@@ -2,7 +2,8 @@ import { existsSync, realpathSync } from "node:fs";
 import type { Context, Volatile } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
-import { DEFAULT_CONFIG } from "../../core/data/default-config.ts";
+import { defaultPluginSettings, engineSettingsOf } from "../../core/config/plugin-settings.ts";
+import type { PluginSettingsValues } from "../../core/config/plugin-settings.ts";
 import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN } from "../../core/policy/constants.ts";
 import { buildHistoryReport } from "../../core/analysis/report.ts";
 import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
@@ -28,20 +29,92 @@ import { createTranslator } from "../../shared/i18n/index.ts";
 export const name = "ci-diet";
 export const inject = ["tools"];
 
+/**
+ * Live settings. Every engine-facing value is volatile: the Settings page and
+ * the Plugins page edit the same reference, and the next tool call reads it.
+ */
 export interface Config {
-  /** Live setting: the DSH Plugins page edits this reference without reloading the plugin. */
   networkEnabled: Volatile<boolean>;
-  /** Reserved for applying plans from the Web UI; not a live setting yet. */
+  /** Reserved for applying plans from the Web UI; not a settings surface yet. */
   localApplyEnabled: boolean;
-  /** Live setting: the next tool call reads the new reference value. */
   stateDir: Volatile<string>;
+  ruleCd001: Volatile<boolean>;
+  ruleCd002: Volatile<boolean>;
+  ruleCd003: Volatile<boolean>;
+  ruleCd004: Volatile<boolean>;
+  ruleCd005: Volatile<boolean>;
+  ruleCd008: Volatile<boolean>;
+  historyLookbackDays: Volatile<number>;
+  historyMaxRuns: Volatile<number>;
+  historyMaxRequests: Volatile<number>;
+  historyConcurrentRequests: Volatile<number>;
+  historyRequestTimeoutMs: Volatile<number>;
+  storageStoreMaxBytes: Volatile<number>;
+  storageWorkflowMaxBytes: Volatile<number>;
+  storageCacheMaxBytes: Volatile<number>;
+  storageCacheDays: Volatile<number>;
+  storageReportDays: Volatile<number>;
+  storagePlanDays: Volatile<number>;
+  billingEnabled: Volatile<boolean>;
+  billingIncludedMinutes: Volatile<number>;
+  billingAccountMinutesUsed: Volatile<number>;
 }
 
+const SHIPPED = defaultPluginSettings();
+
 export const Config = Schema.object({
-  networkEnabled: Schema.boolean().default(false).volatile(),
+  networkEnabled: Schema.boolean().default(SHIPPED.networkEnabled).volatile(),
   localApplyEnabled: Schema.boolean().default(false),
-  stateDir: Schema.string().default("").volatile(),
+  stateDir: Schema.string().default(SHIPPED.stateDir).volatile(),
+  ruleCd001: Schema.boolean().default(SHIPPED.ruleCd001).volatile(),
+  ruleCd002: Schema.boolean().default(SHIPPED.ruleCd002).volatile(),
+  ruleCd003: Schema.boolean().default(SHIPPED.ruleCd003).volatile(),
+  ruleCd004: Schema.boolean().default(SHIPPED.ruleCd004).volatile(),
+  ruleCd005: Schema.boolean().default(SHIPPED.ruleCd005).volatile(),
+  ruleCd008: Schema.boolean().default(SHIPPED.ruleCd008).volatile(),
+  historyLookbackDays: Schema.number().default(SHIPPED.historyLookbackDays).volatile(),
+  historyMaxRuns: Schema.number().default(SHIPPED.historyMaxRuns).volatile(),
+  historyMaxRequests: Schema.number().default(SHIPPED.historyMaxRequests).volatile(),
+  historyConcurrentRequests: Schema.number().default(SHIPPED.historyConcurrentRequests).volatile(),
+  historyRequestTimeoutMs: Schema.number().default(SHIPPED.historyRequestTimeoutMs).volatile(),
+  storageStoreMaxBytes: Schema.number().default(SHIPPED.storageStoreMaxBytes).volatile(),
+  storageWorkflowMaxBytes: Schema.number().default(SHIPPED.storageWorkflowMaxBytes).volatile(),
+  storageCacheMaxBytes: Schema.number().default(SHIPPED.storageCacheMaxBytes).volatile(),
+  storageCacheDays: Schema.number().default(SHIPPED.storageCacheDays).volatile(),
+  storageReportDays: Schema.number().default(SHIPPED.storageReportDays).volatile(),
+  storagePlanDays: Schema.number().default(SHIPPED.storagePlanDays).volatile(),
+  billingEnabled: Schema.boolean().default(SHIPPED.billingEnabled).volatile(),
+  billingIncludedMinutes: Schema.number().default(SHIPPED.billingIncludedMinutes).volatile(),
+  billingAccountMinutesUsed: Schema.number().default(SHIPPED.billingAccountMinutesUsed).volatile(),
 });
+
+/** Read every engine-facing setting from its live reference. */
+export function readPluginSettings(config: Config): PluginSettingsValues {
+  return {
+    networkEnabled: config.networkEnabled.get(),
+    stateDir: config.stateDir.get(),
+    ruleCd001: config.ruleCd001.get(),
+    ruleCd002: config.ruleCd002.get(),
+    ruleCd003: config.ruleCd003.get(),
+    ruleCd004: config.ruleCd004.get(),
+    ruleCd005: config.ruleCd005.get(),
+    ruleCd008: config.ruleCd008.get(),
+    historyLookbackDays: config.historyLookbackDays.get(),
+    historyMaxRuns: config.historyMaxRuns.get(),
+    historyMaxRequests: config.historyMaxRequests.get(),
+    historyConcurrentRequests: config.historyConcurrentRequests.get(),
+    historyRequestTimeoutMs: config.historyRequestTimeoutMs.get(),
+    storageStoreMaxBytes: config.storageStoreMaxBytes.get(),
+    storageWorkflowMaxBytes: config.storageWorkflowMaxBytes.get(),
+    storageCacheMaxBytes: config.storageCacheMaxBytes.get(),
+    storageCacheDays: config.storageCacheDays.get(),
+    storageReportDays: config.storageReportDays.get(),
+    storagePlanDays: config.storagePlanDays.get(),
+    billingEnabled: config.billingEnabled.get(),
+    billingIncludedMinutes: config.billingIncludedMinutes.get(),
+    billingAccountMinutesUsed: config.billingAccountMinutesUsed.get(),
+  };
+}
 
 function stateDirOf(config: Config): string {
   const stateDir = config.stateDir.get();
@@ -165,11 +238,12 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
+      const settings = engineSettingsOf(readPluginSettings(config));
       const root = args.cwd ?? process.cwd();
-      const rules = args.rules as readonly RuleId[] | undefined;
-      const scan = runStaticScan({ workspaceRoot: root, enabledRules: rules, maxWorkflowBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
+      const rules = (args.rules as readonly RuleId[] | undefined) ?? settings.enabledRules;
+      const scan = runStaticScan({ workspaceRoot: root, enabledRules: rules, maxWorkflowBytes: settings.config.storage.workflowMaxBytes });
       if (!existsSync(root)) throw new Error("workspace does not exist: " + root);
-      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
+      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
       store.saveBinding(scan.binding);
       store.saveReport(scan.report);
       return {
@@ -213,9 +287,10 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
-      if (!config.networkEnabled.get()) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
+      const settings = engineSettingsOf(readPluginSettings(config));
+      if (!settings.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet settings");
       const root = args.cwd ?? process.cwd();
-      const discovery = discoverWorkflows(root, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
+      const discovery = discoverWorkflows(root, { maxBytes: settings.config.storage.workflowMaxBytes });
       const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
       let owner: string;
       let repo: string;
@@ -233,15 +308,15 @@ export function apply(ctx: Context, config: Config) {
         if (lookup.kind === "none") throw new Error("no GitHub origin remote found; pass repo explicitly");
         [owner, repo] = [lookup.remote.owner, lookup.remote.repository];
       }
-      const days = args.days ?? DEFAULT_CONFIG.history.lookbackDays;
+      const days = args.days ?? settings.config.history.lookbackDays;
       if (!Number.isSafeInteger(days) || days < HISTORY_LOOKBACK_DAYS_MIN || days > HISTORY_LOOKBACK_DAYS_MAX) throw new Error("days must be an integer between " + HISTORY_LOOKBACK_DAYS_MIN + " and " + HISTORY_LOOKBACK_DAYS_MAX);
-      const settings = { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: days } };
-      const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date(), signal: exec.signal });
+      const syncConfig = { ...settings.config, history: { ...settings.config.history, lookbackDays: days } };
+      const synced = await syncRepositoryHistory({ owner, repo, config: syncConfig, now: new Date(), signal: exec.signal });
       exec.signal.throwIfAborted();
       const binding = createLocalBinding(root, new Date().toISOString(), { repositoryFullName: synced.history.repositoryFullName }).binding;
-      const built = buildHistoryReport({ binding, workflows, history: synced.history, config: settings, generatedAt: new Date().toISOString() });
+      const built = buildHistoryReport({ binding, workflows, history: synced.history, config: syncConfig, enabledRules: settings.enabledRules, generatedAt: new Date().toISOString() });
       exec.signal.throwIfAborted();
-      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
+      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
       // An older overlapping sync must not publish its binding, history, or report.
       store.saveHistorySnapshot(binding, synced.history, built.report);
       const truncated = isHistoryTruncated(synced.history.coverage.history);
@@ -280,7 +355,8 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(_args, exec) {
       exec.signal.throwIfAborted();
-      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
+      const settings = engineSettingsOf(readPluginSettings(config));
+      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
       const report = store.latestReport();
       if (report === null) throw new Error("no report stored yet; run ci_diet_scan or ci_diet_sync first");
       const binding = store.readBinding(report.bindingId);
@@ -338,7 +414,8 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
-      const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
+      const settings = engineSettingsOf(readPluginSettings(config));
+      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
       const now = new Date();
       const root = realpathSync(args.cwd ?? process.cwd());
       const existing = store.findBindingByRoot(root);
@@ -348,7 +425,7 @@ export function apply(ctx: Context, config: Config) {
       const binding = store.readBinding(report.bindingId) ?? current;
       const history = store.readLatestHistory(binding.bindingId);
       const rule = args.rule as PatchRule;
-      const discovery = discoverWorkflows(binding.workspaceRoot, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
+      const discovery = discoverWorkflows(binding.workspaceRoot, { maxBytes: settings.config.storage.workflowMaxBytes });
       const candidates = [...new Set(report.findings.filter((finding) => finding.ruleId === rule).map((finding) => finding.workflowPath))];
       const workflowPath = args.workflow !== undefined
         ? args.workflow.replace(/\\/g, "/")
@@ -396,8 +473,8 @@ export function apply(ctx: Context, config: Config) {
           evidenceRef: "dsh:plan:" + rule,
           issuedBy: { channel: "human-cli", subjectId: "dsh-session" },
           now,
-          policyMaxAgeSeconds: DEFAULT_CONFIG.apply.policyMaxAgeSeconds,
-          attestationTtlSeconds: DEFAULT_CONFIG.apply.attestationMaxAgeDays * 24 * 60 * 60,
+          policyMaxAgeSeconds: settings.config.apply.policyMaxAgeSeconds,
+          attestationTtlSeconds: settings.config.apply.attestationMaxAgeDays * 24 * 60 * 60,
         });
         edits = requested.edits;
         coverageLevel = requested.coverageLevel ?? "skip";

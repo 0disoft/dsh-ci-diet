@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { Config, apply, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
+import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
+import { defaultPluginSettings, engineSettingsOf } from "../../src/core/config/plugin-settings.ts";
+import type { PluginSettingsValues } from "../../src/core/config/plugin-settings.ts";
 
 interface Registered {
   readonly name: string;
@@ -24,7 +27,7 @@ function live<T>(initial: T) {
   };
 }
 
-function harness(config: { networkEnabled?: boolean; stateDir?: string } = {}) {
+function harness(overrides: Partial<PluginSettingsValues> = {}) {
   const tools = new Map<string, Registered>();
   const ctx = {
     tools: {
@@ -34,10 +37,21 @@ function harness(config: { networkEnabled?: boolean; stateDir?: string } = {}) {
       },
     },
   };
-  const stateDir = live(config.stateDir ?? join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-")), "state"));
-  const networkEnabled = live(config.networkEnabled ?? false);
-  apply(ctx as never, { networkEnabled, localApplyEnabled: false, stateDir } as never);
-  return { tools, stateDir: stateDir.get(), stateDirRef: stateDir, networkEnabled };
+  const values: PluginSettingsValues = {
+    ...defaultPluginSettings(),
+    stateDir: join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-")), "state"),
+    ...overrides,
+  };
+  const refs = {} as Record<keyof PluginSettingsValues, ReturnType<typeof live>>;
+  const config = { localApplyEnabled: false } as Record<string, unknown>;
+  for (const [key, value] of Object.entries(values)) {
+    const ref = live(value);
+    refs[key as keyof PluginSettingsValues] = ref;
+    config[key] = ref;
+  }
+  const stateDirRef = refs.stateDir as ReturnType<typeof live<string>>;
+  apply(ctx as never, config as never);
+  return { tools, stateDir: stateDirRef.get(), stateDirRef, networkEnabled: refs.networkEnabled, refs };
 }
 
 const WORKFLOW = [
@@ -65,11 +79,44 @@ test("registers the four model-facing tools", () => {
   assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
 });
 
-test("exposes the implemented switches as live settings", () => {
+test("exposes every engine-facing setting as live", () => {
   const fields = (Config as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict;
-  assert.equal(fields.networkEnabled?.meta?.volatile, true);
-  assert.equal(fields.stateDir?.meta?.volatile, true);
+  for (const key of Object.keys(defaultPluginSettings())) {
+    assert.equal(fields[key]?.meta?.volatile, true, key + " must be volatile");
+  }
   assert.notEqual(fields.localApplyEnabled?.meta?.volatile, true);
+});
+
+test("defaults match the contract and rule defaults", () => {
+  const settings = engineSettingsOf(defaultPluginSettings());
+  assert.deepEqual(settings.config, DEFAULT_CONFIG);
+  assert.deepEqual(settings.enabledRules, ["CD001", "CD002", "CD004", "CD008"]);
+  assert.equal(settings.config.storage.storeMaxBytes, 268435456);
+  assert.equal(settings.config.billing, undefined);
+});
+
+test("rejects an out-of-contract lookback and zero rules", () => {
+  assert.throws(
+    () => engineSettingsOf({ ...defaultPluginSettings(), historyLookbackDays: 31 }),
+    /history\/lookbackDays maximum must be <= 30/,
+  );
+  assert.throws(
+    () => engineSettingsOf({
+      ...defaultPluginSettings(),
+      ruleCd001: false,
+      ruleCd002: false,
+      ruleCd004: false,
+      ruleCd008: false,
+    }),
+    /at least one analysis rule/,
+  );
+});
+
+test("enables billing only when the switch is on", () => {
+  const off = engineSettingsOf(defaultPluginSettings());
+  assert.equal(off.config.billing, undefined);
+  const on = engineSettingsOf({ ...defaultPluginSettings(), billingEnabled: true, billingIncludedMinutes: 2000, billingAccountMinutesUsed: 2100 });
+  assert.deepEqual(on.config.billing, { includedMinutes: 2000, accountMinutesUsed: 2100 });
 });
 
 test("reads live settings on every tool call", async () => {
@@ -140,6 +187,17 @@ test("ci_diet_scan stores a report and lists findings", async () => {
   };
   assert.equal(report.findings.length, 1);
   assert.equal(report.coverage.length, 5);
+});
+
+test("reads a changed rule switch on the next tool call", async () => {
+  const { tools, refs } = harness();
+  const root = workspace();
+  const scan = tools.get("ci_diet_scan")!;
+  const first = (await scan.execute({ cwd: root }, { signal: new AbortController().signal })) as { findings: unknown[] };
+  assert.equal(first.findings.length, 1);
+  (refs.ruleCd008 as ReturnType<typeof live<boolean>>).set(false);
+  const second = (await scan.execute({ cwd: root }, { signal: new AbortController().signal })) as { findings: unknown[] };
+  assert.equal(second.findings.length, 0);
 });
 
 test("ci_diet_sync refuses without networkEnabled", async () => {
