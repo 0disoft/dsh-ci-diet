@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import { acquireStoreLock, withStoreWriteLock } from "../../src/core/patch/locks.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../src/core/patch/store.ts";
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
 import { isolatedEnv } from "../helpers/test-env.ts";
@@ -52,6 +53,20 @@ test("refuses a backup write that would cross the store quota and leaves no dire
       (error: unknown) => error instanceof StoreQuotaError && /STORAGE_QUOTA_EXCEEDED/.test((error as Error).message),
     );
     assert.equal(existsSync(join(store.root, "backups", "c_" + "3".repeat(16))), false);
+  });
+});
+
+test("the store write lock excludes a second writer until it is released", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"), limits());
+    withStoreWriteLock(store, () => {
+      assert.throws(
+        () => acquireStoreLock(store, "write", 0),
+        /another ci-diet process is updating the same record/,
+      );
+    });
+    const lock = acquireStoreLock(store, "write", 0);
+    lock.release();
   });
 });
 

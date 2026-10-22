@@ -112,6 +112,9 @@ Keep a Changelog, and the project uses semantic versioning.
 - A failed replacement or journal write leaves no temporary workflow file and no
   backup that no journal record can reference. The store removes a partly written
   backup only when it created that backup directory.
+- Store writes reserve quota and write their bytes under one filesystem lock, so
+  two processes can no longer pass the same free-space check and together exceed
+  the store limit. The backup reservation and its three files share that lock.
 
 ## 0.2.0 (2026-10-21)
 

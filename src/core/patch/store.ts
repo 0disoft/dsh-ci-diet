@@ -6,6 +6,7 @@ import type { HistoryBundle } from "../history/model.ts";
 import { assertValidDocument, validationErrors } from "../contracts/validate.ts";
 import type { DocumentKind } from "../contracts/validate.ts";
 import { digestOf } from "../../shared/cdj1.ts";
+import { withStoreWriteLock } from "./locks.ts";
 
 export interface PlanMeta {
   readonly coverageWriteAllowed: boolean;
@@ -208,6 +209,14 @@ export class PatchStore {
   }
 
   private writeText(path: string, text: string): void {
+    withStoreWriteLock(this, () => this.writeTextUnlocked(path, text));
+  }
+
+  private writeJsonUnlocked(path: string, value: unknown): void {
+    this.writeTextUnlocked(path, JSON.stringify(value, null, 2) + "\n");
+  }
+
+  private writeTextUnlocked(path: string, text: string): void {
     this.ensureCapacity(Buffer.byteLength(text, "utf8"));
     this.ensureDirectory(dirname(path));
     const temporary = path + ".tmp-" + process.pid + "-" + Math.random().toString(16).slice(2);
@@ -403,34 +412,38 @@ export class PatchStore {
   }
 
   writeBackup(changeId: string, beforeText: string, afterText: string, workflowPath: string, now: Date): BackupManifest {
-    // Reserve before, after, manifest, and target temp space in one check so a
-    // quota failure cannot leave a partially written backup behind.
-    this.ensureCapacity(
-      Buffer.byteLength(beforeText, "utf8") + Buffer.byteLength(afterText, "utf8") + 2048,
-    );
-    const directory = this.path("backups", requireId(changeId, "changeId"));
-    const existed = existsSync(directory);
-    try {
-      this.ensureDirectory(directory);
-      this.writeText(join(directory, "before.yml"), beforeText);
-      this.writeText(join(directory, "after.yml"), afterText);
-      const manifest: BackupManifest = {
-        changeId,
-        workflowPath,
-        beforeHash: sha256Text(beforeText),
-        afterHash: sha256Text(afterText),
-        beforeBytes: Buffer.byteLength(beforeText, "utf8"),
-        afterBytes: Buffer.byteLength(afterText, "utf8"),
-        createdAt: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
-      };
-      this.writeJson(join(directory, "manifest.json"), manifest);
-      return manifest;
-    } catch (error) {
-      // Only remove a directory this call created: a pre-existing backup may be
-      // the only copy of the user's bytes.
-      if (!existed) rmSync(directory, { recursive: true, force: true });
-      throw error;
-    }
+    // One lock covers the reservation and all three files, so a concurrent
+    // writer cannot pass the quota check with the same free bytes.
+    return withStoreWriteLock(this, () => {
+      // Reserve before, after, manifest, and target temp space in one check so a
+      // quota failure cannot leave a partially written backup behind.
+      this.ensureCapacity(
+        Buffer.byteLength(beforeText, "utf8") + Buffer.byteLength(afterText, "utf8") + 2048,
+      );
+      const directory = this.path("backups", requireId(changeId, "changeId"));
+      const existed = existsSync(directory);
+      try {
+        this.ensureDirectory(directory);
+        this.writeTextUnlocked(join(directory, "before.yml"), beforeText);
+        this.writeTextUnlocked(join(directory, "after.yml"), afterText);
+        const manifest: BackupManifest = {
+          changeId,
+          workflowPath,
+          beforeHash: sha256Text(beforeText),
+          afterHash: sha256Text(afterText),
+          beforeBytes: Buffer.byteLength(beforeText, "utf8"),
+          afterBytes: Buffer.byteLength(afterText, "utf8"),
+          createdAt: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+        };
+        this.writeJsonUnlocked(join(directory, "manifest.json"), manifest);
+        return manifest;
+      } catch (error) {
+        // Only remove a directory this call created: a pre-existing backup may be
+        // the only copy of the user's bytes.
+        if (!existed) rmSync(directory, { recursive: true, force: true });
+        throw error;
+      }
+    });
   }
 
   /** Removes a backup that no journal record can reference. */
@@ -475,20 +488,24 @@ export class PatchStore {
   }
 
   appendEvent(event: Record<string, unknown>, now: Date): void {
-    const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
-    this.ensureCapacity(Buffer.byteLength(line, "utf8"));
-    const path = this.path("events", "events.jsonl");
-    this.ensureDirectory(dirname(path));
-    writeFileSync(path, line, { encoding: "utf8", flag: "a", mode: 0o600 });
-    if (process.platform !== "win32") {
-      // The log is appended to, so an older 0644 file is repaired in place.
-      try {
-        chmodSync(path, 0o600);
-      } catch (error) {
-        const code = (error as { code?: string }).code;
-        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
+    // Reserve and append under the same lock; otherwise two processes can pass
+    // the quota check and both append past the limit.
+    withStoreWriteLock(this, () => {
+      const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
+      this.ensureCapacity(Buffer.byteLength(line, "utf8"));
+      const path = this.path("events", "events.jsonl");
+      this.ensureDirectory(dirname(path));
+      writeFileSync(path, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+      if (process.platform !== "win32") {
+        // The log is appended to, so an older 0644 file is repaired in place.
+        try {
+          chmodSync(path, 0o600);
+        } catch (error) {
+          const code = (error as { code?: string }).code;
+          if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
+        }
       }
-    }
+    });
   }
 
   /** Auxiliary summaries must not replace an authoritative success or refusal. */
