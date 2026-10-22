@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { readGithubRemote } from "../../src/core/scan/binding.ts";
+import { lookupGithubRemote, readGithubRemote } from "../../src/core/scan/binding.ts";
 import type { CommandRunOptions, CommandRunner } from "../../src/core/scan/binding.ts";
 
 function runnerReturning(stdout: string): CommandRunner {
@@ -24,6 +24,21 @@ describe("readGithubRemote", () => {
       },
     };
     assert.equal(readGithubRemote(process.cwd(), { commandRunner: failing }), null);
+  });
+
+  it("keeps the cause of a failed git invocation", () => {
+    const failing: CommandRunner = {
+      run() {
+        throw new Error("fatal: cannot exec git: Permission denied");
+      },
+    };
+    const lookup = lookupGithubRemote(process.cwd(), { commandRunner: failing });
+    assert.equal(lookup.kind, "error");
+    if (lookup.kind === "error") assert.match((lookup.error as Error).message, /Permission denied/);
+  });
+
+  it("distinguishes an absent origin from a failed lookup", () => {
+    assert.deepEqual(lookupGithubRemote(process.cwd(), { commandRunner: runnerReturning("https://gitlab.com/team/repo.git\n") }), { kind: "none" });
   });
 
   it("returns null for a remote that is not hosted on GitHub", () => {

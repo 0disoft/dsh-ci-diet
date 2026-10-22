@@ -50,16 +50,26 @@ const DEFAULT_REMOTE_TIMEOUT_MS = 10_000;
 
 const defaultCommandRunner: CommandRunner = {
   run(argv, options) {
-    return {
-      stdout: execFileSync("git", argv, {
-        cwd: options.cwd,
-        encoding: "utf8",
-        windowsHide: true,
-        timeout: options.timeoutMs,
-        stdio: ["ignore", "pipe", "ignore"],
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      }),
-    };
+    try {
+      return {
+        stdout: execFileSync("git", argv, {
+          cwd: options.cwd,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: options.timeoutMs,
+          stdio: ["ignore", "pipe", "pipe"],
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      };
+    } catch (error) {
+      // Keep git's own explanation: a missing binary, a timeout, and a
+      // non-GitHub remote all used to look like "no origin".
+      const stderr = typeof (error as { stderr?: unknown }).stderr === "string"
+        ? (error as { stderr: string }).stderr.trim()
+        : "";
+      const message = stderr.length > 0 ? stderr : error instanceof Error ? error.message : String(error);
+      throw new Error(message, { cause: error });
+    }
   },
 };
 
@@ -69,7 +79,13 @@ export interface ReadGithubRemoteOptions {
   readonly signal?: AbortSignal;
 }
 
-export function readGithubRemote(workspaceRoot: string, options: ReadGithubRemoteOptions = {}): GithubRemote | null {
+export type GithubRemoteLookup =
+  | { readonly kind: "github"; readonly remote: GithubRemote }
+  | { readonly kind: "none" }
+  | { readonly kind: "error"; readonly error: unknown };
+
+/** Distinguish an absent origin from a git failure so callers can explain both. */
+export function lookupGithubRemote(workspaceRoot: string, options: ReadGithubRemoteOptions = {}): GithubRemoteLookup {
   const runner = options.commandRunner ?? defaultCommandRunner;
   try {
     const result = runner.run(["-C", workspaceRoot, "remote", "get-url", "origin"], {
@@ -77,10 +93,20 @@ export function readGithubRemote(workspaceRoot: string, options: ReadGithubRemot
       timeoutMs: options.timeoutMs ?? DEFAULT_REMOTE_TIMEOUT_MS,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
-    return parseGithubRemote(result.stdout.trim());
-  } catch {
-    return null;
+    const remote = parseGithubRemote(result.stdout.trim());
+    return remote === null ? { kind: "none" } : { kind: "github", remote };
+  } catch (error) {
+    // A plain directory or a repository without origin simply has no GitHub
+    // remote; other git failures keep their cause for the caller to explain.
+    const message = error instanceof Error ? error.message : String(error);
+    if (/not a git repository|no such remote|does not appear to be a git repository/i.test(message)) return { kind: "none" };
+    return { kind: "error", error };
   }
+}
+
+export function readGithubRemote(workspaceRoot: string, options: ReadGithubRemoteOptions = {}): GithubRemote | null {
+  const lookup = lookupGithubRemote(workspaceRoot, options);
+  return lookup.kind === "github" ? lookup.remote : null;
 }
 
 export function rootIdentityHash(workspaceRoot: string, fs: FileSystem = nodeFileSystem): string {
@@ -113,7 +139,10 @@ export function createLocalBinding(
   const fs = options.fs ?? nodeFileSystem;
   const root = fs.realpath(workspaceRoot);
   const override = options.repositoryFullName === undefined ? null : parseGithubRemote("https://github.com/" + options.repositoryFullName);
-  const remote = override ?? readGithubRemote(root, options.commandRunner === undefined ? {} : { commandRunner: options.commandRunner });
+  const lookup = override === null
+    ? lookupGithubRemote(root, options.commandRunner === undefined ? {} : { commandRunner: options.commandRunner })
+    : null;
+  const remote = override ?? (lookup?.kind === "github" ? lookup.remote : null);
   const warnings: string[] = [];
   const identity = rootIdentityHash(root, fs);
 
@@ -126,7 +155,7 @@ export function createLocalBinding(
     repositoryId = "git:" + sha256Hex(remote.fullName.toLowerCase()).slice(0, 32);
     repositoryFullName = remote.fullName;
   } else {
-    warnings.push("GITHUB_REMOTE_NOT_FOUND");
+    warnings.push(lookup?.kind === "error" ? "GITHUB_REMOTE_UNAVAILABLE" : "GITHUB_REMOTE_NOT_FOUND");
     repositoryId = "local:" + identity.slice("sha256:".length, "sha256:".length + 32);
     repositoryFullName = "local/" + basename(root);
   }
