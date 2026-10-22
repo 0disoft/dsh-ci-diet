@@ -124,7 +124,9 @@ Keep a Changelog, and the project uses semantic versioning.
   report. When an older overlapping sync finishes last, it writes nothing and
   says so. A report kept by an earlier generation stays addressable by its id,
   and `prune` applies report retention to generation reports and removes an
-  expired generation together with its pointer.
+  expired generation together with its pointer. The binding is preserved before
+  the generation is deleted, so revert keeps working after report retention has
+  expired, and sync no longer deletes older generations by count.
 - A valid report index answers latest-report lookups without parsing every stored
   report, so unrelated or corrupt older records no longer slow the common path.
 - Coverage documents, merged configs, and attestations copy the arrays and

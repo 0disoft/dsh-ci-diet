@@ -576,9 +576,28 @@ export class PatchStore {
   }
 
   /**
+   * Keep a durable binding before its generation is removed. Revert needs the
+   * binding's workspace root, and that requirement is independent of how long a
+   * report is retained; a failed preservation keeps the generation instead.
+   */
+  private preserveBinding(bindingId: string, directory: string): boolean {
+    const target = this.path("bindings", bindingId + ".json");
+    if (existsSync(target)) return true;
+    const binding = this.readJson<RepositoryBinding>(join(directory, "binding.json"), "RepositoryBinding");
+    if (binding === null) return false;
+    try {
+      this.writeJsonUnlocked(target, binding);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Apply report retention to committed generations. A generation stores its
    * report beside the binding and history, so an expired generation is removed
-   * as a unit; when it is current, its pointer goes with it.
+   * as a unit; when it is current, its pointer goes with it. The binding is
+   * preserved first because revert and recovery do not expire with reports.
    */
   private pruneExpiredSnapshots(reportCutoff: number): { removedReports: number; bytesFreed: number } {
     const root = this.path("snapshots", "generations");
@@ -606,6 +625,7 @@ export class PatchStore {
         if (report === null) continue;
         const at = Date.parse(report.generatedAt);
         if (!Number.isFinite(at) || at >= reportCutoff) continue;
+        if (!this.preserveBinding(binding.name, directory)) continue;
         bytesFreed += deepBytes(directory);
         rmSync(directory, { recursive: true, force: true });
         removedReports += 1;
@@ -615,32 +635,6 @@ export class PatchStore {
       }
     }
     return { removedReports, bytesFreed };
-  }
-
-  /** Keep the committed generation and one predecessor; readers retry the pointer. */
-  private pruneSnapshots(bindingId: string): void {
-    try {
-      const directory = this.path("snapshots", "generations", requireId(bindingId, "bindingId"));
-      const entries = readdirSync(directory, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .map((entry) => ({ name: entry.name, modified: statSync(join(directory, entry.name)).mtimeMs }))
-        .sort((a, b) => b.modified - a.modified);
-      // Never prune the generation the pointer names, even when three saves
-      // share one mtime; keep it plus the newest predecessor.
-      const keep = new Set<string>();
-      const current = this.readSnapshotPointer(bindingId)?.generationId;
-      if (current !== undefined) keep.add(current);
-      for (const entry of entries) {
-        if (keep.size >= 2) break;
-        keep.add(entry.name);
-      }
-      for (const entry of entries) {
-        if (!keep.has(entry.name)) rmSync(join(directory, entry.name), { recursive: true, force: true });
-      }
-      if (entries.some((entry) => !keep.has(entry.name))) this.invalidateUsage();
-    } catch {
-      // Cleanup is best effort; an unreferenced generation only costs space.
-    }
   }
 
   /**
@@ -929,7 +923,6 @@ export class PatchStore {
         this.invalidateUsage();
         throw error;
       }
-      this.pruneSnapshots(bindingId);
       return true;
     });
   }

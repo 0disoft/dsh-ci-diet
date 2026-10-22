@@ -157,8 +157,13 @@ test("readReport resolves a report kept by an earlier generation", () => {
     const second = history("2026-10-20T02:00:00Z");
     const secondReport = reportFor(binding, second);
     assert.equal(store.saveHistorySnapshot(binding, second, secondReport), true);
+    const third = history("2026-10-20T03:00:00Z");
+    const thirdReport = reportFor(binding, third);
+    assert.equal(store.saveHistorySnapshot(binding, third, thirdReport), true);
+    // Report retention is measured in days, not in the number of syncs.
     assert.equal(store.readReport(firstReport.reportId)?.reportId, firstReport.reportId);
     assert.equal(store.readReport(secondReport.reportId)?.reportId, secondReport.reportId);
+    assert.equal(store.readReport(thirdReport.reportId)?.reportId, thirdReport.reportId);
   });
 });
 
@@ -180,6 +185,9 @@ test("prune removes expired generation reports and their pointers", () => {
     assert.equal(existsSync(join(state, "snapshots", "current", binding.bindingId + ".json")), false);
     assert.equal(store.readLatestHistory(binding.bindingId), null);
     assert.equal(store.readReport(secondReport.reportId), null);
+    // Revert still needs the binding after its report generation expired.
+    assert.equal(store.readBinding(binding.bindingId)?.bindingId, binding.bindingId);
+    assert.equal(store.findBindingByRoot(root)?.bindingId, binding.bindingId);
     assert.ok(store.usage().bytes < before, "prune frees generation bytes");
   });
 });

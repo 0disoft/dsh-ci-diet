@@ -13,6 +13,10 @@ import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
 import { acquireStoreLock, applyPlan, revertChange } from "../../src/core/patch/apply.ts";
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
+import type { HistoryBundle } from "../../src/core/history/model.ts";
+import { buildCoverage } from "../../src/core/analysis/coverage.ts";
+import { buildHistoryReport } from "../../src/core/analysis/report.ts";
+import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -111,6 +115,57 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(backup?.beforeText, fixture.text);
   assert.equal(backup?.afterText, after);
   assert.equal(approved.plan.status.state, "approved");
+});
+
+test("prune keeps the binding a revert still needs", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(applied.state, "applied");
+  const changeId = applied.change?.changeId;
+  assert.ok(changeId);
+  // The sync path stores the binding in its generation, not as a legacy record.
+  rmSync(join(fixture.store.root, "bindings", fixture.binding.bindingId + ".json"));
+
+  const requestedFrom = "2026-10-01T00:00:00Z";
+  const requestedTo = fixture.now.toISOString();
+  const snapshot: HistoryBundle = {
+    repositoryId: fixture.binding.repositoryId,
+    repositoryFullName: "owner/repo",
+    defaultBranch: "main",
+    requestedFrom,
+    requestedTo,
+    runs: [],
+    pulls: new Map(),
+    workflows: [],
+    artifacts: [],
+    retention: null,
+    protection: null,
+    coverage: buildCoverage({ apiVersion: "2026-03-10", ghVersion: "gh 2", requestedFrom, requestedTo }, {}),
+    missingScopes: [],
+  };
+  const report = buildHistoryReport({
+    binding: fixture.binding,
+    workflows: [],
+    history: snapshot,
+    config: DEFAULT_CONFIG,
+    generatedAt: requestedTo,
+  }).report;
+  assert.equal(fixture.store.saveHistorySnapshot(fixture.binding, snapshot, report), true);
+  const pruned = fixture.store.prune(new Date("2030-01-01T00:00:00Z"), { reportDays: 90, planDays: 7, cacheDays: 30 });
+  assert.equal(pruned.removedReports, 1);
+
+  const reverted = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(reverted.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
 
 test("status-only persistence rejects invalid status without changing stored records", (t) => {

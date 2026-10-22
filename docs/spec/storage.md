@@ -101,8 +101,12 @@ an older version.
 A retained generation keeps its report, so `readReport(<id>)` resolves reports
 from earlier generations until cleanup removes them. `prune` applies
 `reportDays` to each generation report and deletes the whole generation as one
-unit; when the removed generation is current, its pointer is removed too. A valid
-report index is trusted without rescanning unrelated reports.
+unit; when the removed generation is current, its pointer is removed too. Before
+deleting, the generation's binding is kept as `bindings/<binding>.json` when no
+binding record exists, because revert and recovery need the workspace root
+regardless of how long reports are retained. Generation cleanup is age-based
+only: a sync never deletes older generations by count. A valid report index is
+trusted without rescanning unrelated reports.
 
 ## Configuration
 
