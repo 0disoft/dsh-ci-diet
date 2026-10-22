@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative as relativePath, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -13,6 +12,8 @@ import { buildPolicySnapshots } from "./plan.ts";
 import { semanticProblems } from "./semantic.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
 import { collectDependencies } from "./dependencies.ts";
+import { clockOf, idsOf, isExpired } from "../support/clock.ts";
+import type { Clock, IdSource, RuntimeSeams } from "../support/clock.ts";
 
 export interface ApplyOptions {
   readonly store: PatchStore;
@@ -22,6 +23,10 @@ export interface ApplyOptions {
   readonly subjectId?: string;
   /** Maximum age of the approval nonce in seconds. Defaults to the plan-level 600 s. */
   readonly approvalTtlSeconds?: number;
+  /** Optional time source for lease and claim bookkeeping; defaults to the system clock. */
+  readonly clock?: Clock;
+  /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
+  readonly ids?: IdSource;
 }
 
 export interface ApplyResult {
@@ -120,13 +125,15 @@ const CLAIM_POLL_MS = 20;
  * A claim directory without an owner token is only broken once it is old,
  * because its creator may still be inside its mkdir/write window.
  */
-function acquireLock(lockRoot: string, name: string, waitMs: number, message: string): StoreLock {
+function acquireLock(lockRoot: string, name: string, waitMs: number, message: string, seams?: RuntimeSeams): StoreLock {
   mkdirSync(lockRoot, { recursive: true });
   const path = join(lockRoot, name + ".claim");
+  const clock = clockOf(seams);
+  const ids = idsOf(seams);
   // The token must stay parseable by leaseOwnerAlive: a claim left behind by a
   // crashed process is broken immediately, not held until its mtime expires.
-  const token = "lease_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
-  const deadline = Date.now() + waitMs;
+  const token = "lease_" + process.pid.toString(36) + "_" + clock.now().getTime().toString(36) + "_" + ids.suffix(8);
+  const deadline = clock.now().getTime() + waitMs;
   for (;;) {
     try {
       createClaim(path, token);
@@ -136,7 +143,7 @@ function acquireLock(lockRoot: string, name: string, waitMs: number, message: st
     }
     const observed = readLeaseObservation(path);
     if (observed === null) {
-      const age = ageOf(path);
+      const age = ageOf(path, clock);
       if (age === null) continue;
       if (age > LEASE_CLAIM_STALE_MS) {
         rmSync(path, { recursive: true, force: true });
@@ -146,14 +153,14 @@ function acquireLock(lockRoot: string, name: string, waitMs: number, message: st
       breakStaleClaim(path, observed, token, message);
       continue;
     }
-    if (Date.now() >= deadline) throw new Error(message);
+    if (clock.now().getTime() >= deadline) throw new Error(message);
     sleepSync(CLAIM_POLL_MS);
   }
 }
 
 /** Take a named store lock (a directory with an owner token) and return its release handle. */
-export function acquireStoreLock(store: PatchStore, name: string, waitMs: number): StoreLock {
-  return acquireLock(join(store.root, "locks"), name, waitMs, "WRITE_CONFLICT: another ci-diet process is updating the same record");
+export function acquireStoreLock(store: PatchStore, name: string, waitMs: number, seams?: RuntimeSeams): StoreLock {
+  return acquireLock(join(store.root, "locks"), name, waitMs, "WRITE_CONFLICT: another ci-diet process is updating the same record", seams);
 }
 
 function sleepSync(ms: number): void {
@@ -180,9 +187,9 @@ function createLockDirectory(path: string): void {
   tightenLockPath(path, 0o700);
 }
 
-function ageOf(path: string): number | null {
+function ageOf(path: string, clock: Clock): number | null {
   try {
-    return Date.now() - statSync(path).mtimeMs;
+    return clock.now().getTime() - statSync(path).mtimeMs;
   } catch {
     return null;
   }
@@ -247,12 +254,14 @@ function releaseLock(path: string, token: string): void {
  * lease path that another writer may be about to claim: it re-reads the lease
  * under the claim and leaves a live lease exactly where it is.
  */
-function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T> {
+function withWriterLease<T>(store: PatchStore, run: () => Promise<T>, seams?: RuntimeSeams): Promise<T> {
   const lockRoot = join(store.root, "locks");
   const lease = join(lockRoot, "writer");
   createLockDirectory(lockRoot);
-  const token = "lease_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
-  acquireWriterLease(lockRoot, lease, token);
+  const clock = clockOf(seams);
+  const ids = idsOf(seams);
+  const token = "lease_" + process.pid.toString(36) + "_" + clock.now().getTime().toString(36) + "_" + ids.suffix(8);
+  acquireWriterLease(lockRoot, lease, token, seams);
   return (async () => {
     try {
       return await run();
@@ -262,9 +271,10 @@ function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T
   })();
 }
 
-function acquireWriterLease(lockRoot: string, lease: string, token: string): void {
+function acquireWriterLease(lockRoot: string, lease: string, token: string, seams?: RuntimeSeams): void {
+  const clock = clockOf(seams);
   // Heartbeat-free contention: a second writer fails fast instead of waiting.
-  const claim = acquireLock(lockRoot, "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace");
+  const claim = acquireLock(lockRoot, "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace", seams);
   try {
     try {
       createWriterLease(lease, token);
@@ -277,7 +287,7 @@ function acquireWriterLease(lockRoot: string, lease: string, token: string): voi
       // A lease directory without an owner token is a crash leftover. Under the
       // claim nobody else can create a lease, but only an old leftover is safe
       // to remove: a very recent one may be mid-create by an older writer.
-      const age = ageOf(lease);
+      const age = ageOf(lease, clock);
       if (age !== null && age > WRITER_LEASE_STALE_MS) {
         rmSync(lease, { recursive: true, force: true });
         createWriterLease(lease, token);
@@ -285,7 +295,7 @@ function acquireWriterLease(lockRoot: string, lease: string, token: string): voi
       }
       throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
     }
-    if (Date.now() - observed.mtimeMs <= WRITER_LEASE_STALE_MS || leaseOwnerAlive(observed.owner)) {
+    if (clock.now().getTime() - observed.mtimeMs <= WRITER_LEASE_STALE_MS || leaseOwnerAlive(observed.owner)) {
       throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
     }
     removeStaleWriterLease(lease, observed, token);
@@ -331,8 +341,8 @@ function readLeaseObservation(lease: string): LeaseObservation | null {
  * The decision is taken under the writer claim, exactly like a real acquire, so
  * a lease that changed owner after it was observed is never moved.
  */
-export function takeOverWriterLease(lease: string, token: string, observed: LeaseObservation): void {
-  const claim = acquireLock(dirname(lease), "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace");
+export function takeOverWriterLease(lease: string, token: string, observed: LeaseObservation, seams?: RuntimeSeams): void {
+  const claim = acquireLock(dirname(lease), "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace", seams);
   try {
     const current = readLeaseObservation(lease);
     if (current === null) return;
@@ -482,7 +492,7 @@ function isNonceValid(nonce: ApprovalNonce | null, plan: PatchPlan, options: App
   const ttlSeconds = options.approvalTtlSeconds ?? DEFAULT_APPROVAL_TTL_SECONDS;
   const createdAt = Date.parse(nonce.createdAt);
   if (!Number.isFinite(createdAt)) return false;
-  if (options.now.getTime() > createdAt + ttlSeconds * 1000) return false;
+  if (isExpired(options.now.getTime(), createdAt + ttlSeconds * 1000)) return false;
   if (options.subjectId !== undefined && nonce.subjectId !== options.subjectId) return false;
   return true;
 }
@@ -657,13 +667,17 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
     const warnings = consumeAfterApply(options, plan, reference);
     warnings.push(...options.store.appendSummaryEvent({ type: "applied", planId: plan.planId, changeId, resultHash: afterHash }, options.now));
     return { state: "applied", reasons: [], change, resultText: applied.text, ...(warnings.length > 0 ? { warnings } : {}) };
-  });
+  }, { clock: options.clock, ids: options.ids });
 }
 
 export async function revertChange(options: {
   readonly store: PatchStore;
   readonly changeId: string;
   readonly now: Date;
+  /** Optional time source for lease bookkeeping; defaults to the system clock. */
+  readonly clock?: Clock;
+  /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
+  readonly ids?: IdSource;
 }): Promise<{ readonly state: string; readonly reason: string | null; readonly warnings?: readonly string[] }> {
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
@@ -730,7 +744,7 @@ export async function revertChange(options: {
     options.store.saveChange({ ...change, state: "REVERTED", updatedAt: iso(options.now) });
     const warnings = options.store.appendSummaryEvent({ type: "reverted", changeId: change.changeId }, options.now);
     return { state: "REVERTED", reason: null, ...(warnings.length > 0 ? { warnings } : {}) };
-  });
+  }, { clock: options.clock, ids: options.ids });
 }
 
 export function resolveWorkflowFile(binding: RepositoryBinding, workflowPath: string): string {

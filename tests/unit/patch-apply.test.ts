@@ -735,6 +735,44 @@ test("a conflicted revert still warns but retries when the file holds the patche
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
 
+test("approval at exactly the plan expiry is rejected and one millisecond earlier is accepted", (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const expiresAt = new Date(fixture.now.getTime() + 60_000);
+  const payload = { ...fixture.plan.payload, expiresAt: expiresAt.toISOString().replace(/\.\d{3}Z$/, "Z") };
+  const plan = { ...fixture.plan, payload, planDigest: digestOf(payload) };
+  fixture.store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+  const input = {
+    store: fixture.store,
+    planId: plan.planId,
+    confirmation: approvalConfirmation(plan),
+    subjectId: "tester",
+    channel: "human-cli" as const,
+  };
+  assert.throws(() => approvePlan({ ...input, now: expiresAt }), /PLAN_EXPIRED/);
+  const approved = approvePlan({ ...input, now: new Date(expiresAt.getTime() - 1) });
+  assert.equal(approved.plan.status.state, "approved");
+});
+
+test("an approval nonce expiring exactly now is rejected", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const boundary = new Date(fixture.now.getTime() + 1000);
+  const expired = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: boundary, subjectId: "tester", approvalTtlSeconds: 1 });
+  assert.equal(expired.state, "not_applied");
+  assert.deepEqual(expired.reasons, ["NONCE_INVALID"]);
+  const accepted = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: new Date(boundary.getTime() - 1), subjectId: "tester", approvalTtlSeconds: 1 });
+  assert.equal(accepted.state, "applied");
+});
+
 test("wrong confirmation never approves", () => {
   const fixture = setup();
   assert.throws(

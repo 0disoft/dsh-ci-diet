@@ -2,6 +2,7 @@ import type { PatchPlan } from "../contracts/schema.ts";
 import type { ApprovalNonce, PatchStore } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 import { acquireStoreLock } from "./apply.ts";
+import type { Clock, IdSource } from "../support/clock.ts";
 
 const APPROVE_LOCK_WAIT_MS = 250;
 
@@ -12,6 +13,10 @@ export interface ApproveInput {
   readonly subjectId: string;
   readonly channel: "human-ui" | "human-cli";
   readonly now: Date;
+  /** Optional time source for lock bookkeeping; defaults to the system clock. */
+  readonly clock?: Clock;
+  /** Optional id source for lock tokens; defaults to crypto.randomUUID. */
+  readonly ids?: IdSource;
 }
 
 export interface ApproveResult {
@@ -32,7 +37,7 @@ export function approvePlan(input: ApproveInput): ApproveResult {
   // The approval is a two-step write (nonce, then plan status). Serialize it per
   // plan so concurrent approvers cannot leave a nonce without its status, or a
   // status pointing at a nonce that a second approval overwrote.
-  const lock = acquireStoreLock(input.store, "approve-" + initial.plan.planId, APPROVE_LOCK_WAIT_MS);
+  const lock = acquireStoreLock(input.store, "approve-" + initial.plan.planId, APPROVE_LOCK_WAIT_MS, { clock: input.clock, ids: input.ids });
   try {
     return approveLocked(input);
   } finally {
