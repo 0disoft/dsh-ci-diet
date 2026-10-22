@@ -73,6 +73,7 @@ export const hi: Record<MessageKey, string> = {
   "cli.plan.target": "लक्ष्य फ़ाइल: {path}",
   "cli.plan.diff": "प्रस्तावित परिवर्तन:",
   "cli.plan.diffUnavailable": "वर्कस्पेस या वर्कफ़्लो फ़ाइल अब उपलब्ध नहीं है, इसलिए diff नहीं दिखाया जा सकता। योजना JSON में बाइट संपादन अभी भी सूचीबद्ध हैं।",
+  "cli.plan.sourceChanged": "इस योजना के बनने के बाद वर्कफ़्लो बदल गया है, इसलिए अंतर छिपा दिया गया है। स्वीकृति से पहले ci-diet plan फिर से चलाएँ।",
   "cli.plan.notFound": "कोई संग्रहीत योजना {plan} नहीं है।",
   "cli.plan.digest": "योजना डाइजेस्ट: {digest}",
   "cli.plan.confirm": "स्वीकृत करने के लिए चलाएँ: ci-diet approve --plan <id> --confirm {confirmation}",

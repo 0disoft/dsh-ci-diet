@@ -74,6 +74,7 @@ export const ko: Record<MessageKey, string> = {
   "cli.plan.target": "대상 파일: {path}",
   "cli.plan.diff": "변경 예정:",
   "cli.plan.diffUnavailable": "워크스페이스나 워크플로 파일을 더 이상 읽을 수 없어 diff를 표시할 수 없습니다. 계획 JSON에는 바이트 편집이 그대로 남아 있습니다.",
+  "cli.plan.sourceChanged": "계획을 만든 뒤 워크플로가 바뀌어 diff를 숨겼습니다. 승인 전에 ci-diet plan을 다시 실행해 주세요.",
   "cli.plan.notFound": "저장된 계획 {plan}이(가) 없습니다.",
   "cli.plan.digest": "계획 다이제스트: {digest}",
   "cli.plan.confirm": "승인하려면 실행하세요: ci-diet approve --plan <id> --confirm {confirmation}",

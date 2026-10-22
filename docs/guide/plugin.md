@@ -107,8 +107,10 @@ ci-diet prune
 ```
 
 `plan` prints the proposed lines as a small diff. `ci-diet plans --plan <planId>`
-re-reads a saved plan and prints the same diff from its byte edits; when the
-workspace is gone, it says so and the plan JSON still lists the edits.
+re-reads a saved plan and prints the same diff from its byte edits. When the
+workspace is gone it says so and the plan JSON still lists the edits; when the
+workflow bytes no longer match the plan's source hash it hides the diff, asks
+for a re-plan, and exits `3`.
 
 Exit codes: `0` success (a partial report is still success), `1` usage or
 unexpected error, `2` contract violation, `3` incomplete evidence or refused

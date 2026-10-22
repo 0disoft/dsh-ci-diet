@@ -73,6 +73,7 @@ export const fr: Record<MessageKey, string> = {
   "cli.plan.target": "Fichier cible : {path}",
   "cli.plan.diff": "Modification proposée :",
   "cli.plan.diffUnavailable": "L’espace de travail ou le fichier de flux n’est plus disponible, le diff ne peut donc pas être affiché. Le JSON du plan liste toujours les modifications d’octets.",
+  "cli.plan.sourceChanged": "Le workflow a changé depuis la création de ce plan ; le diff est masqué. Relancez ci-diet plan avant d’approuver.",
   "cli.plan.notFound": "Aucun plan enregistré {plan}.",
   "cli.plan.digest": "Empreinte du plan : {digest}",
   "cli.plan.confirm": "Pour approuver, exécutez : ci-diet approve --plan <id> --confirm {confirmation}",

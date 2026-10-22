@@ -73,6 +73,7 @@ export const en = {
   "cli.plan.target": "Target file: {path}",
   "cli.plan.diff": "Proposed change:",
   "cli.plan.diffUnavailable": "The workspace or workflow file is no longer available, so the diff cannot be shown. The plan JSON still lists the byte edits.",
+  "cli.plan.sourceChanged": "The workflow changed since this plan was created, so the diff is hidden. Run ci-diet plan again before approving.",
   "cli.plan.notFound": "No stored plan {plan}.",
   "cli.plan.digest": "Plan digest: {digest}",
   "cli.plan.confirm": "To approve, run: ci-diet approve --plan <id> --confirm {confirmation}",

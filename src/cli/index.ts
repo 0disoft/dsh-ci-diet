@@ -16,6 +16,7 @@ import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagno
 import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN, PROPOSED_RETENTION_DAYS, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../core/policy/constants.ts";
 import { buildRequestedPlan } from "../core/patch/request-plan.ts";
 import { renderEditDiff } from "../core/patch/diff.ts";
+import { sourceHashOf } from "../core/patch/plan.ts";
 import { claimsFromTokens } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import { ConfigFileError, loadConfigFile } from "../core/config/load.ts";
@@ -821,6 +822,10 @@ function plansList(options: Options, locale: Locale): number {
     }
     if (source === null) {
       lines.push(t("cli.plan.diffUnavailable"));
+    } else if (sourceHashOf(source) !== payload.sourceHash) {
+      lines.push(t("cli.plan.sourceChanged"));
+      reportText(JSON.stringify(stored.plan, null, 2) + "\n", options, lines);
+      return EXIT_INCOMPLETE;
     } else {
       lines.push(t("cli.plan.target", { path: join(binding?.workspaceRoot ?? "", payload.workflowPath) }));
       lines.push(t("cli.plan.diff"));

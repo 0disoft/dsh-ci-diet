@@ -73,6 +73,7 @@ export const zhHans: Record<MessageKey, string> = {
   "cli.plan.target": "目标文件：{path}",
   "cli.plan.diff": "拟议变更：",
   "cli.plan.diffUnavailable": "工作区或工作流文件已不可用，因此无法显示 diff。计划 JSON 中仍列出了字节编辑。",
+  "cli.plan.sourceChanged": "创建此计划后工作流已更改，因此隐藏了差异。请在批准前重新运行 ci-diet plan。",
   "cli.plan.notFound": "没有已保存的计划 {plan}。",
   "cli.plan.digest": "计划摘要：{digest}",
   "cli.plan.confirm": "要批准，请运行：ci-diet approve --plan <id> --confirm {confirmation}",
