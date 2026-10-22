@@ -57,42 +57,58 @@ export function expandMatrix(
   matrix: MatrixPlan,
 ): Readonly<Record<string, CanonicalJsonValue>>[] | null {
   if (matrix.dynamic) return null;
-  let combinations: Record<string, CanonicalJsonValue>[] = [{}];
+  let base: Record<string, CanonicalJsonValue>[] = [{}];
   for (const axis of matrix.axes) {
     const next: Record<string, CanonicalJsonValue>[] = [];
-    for (const prefix of combinations) {
+    for (const prefix of base) {
       for (const value of axis.values) {
         next.push({ ...prefix, [axis.name]: value });
         if (next.length > MAX_MATRIX_COMBINATIONS) return null;
       }
     }
-    combinations = next;
+    base = next;
   }
+
+  // GitHub applies exclude to the axis product before include. Excluding after
+  // include would delete rows that an include was meant to add back, and an
+  // include must never be merged into a row that another include created: its
+  // axis key compatibility is judged against the original combinations only.
+  const axisNames = new Set(matrix.axes.map((axis) => axis.name));
+  const combinations =
+    matrix.exclude.length === 0
+      ? base
+      : base.filter(
+          (combination) =>
+            !matrix.exclude.some((exclude) =>
+              Object.entries(exclude).every(([key, value]) => {
+                const current = combination[key];
+                return current !== undefined && canonicalEqual(current, value);
+              }),
+            ),
+        );
+  const added: Record<string, CanonicalJsonValue>[] = [];
   for (const include of matrix.include) {
     let merged = false;
     for (const combination of combinations) {
       const compatible = Object.entries(include).every(([key, value]) => {
         const current = combination[key];
+        if (axisNames.has(key)) return current !== undefined && canonicalEqual(current, value);
         return current === undefined || canonicalEqual(current, value);
       });
       if (!compatible) continue;
-      Object.assign(combination, include);
+      for (const [key, value] of Object.entries(include)) {
+        if (axisNames.has(key)) continue;
+        combination[key] = value;
+      }
       merged = true;
     }
-    if (!merged) combinations.push({ ...include });
+    if (!merged) added.push({ ...include });
+    // The axis product is capped while it is built; an include list that keeps
+    // adding new rows must hit the same cap instead of materializing unbounded
+    // rows for downstream consumers.
+    if (combinations.length + added.length > MAX_MATRIX_COMBINATIONS) return null;
   }
-  if (matrix.exclude.length > 0) {
-    combinations = combinations.filter(
-      (combination) =>
-        !matrix.exclude.some((exclude) =>
-          Object.entries(exclude).every(([key, value]) => {
-            const current = combination[key];
-            return current !== undefined && canonicalEqual(current, value);
-          }),
-        ),
-    );
-  }
-  return combinations;
+  return [...combinations, ...added];
 }
 
 export function renderMatrixTemplate(
