@@ -233,9 +233,10 @@ new record, not an edit to the rationale.
   not fork between CLI and plugin. The CLI keeps its own `--config`, which the
   page never writes. `localApplyEnabled` is not exposed because no apply tool
   exists. `stateDir` does not migrate an existing store.
-- The page is translated through `ctx.locale` with complete en, ko, zh-Hans, hi,
-  es, and fr dictionaries, per ADR-19. Client text is registered when the plugin
-  loads; a language change needs a reload.
+- The page is translated through `ctx.locale` with complete en, ko, zh (also
+  registered as zh-Hans), hi, es, and fr dictionaries, per ADR-19. Client text is
+  registered when the plugin loads, and a language the host does not ship is
+  contributed with an English fallback; a language change needs a reload.
 - Rationale: ADR-16 deferred DSH screens because they would read report data
   through `ctx.remote` and a host-compiled Typert descriptor. A settings page
   reads no report data and needs no private remote shape. `configForms` is
