@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { existsSync, mkdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { systemClock } from "../core/support/clock.ts";
+import type { Clock } from "../core/support/clock.ts";
 import { RULE_IDS } from "../core/model/domain.ts";
 import type { RuleId } from "../core/model/domain.ts";
 import { runStaticScan } from "../core/scan/scan.ts";
@@ -37,6 +39,41 @@ import { localizedFinding } from "../core/report/localize.ts";
 import { resolveRequestedLocale } from "../shared/i18n/host.ts";
 import { createTranslator } from "../shared/i18n/index.ts";
 import type { Locale, MessageKey } from "../shared/i18n/index.ts";
+
+/** Output sink used by the CLI; process streams by default, buffers in tests. */
+export interface CliOutput {
+  write(text: string): void;
+  readonly isTTY?: boolean;
+}
+
+/** Injectable process boundary for one CLI run. Everything omitted keeps production behavior. */
+export interface CliContext {
+  readonly cwd: string;
+  readonly stdout: CliOutput;
+  readonly stderr: CliOutput;
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly clock: Clock;
+  /** Cancels network collection for commands that support it. */
+  readonly signal?: AbortSignal;
+}
+
+function processContext(): CliContext {
+  return {
+    cwd: process.cwd(),
+    stdout: { write: (text: string) => { process.stdout.write(text); },
+      ...(process.stdout.isTTY === true ? { isTTY: true } : {}) },
+    stderr: { write: (text: string) => { process.stderr.write(text); },
+      ...(process.stderr.isTTY === true ? { isTTY: true } : {}) },
+    env: process.env,
+    clock: systemClock,
+  };
+}
+
+let context: CliContext = processContext();
+
+function writeOut(text: string): void { context.stdout.write(text); }
+function writeErr(text: string): void { context.stderr.write(text); }
+function now(): Date { return context.clock.now(); }
 
 const EXIT_OK = 0;
 const EXIT_USAGE = 1;
@@ -91,7 +128,7 @@ function parseRepoArgument(value: string): { owner: string; repository: string }
 
 function parseArgs(argv: readonly string[]): Options {
   let command = "";
-  let cwd = process.cwd();
+  let cwd = context.cwd;
   let json = false;
   let out: string | null = null;
   let rules: readonly RuleId[] | null = null;
@@ -180,7 +217,7 @@ function parseArgs(argv: readonly string[]): Options {
       }
       rules = requested as readonly RuleId[];
     } else if (arg === "--state-dir") {
-      stateDir = resolve(takeValue(index, "--state-dir"));
+      stateDir = resolve(context.cwd, takeValue(index, "--state-dir"));
       index += 1;
     } else if (arg === "--workflow") {
       workflow = takeValue(index, "--workflow");
@@ -239,7 +276,7 @@ function parseArgs(argv: readonly string[]): Options {
 
   return {
     command,
-    cwd: resolve(cwd),
+    cwd: resolve(context.cwd, cwd),
     json,
     out,
     rules,
@@ -278,7 +315,7 @@ function openStore(stateDir: string, locale: Locale): PatchStore {
   const store = PatchStore.open(stateDir, DEFAULT_CONFIG.storage);
   const status = store.storageStatus();
   if (status.warning) {
-    process.stderr.write(
+    writeErr(
       createTranslator(locale)("cli.storage.warning", {
         percent: status.percent,
         used: status.bytes,
@@ -290,11 +327,11 @@ function openStore(stateDir: string, locale: Locale): PatchStore {
 }
 
 function resolveUiLocale(lang: string | null): Locale {
-  return resolveRequestedLocale(lang, process.env);
+  return resolveRequestedLocale(lang, context.env);
 }
 
 function writeAtomically(path: string, content: string): void {
-  const absolute = resolve(path);
+  const absolute = resolve(context.cwd, path);
   mkdirSync(dirname(absolute), { recursive: true });
   const temporary = absolute + ".tmp-" + process.pid;
   try {
@@ -315,8 +352,8 @@ function isIncomplete(coverage: Coverage): boolean {
 
 function reportText(reportJson: string, options: Options, lines: readonly string[]): void {
   if (options.out !== null) writeAtomically(options.out, reportJson);
-  if (options.json) process.stdout.write(reportJson);
-  else process.stdout.write(lines.join("\n") + "\n");
+  if (options.json) writeOut(reportJson);
+  else writeOut(lines.join("\n") + "\n");
 }
 
 function scan(options: Options, locale: Locale): number {
@@ -324,6 +361,7 @@ function scan(options: Options, locale: Locale): number {
   const result = runStaticScan({
     workspaceRoot: options.cwd,
     enabledRules: options.rules ?? undefined,
+    generatedAt: now().toISOString(),
   });
   const { report, binding, workflows, skipped, warnings } = result;
   const parsedCount = workflows.filter((workflow) => workflow.parseError === null && workflow.unsupported.length === 0).length;
@@ -356,13 +394,13 @@ function scan(options: Options, locale: Locale): number {
   }
   if (skipped.length > 0) lines.push(t("cli.scan.incomplete"));
   lines.push(t("cli.scan.staticNote"));
-  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
+  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(context.cwd, options.out) }));
 
   reportText(JSON.stringify(report, null, 2) + "\n", options, lines);
 
-  for (const warning of warnings) process.stderr.write(warning + "\n");
+  for (const warning of warnings) writeErr(warning + "\n");
   if (options.requireComplete && isIncomplete(report.coverage)) {
-    process.stderr.write(t("cli.scan.incomplete") + "\n");
+    writeErr(t("cli.scan.incomplete") + "\n");
     return EXIT_INCOMPLETE;
   }
   return EXIT_OK;
@@ -371,11 +409,11 @@ function scan(options: Options, locale: Locale): number {
 async function sync(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   if (!options.network) {
-    process.stderr.write(t("cli.sync.networkRequired") + "\n");
+    writeErr(t("cli.sync.networkRequired") + "\n");
     return EXIT_USAGE;
   }
 
-  const generatedAt = new Date().toISOString();
+  const generatedAt = now().toISOString();
   const discovery = discoverWorkflows(options.cwd, {});
   const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
 
@@ -388,7 +426,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   } else {
     const remote = readGithubRemote(discovery.root);
     if (remote === null) {
-      process.stderr.write(t("cli.sync.repoRequired") + "\n");
+      writeErr(t("cli.sync.repoRequired") + "\n");
       return EXIT_USAGE;
     }
     owner = remote.owner;
@@ -396,7 +434,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   }
 
   if ((options.accountMinutesUsed === null) !== (options.includedMinutes === null)) {
-    process.stderr.write(t("cli.invalidValue", { flag: options.accountMinutesUsed === null ? "--account-minutes-used" : "--included-minutes" }) + "\n");
+    writeErr(t("cli.invalidValue", { flag: options.accountMinutesUsed === null ? "--account-minutes-used" : "--included-minutes" }) + "\n");
     return EXIT_USAGE;
   }
   const billing = options.accountMinutesUsed === null || options.includedMinutes === null
@@ -407,18 +445,19 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     : { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: options.days } };
   const config: Config = billing === null ? baseConfig : { ...baseConfig, billing };
 
-  const showProgress = process.stderr.isTTY === true && !options.json;
+  const showProgress = context.stderr.isTTY === true && !options.json;
   let progressPrinted = false;
   const syncResult = await syncRepositoryHistory({
     owner,
     repo: repository,
     config,
-    now: new Date(),
+    now: now(),
+    ...(context.signal === undefined ? {} : { signal: context.signal }),
     ...(showProgress
       ? {
           onProgress: (progress: { runsProcessed: number; runsTotal: number; jobsFetched: number }) => {
             progressPrinted = true;
-            process.stderr.write("\r" + t("cli.sync.progress", {
+            writeErr("\r" + t("cli.sync.progress", {
               runs: progress.runsProcessed,
               total: progress.runsTotal,
               jobs: progress.jobsFetched,
@@ -427,7 +466,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
         }
       : {}),
   });
-  if (progressPrinted) process.stderr.write("\r" + " ".repeat(72) + "\r");
+  if (progressPrinted) writeErr("\r" + " ".repeat(72) + "\r");
   const history = syncResult.history;
   const upgraded = createLocalBinding(discovery.root, generatedAt, { repositoryFullName: history.repositoryFullName });
   const built = buildHistoryReport({
@@ -472,12 +511,12 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   }
   if (isIncomplete(report.coverage)) lines.push(t("cli.scan.incomplete"));
   lines.push(t("cli.sync.note"));
-  if (options.out !== null) lines.push(t("cli.sync.written", { path: resolve(options.out) }));
+  if (options.out !== null) lines.push(t("cli.sync.written", { path: resolve(context.cwd, options.out) }));
 
   reportText(JSON.stringify(report, null, 2) + "\n", options, lines);
 
   if (options.requireComplete && isIncomplete(report.coverage)) {
-    process.stderr.write(t("cli.scan.incomplete") + "\n");
+    writeErr(t("cli.scan.incomplete") + "\n");
     return EXIT_INCOMPLETE;
   }
   return EXIT_OK;
@@ -503,44 +542,44 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   const stateDir = stateDirOf(options);
   const store = existsSync(stateDir) ? openStore(stateDir, locale) : null;
   if (store === null) {
-    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
-  const now = new Date();
+  const plannedAt = now();
   const root = realpathSync(options.cwd);
   const existing = store.findBindingByRoot(root);
-  const current = existing ?? createLocalBinding(root, now.toISOString()).binding;
+  const current = existing ?? createLocalBinding(root, plannedAt.toISOString()).binding;
   const report = store.latestReportForBinding(current.bindingId);
   if (report === null) {
-    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
   const binding = store.readBinding(report.bindingId) ?? current;
   const rule = options.rule;
   if (rule !== "CD001" && rule !== "CD005" && rule !== "CD008") {
-    process.stderr.write(t("cli.plan.ruleRequired") + "\n");
+    writeErr(t("cli.plan.ruleRequired") + "\n");
     return EXIT_USAGE;
   }
   const discovery = discoverWorkflows(binding.workspaceRoot, {});
   const workflowPath = pickWorkflowPath(options, discovery.workflows.map((file) => file.path));
   const file = discovery.workflows.find((entry) => entry.path === workflowPath);
   if (file === undefined) {
-    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
   if (file.text.length > 512 * 1024) {
-    process.stderr.write(t("cli.plan.workflowTooLarge") + "\n");
+    writeErr(t("cli.plan.workflowTooLarge") + "\n");
     return EXIT_USAGE;
   }
   const workflow = parseWorkflow(file.path, file.text);
   if (workflow.parseError !== null || workflow.unsupported.length > 0) {
-    process.stderr.write(t("cli.plan.unsupported") + "\n");
+    writeErr(t("cli.plan.unsupported") + "\n");
     return EXIT_USAGE;
   }
 
   const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
   if (historyJson === null) {
-    process.stderr.write(t("cli.plan.syncRequired") + "\n");
+    writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
 
@@ -554,8 +593,8 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   const candidates = report.findings.filter((entry) => entry.ruleId === rule && entry.workflowPath === workflowPath);
   const chosenFinding = findFindingForRequest(candidates, request);
   if (chosenFinding === null) {
-    process.stderr.write(t("cli.plan.notTarget", { rule, target: options.job ?? "workflow" }) + "\n");
-    process.stderr.write("  - FINDING_NOT_FOUND\n");
+    writeErr(t("cli.plan.notTarget", { rule, target: options.job ?? "workflow" }) + "\n");
+    writeErr("  - FINDING_NOT_FOUND\n");
     return EXIT_INCOMPLETE;
   }
   const targetProblems = targetReasons({
@@ -566,9 +605,9 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     workflow,
   });
   if (targetProblems.length > 0) {
-    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
-    for (const problem of targetProblems) process.stderr.write("  - " + problem + "\n");
-    if (targetProblems.includes("WORKFLOW_HASH_MISMATCH")) process.stderr.write(t("cli.plan.staleEvidence") + "\n");
+    writeErr(t("cli.plan.notEligible", { rule }) + "\n");
+    for (const problem of targetProblems) writeErr("  - " + problem + "\n");
+    if (targetProblems.includes("WORKFLOW_HASH_MISMATCH")) writeErr(t("cli.plan.staleEvidence") + "\n");
     return EXIT_INCOMPLETE;
   }
 
@@ -579,7 +618,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   let expected: { group?: string; minutes?: number; days?: number } = {};
   if (rule === "CD001") {
     if (workflow.concurrency !== null) {
-      process.stderr.write(t("cli.plan.existingConcurrency") + "\n");
+      writeErr(t("cli.plan.existingConcurrency") + "\n");
       return EXIT_USAGE;
     }
     edits = [requireEdit(planConcurrencyEdit(file.text, workflow, binding.repositoryId))];
@@ -588,7 +627,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   } else if (rule === "CD005") {
     const job = workflow.jobs.find((entry) => entry.key === options.job);
     if (job === undefined || options.minutes === null) {
-      process.stderr.write(t("cli.plan.jobRequired") + "\n");
+      writeErr(t("cli.plan.jobRequired") + "\n");
       return EXIT_USAGE;
     }
     edits = [requireEdit(planTimeoutEdit(file.text, workflow, job, options.minutes))];
@@ -599,7 +638,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     const job = workflow.jobs.find((entry) => entry.key === options.job);
     const step = job?.steps[options.step ?? -1];
     if (job === undefined || step === undefined || options.step === null) {
-      process.stderr.write(t("cli.plan.stepRequired") + "\n");
+      writeErr(t("cli.plan.stepRequired") + "\n");
       return EXIT_USAGE;
     }
     const days = PROPOSED_RETENTION_DAYS;
@@ -622,7 +661,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     claims: claimsFromTokens(options.claims),
     evidenceRefs: ["cli:plan:" + rule],
     issuedBy: { channel: "human-cli", subjectId: options.subject },
-    now,
+    now: plannedAt,
   });
 
   const eligibility = evaluatePatchEligibility({
@@ -633,11 +672,11 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     history: historyJson,
     currentDefinitionParsed: true,
     editedJobEvidenceComplete: true,
-    now,
+    now: plannedAt,
   });
   if (!eligibility.allowed) {
-    process.stderr.write(t("cli.plan.notEligible", { rule }) + "\n");
-    for (const reason of eligibility.reasons) process.stderr.write("  - " + reason + "\n");
+    writeErr(t("cli.plan.notEligible", { rule }) + "\n");
+    for (const reason of eligibility.reasons) writeErr("  - " + reason + "\n");
     return EXIT_INCOMPLETE;
   }
   store.saveAttestation(attestation);
@@ -646,7 +685,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     binding,
     protection: historyJson.protection,
     retention: historyJson.retention,
-    now,
+    now: plannedAt,
   });
 
   const built = buildPatchPlan({
@@ -661,7 +700,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
       ...dependencyReport.unresolved.map((ref) => "UNRESOLVED_DEPENDENCY:" + ref),
     ],
     coverageWriteAllowed: true,
-    now,
+    now: plannedAt,
     dependencies: dependencyReport.dependencies,
     expected,
   });
@@ -676,7 +715,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   lines.push(t("cli.plan.digest", { digest: plan.planDigest }));
   lines.push(t("cli.plan.confirm", { confirmation: approvalConfirmation(plan) }));
   lines.push(t("cli.plan.next", { plan: plan.planId }));
-  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
+  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(context.cwd, options.out) }));
   reportText(JSON.stringify(plan, null, 2) + "\n", options, lines);
   return EXIT_OK;
 }
@@ -684,7 +723,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
 function approveCommand(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   if (options.plan === null || options.confirm === null) {
-    process.stderr.write(t("cli.approve.usage") + "\n");
+    writeErr(t("cli.approve.usage") + "\n");
     return EXIT_USAGE;
   }
   const store = openStore(stateDirOf(options), locale);
@@ -694,12 +733,12 @@ function approveCommand(options: Options, locale: Locale): number {
     confirmation: options.confirm,
     subjectId: options.subject,
     channel: "human-cli",
-    now: new Date(),
+    now: now(),
   });
-  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
+  for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
   lines.push(t("cli.approve.done", { plan: result.plan.planId }));
-  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(options.out) }));
+  if (options.out !== null) lines.push(t("cli.scan.written", { path: resolve(context.cwd, options.out) }));
   reportText(JSON.stringify(result.plan, null, 2) + "\n", options, lines);
   return EXIT_OK;
 }
@@ -707,12 +746,12 @@ function approveCommand(options: Options, locale: Locale): number {
 async function applyCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   if (options.plan === null) {
-    process.stderr.write(t("cli.apply.usage") + "\n");
+    writeErr(t("cli.apply.usage") + "\n");
     return EXIT_USAGE;
   }
   const store = openStore(stateDirOf(options), locale);
-  const result = await applyPlan({ store, planId: options.plan, now: new Date(), subjectId: options.subject });
-  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
+  const result = await applyPlan({ store, planId: options.plan, now: now(), subjectId: options.subject });
+  for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
   if (result.state === "applied") {
     lines.push(t("cli.apply.done", { change: result.change?.changeId ?? "", workflow: result.change?.workflowPath ?? "" }));
@@ -729,12 +768,12 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
 async function revertCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   if (options.change === null) {
-    process.stderr.write(t("cli.revert.usage") + "\n");
+    writeErr(t("cli.revert.usage") + "\n");
     return EXIT_USAGE;
   }
   const store = openStore(stateDirOf(options), locale);
-  const result = await revertChange({ store, changeId: options.change, now: new Date() });
-  for (const warning of result.warnings ?? []) process.stderr.write(warning + "\n");
+  const result = await revertChange({ store, changeId: options.change, now: now() });
+  for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
   if (result.state === "REVERTED") lines.push(t("cli.revert.done", { change: options.change }));
   else lines.push(t("cli.revert.refused", { state: result.state, reason: result.reason ?? "" }));
@@ -791,32 +830,32 @@ function reportCommand(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
   if (!existsSync(stateDir)) {
-    process.stderr.write(t("cli.report.none") + "\n");
+    writeErr(t("cli.report.none") + "\n");
     return EXIT_USAGE;
   }
   const store = openStore(stateDir, locale);
   const report = options.report === null ? store.latestReport() : store.readReport(options.report);
   if (report === null) {
-    process.stderr.write(t("cli.report.none") + "\n");
+    writeErr(t("cli.report.none") + "\n");
     return EXIT_USAGE;
   }
 
   const format = options.json ? "json" : options.format;
   if (format === "html") {
     const html = renderHtmlReport(report, { locale });
-    if (options.out === null) process.stdout.write(html);
+    if (options.out === null) writeOut(html);
     else {
       writeAtomically(options.out, html);
-      process.stdout.write(t("cli.report.written", { path: resolve(options.out) }) + "\n");
+      writeOut(t("cli.report.written", { path: resolve(context.cwd, options.out) }) + "\n");
     }
     return EXIT_OK;
   }
   if (format === "json") {
     const json = JSON.stringify(report, null, 2) + "\n";
-    if (options.out === null) process.stdout.write(json);
+    if (options.out === null) writeOut(json);
     else {
       writeAtomically(options.out, json);
-      process.stdout.write(t("cli.report.written", { path: resolve(options.out) }) + "\n");
+      writeOut(t("cli.report.written", { path: resolve(context.cwd, options.out) }) + "\n");
     }
     return EXIT_OK;
   }
@@ -844,29 +883,29 @@ function reportCommand(options: Options, locale: Locale): number {
   if (isIncomplete(report.coverage)) lines.push(t("cli.scan.incomplete"));
   if (options.out !== null) {
     writeAtomically(options.out, lines.join("\n") + "\n");
-    lines.push(t("cli.report.written", { path: resolve(options.out) }));
+    lines.push(t("cli.report.written", { path: resolve(context.cwd, options.out) }));
   }
-  process.stdout.write(lines.join("\n") + "\n");
+  writeOut(lines.join("\n") + "\n");
   return EXIT_OK;
 }
 
 function diagnoseCommand(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   if (options.format === "html") {
-    process.stderr.write(t("cli.invalidValue", { flag: "--format" }) + "\n");
+    writeErr(t("cli.invalidValue", { flag: "--format" }) + "\n");
     return EXIT_USAGE;
   }
   const stateDir = stateDirOf(options);
   if (!existsSync(stateDir)) {
-    process.stderr.write(t("cli.diagnose.syncRequired") + "\n");
+    writeErr(t("cli.diagnose.syncRequired") + "\n");
     return EXIT_USAGE;
   }
   const store = openStore(stateDir, locale);
   const root = realpathSync(options.cwd);
-  const binding = store.findBindingByRoot(root) ?? createLocalBinding(root, new Date().toISOString()).binding;
+  const binding = store.findBindingByRoot(root) ?? createLocalBinding(root, now().toISOString()).binding;
   const history = store.readLatestHistory(binding.bindingId);
   if (history === null) {
-    process.stderr.write(t("cli.diagnose.syncRequired") + "\n");
+    writeErr(t("cli.diagnose.syncRequired") + "\n");
     return EXIT_USAGE;
   }
 
@@ -924,7 +963,7 @@ function diagnoseCommand(options: Options, locale: Locale): number {
 
   reportText(JSON.stringify(payload, null, 2) + "\n", options, lines);
   if (options.requireComplete && diagnosticsIncomplete(diagnostics)) {
-    process.stderr.write(t("cli.scan.incomplete") + "\n");
+    writeErr(t("cli.scan.incomplete") + "\n");
     return EXIT_INCOMPLETE;
   }
   return EXIT_OK;
@@ -937,16 +976,16 @@ function pruneAppliedBackups(store: PatchStore, options: Options, locale: Locale
   const token = appliedBackupConfirmToken(changeIds);
   if (options.confirm === null) {
     if (options.json) {
-      process.stdout.write(JSON.stringify({ candidates, token, automaticPruning: false }, null, 2) + "\n");
+      writeOut(JSON.stringify({ candidates, token, automaticPruning: false }, null, 2) + "\n");
       return EXIT_OK;
     }
     if (candidates.length === 0) {
-      process.stdout.write(t("cli.prune.backups.none") + "\n");
+      writeOut(t("cli.prune.backups.none") + "\n");
       return EXIT_OK;
     }
-    process.stdout.write(t("cli.prune.backups.list", { count: candidates.length }) + "\n");
+    writeOut(t("cli.prune.backups.list", { count: candidates.length }) + "\n");
     for (const candidate of candidates) {
-      process.stdout.write(
+      writeOut(
         t("cli.prune.backups.item", {
           change: candidate.changeId,
           state: candidate.state,
@@ -956,17 +995,17 @@ function pruneAppliedBackups(store: PatchStore, options: Options, locale: Locale
         }) + "\n",
       );
     }
-    process.stdout.write(t("cli.prune.backups.manual") + "\n");
-    process.stdout.write(t("cli.prune.backups.token", { token }) + "\n");
+    writeOut(t("cli.prune.backups.manual") + "\n");
+    writeOut(t("cli.prune.backups.token", { token }) + "\n");
     return EXIT_OK;
   }
   if (options.confirm !== token) {
-    process.stderr.write(t("cli.prune.backups.invalidToken") + "\n");
+    writeErr(t("cli.prune.backups.invalidToken") + "\n");
     return EXIT_USAGE;
   }
   const cleanup = store.pruneAppliedBackups(changeIds, options.confirm);
-  if (options.json) process.stdout.write(JSON.stringify({ removedChangeIds: changeIds, ...cleanup }, null, 2) + "\n");
-  else process.stdout.write(t("cli.prune.backups.deleted", { count: cleanup.removedBackups, bytes: cleanup.bytesFreed }) + "\n");
+  if (options.json) writeOut(JSON.stringify({ removedChangeIds: changeIds, ...cleanup }, null, 2) + "\n");
+  else writeOut(t("cli.prune.backups.deleted", { count: cleanup.removedBackups, bytes: cleanup.bytesFreed }) + "\n");
   return EXIT_OK;
 }
 
@@ -974,29 +1013,29 @@ function pruneCommand(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
   if (!existsSync(stateDir)) {
-    if (options.appliedBackups) process.stdout.write(t("cli.prune.backups.none") + "\n");
-    else process.stdout.write(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
+    if (options.appliedBackups) writeOut(t("cli.prune.backups.none") + "\n");
+    else writeOut(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
     return EXIT_OK;
   }
   const store = openStore(stateDir, locale);
   if (options.appliedBackups) return pruneAppliedBackups(store, options, locale);
-  const result = store.prune(new Date(), {
+  const result = store.prune(now(), {
     reportDays: DEFAULT_CONFIG.storage.reportDays,
     planDays: DEFAULT_CONFIG.storage.planDays,
     cacheDays: DEFAULT_CONFIG.storage.cacheDays,
     cacheMaxBytes: DEFAULT_CONFIG.storage.cacheMaxBytes,
   });
-  if (options.json) process.stdout.write(JSON.stringify(result, null, 2) + "\n");
+  if (options.json) writeOut(JSON.stringify(result, null, 2) + "\n");
   else {
-    process.stdout.write(t("cli.prune.done", {
+    writeOut(t("cli.prune.done", {
       reports: result.removedReports,
       plans: result.removedPlans,
       cache: result.removedCacheEntries,
     }) + "\n");
-    process.stdout.write(t("cli.prune.freed", { bytes: result.bytesFreed }) + "\n");
+    writeOut(t("cli.prune.freed", { bytes: result.bytesFreed }) + "\n");
   }
   const status = store.storageStatus();
-  if (status.blocked) process.stderr.write(t("error.STORAGE_QUOTA_EXCEEDED") + "\n");
+  if (status.blocked) writeErr(t("error.STORAGE_QUOTA_EXCEEDED") + "\n");
   return EXIT_OK;
 }
 
@@ -1032,36 +1071,51 @@ function usageMessage(error: UsageError, argv: readonly string[]): string {
 
 function mapError(error: unknown, t: ReturnType<typeof createTranslator>): number {
   if (error instanceof ContractViolationError || error instanceof StoreCorruptionError) {
-    process.stderr.write(t("error.SCHEMA_INVALID") + " " + error.message + "\n");
+    writeErr(t("error.SCHEMA_INVALID") + " " + error.message + "\n");
     return EXIT_SCHEMA;
   }
   if (error instanceof GitHubError) {
     if (error.code === "AUTH_REQUIRED") {
-      process.stderr.write(t("error.AUTH_REQUIRED") + "\n");
+      writeErr(t("error.AUTH_REQUIRED") + "\n");
       return EXIT_INCOMPLETE;
     }
     if (error.code === "BUDGET_EXHAUSTED") {
-      process.stderr.write(t("error.REQUEST_BUDGET_EXHAUSTED") + "\n");
+      writeErr(t("error.REQUEST_BUDGET_EXHAUSTED") + "\n");
       return EXIT_INCOMPLETE;
     }
-    process.stderr.write(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
+    writeErr(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
     return EXIT_USAGE;
   }
   if (error instanceof StoreQuotaError) {
-    process.stderr.write(t("error.STORAGE_QUOTA_EXCEEDED") + " " + error.message + "\n");
+    writeErr(t("error.STORAGE_QUOTA_EXCEEDED") + " " + error.message + "\n");
     return EXIT_STORAGE;
   }
   if (error instanceof Error && (error.message.startsWith("PLAN_EXPIRED") || error.message.startsWith("POLICY_STALE"))) {
-    process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");
+    writeErr(t("cli.error.prefix") + " " + error.message + "\n");
     return EXIT_INCOMPLETE;
   }
   if (error instanceof Error && error.message.startsWith("NONCE_INVALID")) {
-    process.stderr.write(t("cli.error.prefix") + " " + error.message + "\n");
+    writeErr(t("cli.error.prefix") + " " + error.message + "\n");
     return EXIT_NONCE;
   }
   const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(t("cli.error.prefix") + " " + message + "\n");
+  writeErr(t("cli.error.prefix") + " " + message + "\n");
   return EXIT_USAGE;
+}
+
+/**
+ * Run one CLI invocation against an injected process boundary. The default
+ * context reads the real cwd, streams, environment, and clock, so the wrapper
+ * below and every existing caller keep production behaviour.
+ */
+export async function executeCli(argv: readonly string[], overrides: Partial<CliContext> = {}): Promise<number> {
+  const previous = context;
+  context = { ...processContext(), ...overrides };
+  try {
+    return await main(argv);
+  } finally {
+    context = previous;
+  }
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
@@ -1070,7 +1124,7 @@ export async function main(argv: readonly string[]): Promise<number> {
     options = parseArgs(argv);
   } catch (error) {
     if (error instanceof UsageError) {
-      process.stderr.write("error: " + usageMessage(error, argv) + "\n");
+      writeErr("error: " + usageMessage(error, argv) + "\n");
       return EXIT_USAGE;
     }
     throw error;
@@ -1080,12 +1134,12 @@ export async function main(argv: readonly string[]): Promise<number> {
   const t = createTranslator(locale);
 
   if (options.version) {
-    process.stdout.write("ci-diet " + ENGINE_VERSION + "\n");
+    writeOut("ci-diet " + ENGINE_VERSION + "\n");
     return EXIT_OK;
   }
   if (options.help || options.command === "") {
     const key = HELP_KEYS[options.command] ?? "cli.usage";
-    process.stdout.write(t(key) + "\n");
+    writeOut(t(key) + "\n");
     return options.help ? EXIT_OK : EXIT_USAGE;
   }
 
@@ -1104,7 +1158,7 @@ export async function main(argv: readonly string[]): Promise<number> {
   } catch (error) {
     return mapError(error, t);
   }
-  process.stderr.write(t("cli.unknownCommand", { command: options.command }) + "\n");
+  writeErr(t("cli.unknownCommand", { command: options.command }) + "\n");
   return EXIT_USAGE;
 }
 
@@ -1123,14 +1177,14 @@ if (invokedDirectly) {
   main(argv).then(
     (code) => {
       if (interrupted) {
-        process.stderr.write(createTranslator(resolveUiLocale(resolveLang(argv)))("cli.cancelled") + "\n");
+        writeErr(createTranslator(resolveUiLocale(resolveLang(argv)))("cli.cancelled") + "\n");
         process.exitCode = EXIT_CANCELLED;
         return;
       }
       process.exitCode = code;
     },
     (error: unknown) => {
-      process.stderr.write((error instanceof Error ? error.stack ?? error.message : String(error)) + "\n");
+      writeErr((error instanceof Error ? error.stack ?? error.message : String(error)) + "\n");
       process.exitCode = EXIT_USAGE;
     },
   );

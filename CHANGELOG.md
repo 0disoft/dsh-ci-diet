@@ -19,6 +19,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
+- The CLI accepts an injected process boundary (`executeCli(argv, context)`):
+  cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
+  and `--state-dir` paths now resolve against the effective working directory,
+  and `scan` stamps the report with the injected clock. Production behavior is
+  unchanged because the defaults are the real process.
 - Writer serialization uses a claim directory plus a lease. A stale claim left
   by a dead process is recovered; a live owner's lease path is never moved, and
   a takeover re-checks ownership under the claim.
