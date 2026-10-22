@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import type { Context } from "@deepseek-ai/cordis";
+import type { Context, Volatile } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { DEFAULT_CONFIG } from "../../core/data/default-config.ts";
@@ -29,19 +29,23 @@ export const name = "ci-diet";
 export const inject = ["tools"];
 
 export interface Config {
-  networkEnabled: boolean;
+  /** Live setting: the DSH Plugins page edits this reference without reloading the plugin. */
+  networkEnabled: Volatile<boolean>;
+  /** Reserved for applying plans from the Web UI; not a live setting yet. */
   localApplyEnabled: boolean;
-  stateDir: string;
+  /** Live setting: the next tool call reads the new reference value. */
+  stateDir: Volatile<string>;
 }
 
-export const Config: Schema<Config> = Schema.object({
-  networkEnabled: Schema.boolean().default(false),
+export const Config = Schema.object({
+  networkEnabled: Schema.boolean().default(false).volatile(),
   localApplyEnabled: Schema.boolean().default(false),
-  stateDir: Schema.string().default(""),
+  stateDir: Schema.string().default("").volatile(),
 });
 
 function stateDirOf(config: Config): string {
-  return config.stateDir === "" ? defaultStateDir() : config.stateDir;
+  const stateDir = config.stateDir.get();
+  return stateDir === "" ? defaultStateDir() : stateDir;
 }
 
 /** True when history collection stopped early; the model must not treat the window as complete. */
@@ -209,7 +213,7 @@ export function apply(ctx: Context, config: Config) {
     },
     async execute(args, exec) {
       exec.signal.throwIfAborted();
-      if (!config.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
+      if (!config.networkEnabled.get()) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
       const root = args.cwd ?? process.cwd();
       const discovery = discoverWorkflows(root, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
       const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));

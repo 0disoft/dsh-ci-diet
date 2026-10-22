@@ -15,11 +15,16 @@ The DSH package declares `dsh.bundle.patch`, so installing it adds one loader
 entry, `ciDiet.bootstrap`, with both switches off by default. Nothing runs at
 boot until you enable a switch.
 
+`networkEnabled` and `stateDir` are live settings. Edit them in the DSH Plugins
+page under the `ciDiet.bootstrap` entry; the next tool call reads the new value
+without reloading the plugin. `localApplyEnabled` stays an ordinary field until
+the plugin ships an apply tool, so it is not offered as a setting.
+
 | Config key | Default | Effect |
 | --- | --- | --- |
-| `networkEnabled` | `false` | Allows `ci_diet_sync` to call the read-only GitHub API |
+| `networkEnabled` | `false` | Allows `ci_diet_sync` to call the read-only GitHub API; live setting |
 | `localApplyEnabled` | `false` | Reserved for applying plans from the Web UI |
-| `stateDir` | empty | Overrides the per-user state directory |
+| `stateDir` | empty | Overrides the per-user state directory; live setting |
 
 ## Languages
 

@@ -19,6 +19,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
+- The DSH plugin marks `networkEnabled` and `stateDir` as live settings. The
+  Plugins page can edit them without reloading the plugin, and every tool call
+  reads the current value. `localApplyEnabled` remains an ordinary reserved
+  field until an apply tool exists.
 - The CLI accepts an injected process boundary (`executeCli(argv, context)`):
   cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
   and `--state-dir` paths resolve against the effective working directory,

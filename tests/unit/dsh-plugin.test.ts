@@ -4,13 +4,24 @@ import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { apply, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
+import { Config, apply, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
 
 interface Registered {
   readonly name: string;
   readonly description: string;
   readonly parameters: Record<string, { description?: string }>;
   execute(args: Record<string, unknown>, exec: { signal: AbortSignal }): Promise<unknown>;
+}
+
+/** A mutable stand-in for the stable reference the DSH settings service updates. */
+function live<T>(initial: T) {
+  let current = initial;
+  return {
+    get: () => current,
+    set(next: T) {
+      current = next;
+    },
+  };
 }
 
 function harness(config: { networkEnabled?: boolean; stateDir?: string } = {}) {
@@ -23,9 +34,10 @@ function harness(config: { networkEnabled?: boolean; stateDir?: string } = {}) {
       },
     },
   };
-  const stateDir = config.stateDir ?? join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-")), "state");
-  apply(ctx as never, { networkEnabled: config.networkEnabled ?? false, localApplyEnabled: false, stateDir } as never);
-  return { tools, stateDir };
+  const stateDir = live(config.stateDir ?? join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-")), "state"));
+  const networkEnabled = live(config.networkEnabled ?? false);
+  apply(ctx as never, { networkEnabled, localApplyEnabled: false, stateDir } as never);
+  return { tools, stateDir: stateDir.get(), stateDirRef: stateDir, networkEnabled };
 }
 
 const WORKFLOW = [
@@ -51,6 +63,40 @@ function workspace(): string {
 test("registers the four model-facing tools", () => {
   const { tools } = harness();
   assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
+});
+
+test("exposes the implemented switches as live settings", () => {
+  const fields = (Config as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict;
+  assert.equal(fields.networkEnabled?.meta?.volatile, true);
+  assert.equal(fields.stateDir?.meta?.volatile, true);
+  assert.notEqual(fields.localApplyEnabled?.meta?.volatile, true);
+});
+
+test("reads live settings on every tool call", async () => {
+  const { tools, stateDirRef, networkEnabled } = harness();
+  const root = workspace();
+  await tools.get("ci_diet_scan")!.execute({ cwd: root }, { signal: new AbortController().signal });
+
+  const first = stateDirRef.get();
+  stateDirRef.set(join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-live-")), "state"));
+  await assert.rejects(
+    () => tools.get("ci_diet_report")!.execute({}, { signal: new AbortController().signal }),
+    /no report stored yet/,
+  );
+
+  stateDirRef.set(first);
+  const report = (await tools.get("ci_diet_report")!.execute({}, { signal: new AbortController().signal })) as { findings: unknown[] };
+  assert.equal(report.findings.length, 1);
+
+  await assert.rejects(
+    () => tools.get("ci_diet_sync")!.execute({ cwd: root, repo: "not-a-repo" }, { signal: new AbortController().signal }),
+    /networkEnabled/,
+  );
+  networkEnabled.set(true);
+  await assert.rejects(
+    () => tools.get("ci_diet_sync")!.execute({ cwd: root, repo: "not-a-repo" }, { signal: new AbortController().signal }),
+    /invalid repository/,
+  );
 });
 
 test("localizes tool and parameter descriptions from the DSH preference", () => {
