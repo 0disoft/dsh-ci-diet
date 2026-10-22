@@ -130,6 +130,7 @@ export function appliedBackupConfirmToken(candidates: readonly AppliedBackupCand
 }
 
 const DAY_MS = 86_400_000;
+const USAGE_SNAPSHOT_TTL_MS = 1000;
 
 /** Corrupt local state stays on disk for review and must not be treated as absent. */
 export class StoreCorruptionError extends Error {
@@ -177,6 +178,8 @@ function deepBytes(path: string): number {
 export class PatchStore {
   readonly root: string;
   private readonly limits: StorageLimits | null;
+  /** Cached store size for this instance; adjusted by its own writes and rescanned when old. */
+  private usageSnapshot: { bytes: number; files: number; observedAt: number } | null = null;
 
   constructor(root: string, limits: StorageLimits | null = null) {
     this.root = root;
@@ -235,7 +238,10 @@ export class PatchStore {
   }
 
   private writeTextUnlocked(path: string, text: string): void {
-    this.ensureCapacity(Buffer.byteLength(text, "utf8"));
+    const newBytes = Buffer.byteLength(text, "utf8");
+    const existed = existsSync(path);
+    const previousBytes = existed ? entryBytes(path) : 0;
+    this.ensureCapacity(newBytes);
     this.ensureDirectory(dirname(path));
     const temporary = path + ".tmp-" + process.pid + "-" + Math.random().toString(16).slice(2);
     try {
@@ -254,6 +260,8 @@ export class PatchStore {
         closeSync(handle);
       }
       renameSync(temporary, path);
+      // The rename landed: book the exact delta. A failure above changes nothing.
+      this.adjustUsage(newBytes - previousBytes, existed ? 0 : 1);
     } catch (error) {
       rmSync(temporary, { force: true });
       throw error;
@@ -435,6 +443,7 @@ export class PatchStore {
     const nonce = this.readNonce(planId);
     if (nonce === null || nonce.nonceId !== nonceId) return false;
     rmSync(this.path("plans", requireId(planId, "planId") + ".nonce.json"), { force: true });
+    this.invalidateUsage();
     return true;
   }
 
@@ -467,7 +476,10 @@ export class PatchStore {
       } catch (error) {
         // Only remove a directory this call created: a pre-existing backup may be
         // the only copy of the user's bytes.
-        if (!existed) rmSync(directory, { recursive: true, force: true });
+        if (!existed) {
+          rmSync(directory, { recursive: true, force: true });
+          this.invalidateUsage();
+        }
         throw error;
       }
     });
@@ -476,6 +488,7 @@ export class PatchStore {
   /** Removes a backup that no journal record can reference. */
   removeBackup(changeId: string): void {
     rmSync(this.path("backups", requireId(changeId, "changeId")), { recursive: true, force: true });
+    this.invalidateUsage();
   }
 
   readBackup(changeId: string): StoredBackup | null {
@@ -548,10 +561,13 @@ export class PatchStore {
     // the quota check and both append past the limit.
     withStoreWriteLock(this, () => {
       const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
-      this.ensureCapacity(Buffer.byteLength(line, "utf8"));
+      const lineBytes = Buffer.byteLength(line, "utf8");
+      this.ensureCapacity(lineBytes);
       const path = this.path("events", "events.jsonl");
+      const existed = existsSync(path);
       this.ensureDirectory(dirname(path));
       writeFileSync(path, line, { encoding: "utf8", flag: "a", mode: 0o600 });
+      this.adjustUsage(lineBytes, existed ? 0 : 1);
       if (process.platform !== "win32") {
         // The log is appended to, so an older 0644 file is repaired in place.
         try {
@@ -667,6 +683,7 @@ export class PatchStore {
       }
     }
 
+    this.invalidateUsage();
     return { removedReports, removedPlans, removedCacheEntries, bytesFreed };
   }
 
@@ -733,6 +750,7 @@ export class PatchStore {
         removedBackups += 1;
         bytesFreed += candidate.bytes;
       }
+      this.invalidateUsage();
       return { removedBackups, bytesFreed };
     });
   }
@@ -763,20 +781,53 @@ export class PatchStore {
     if (bytes + additionalBytes > limit) throw new StoreQuotaError(bytes, limit, additionalBytes);
   }
 
+  /**
+   * Store size for quota decisions. A full scan is O(files), so this instance
+   * keeps a snapshot adjusted by its own successful writes and deletes, and
+   * rescans when it has none or the snapshot is older than one second. The
+   * snapshot therefore cannot see another process's changes for up to
+   * USAGE_SNAPSHOT_TTL_MS; ensureCapacity re-reads at that bound.
+   * Files in the top-level locks directory are transient claim/log state and
+   * are excluded, because a scan can run while this or another process holds
+   * the write claim (otherwise the token would be counted and never removed).
+   */
   usage(): { bytes: number; files: number } {
+    const snapshot = this.usageSnapshot;
+    if (snapshot !== null && Date.now() - snapshot.observedAt <= USAGE_SNAPSHOT_TTL_MS) {
+      return { bytes: snapshot.bytes, files: snapshot.files };
+    }
+    const scanned = this.scanUsage();
+    this.usageSnapshot = { bytes: scanned.bytes, files: scanned.files, observedAt: Date.now() };
+    return scanned;
+  }
+
+  private scanUsage(): { bytes: number; files: number } {
     let bytes = 0;
     let files = 0;
-    const visit = (directory: string): void => {
+    const visit = (directory: string, topLevel: boolean): void => {
       for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (topLevel && entry.isDirectory() && entry.name === "locks") continue;
         const full = join(directory, entry.name);
-        if (entry.isDirectory()) visit(full);
+        if (entry.isDirectory()) visit(full, false);
         else if (entry.isFile()) {
           bytes += statSync(full).size;
           files += 1;
         }
       }
     };
-    visit(this.root);
+    visit(this.root, true);
     return { bytes, files };
+  }
+
+  /** Book a write or delete that already landed; failure paths must not call this. */
+  private adjustUsage(bytesDelta: number, filesDelta: number): void {
+    const snapshot = this.usageSnapshot;
+    if (snapshot === null) return;
+    snapshot.bytes = Math.max(0, snapshot.bytes + bytesDelta);
+    snapshot.files = Math.max(0, snapshot.files + filesDelta);
+  }
+
+  private invalidateUsage(): void {
+    this.usageSnapshot = null;
   }
 }

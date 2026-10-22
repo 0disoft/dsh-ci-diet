@@ -122,9 +122,12 @@ test("reports a warning near the quota and a block once usage reaches it", () =>
     assert.ok(warning.percent >= 80, String(warning.percent));
     mkdirSync(join(store.root, "cache"), { recursive: true });
     writeFileSync(join(store.root, "cache", "filler.bin"), Buffer.alloc(22000));
-    const blocked = store.storageStatus();
+    // The usage snapshot is per instance and is only rescanned on open or after
+    // one second, so a fresh instance is what observes files written out of band.
+    const reopened = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: 22000 }));
+    const blocked = reopened.storageStatus();
     assert.equal(blocked.blocked, true);
-    assert.throws(() => store.ensureCapacity(1), StoreQuotaError);
+    assert.throws(() => reopened.ensureCapacity(1), StoreQuotaError);
   });
 });
 
