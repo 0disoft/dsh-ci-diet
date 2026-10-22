@@ -600,6 +600,24 @@ test("a writer claim blocks a second writer while the lease path is free", async
   assert.equal(result.state, "applied");
 });
 
+test("CD008 eligibility rejects a release artifact purpose", () => {
+  const release = evaluatePatchEligibility({
+    rule: "CD008",
+    finding: finding({}),
+    coverage: coverage(),
+    claims: claimsFromTokens(["artifact-purpose:release", "consumer-min-days:7"]),
+    history: history(),
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+    now: NOW,
+  });
+  assert.equal(release.allowed, false);
+  assert.ok(release.reasons.includes("CLAIM_ARTIFACT_PURPOSE_NOT_TEMPORARY"));
+  assert.ok(release.remainingBlockers.includes("ARTIFACT_PURPOSE_UNATTESTED"));
+  assert.equal(attestationSatisfiesRule("CD008", claimsFromTokens(["artifact-purpose:release", "consumer-min-days:7"])), false);
+  assert.equal(attestationSatisfiesRule("CD008", claimsFromTokens(["artifact-purpose:temporary", "consumer-min-days:7"])), true);
+});
+
 test("CD008 eligibility needs an attested purpose and a consumer floor", () => {
   const unknownPurpose = evaluatePatchEligibility({
     rule: "CD008",

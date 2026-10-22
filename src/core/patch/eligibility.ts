@@ -96,7 +96,9 @@ export function evaluatePatchEligibility(input: PatchEligibilityInput): PatchEli
     const lift = lifts[blocker];
     if (lift === "ci-only" && input.claims.ciOnly) continue;
     if (lift === "replace-safe" && input.claims.replaceSafe) continue;
-    if (blocker === "ARTIFACT_PURPOSE_UNATTESTED" && input.claims.artifactPurpose !== "unknown") continue;
+    // rules.md:189 allows retention edits only for a temporary artifact, so a
+    // release upload never clears this blocker.
+    if (blocker === "ARTIFACT_PURPOSE_UNATTESTED" && input.claims.artifactPurpose === "temporary") continue;
     remaining.push(blocker);
   }
   for (const blocker of remaining) reasons.push(blocker);
@@ -107,6 +109,7 @@ export function evaluatePatchEligibility(input: PatchEligibilityInput): PatchEli
     if (!policyFresh(input.history?.protection?.fetchedAt ?? null, input.now)) reasons.push("POLICY_STALE");
   } else if (input.rule === "CD008") {
     if (input.claims.artifactPurpose === "unknown") reasons.push("CLAIM_ARTIFACT_PURPOSE_UNKNOWN");
+    else if (input.claims.artifactPurpose !== "temporary") reasons.push("CLAIM_ARTIFACT_PURPOSE_NOT_TEMPORARY");
     const consumerDays = input.claims.consumerMinDays;
     if (consumerDays === null || !Number.isSafeInteger(consumerDays) || consumerDays < 1 || consumerDays > PROPOSED_RETENTION_DAYS) {
       reasons.push("CLAIM_CONSUMER_DAYS_INVALID");
@@ -152,7 +155,7 @@ export function attestationSatisfiesRule(rule: PatchRule, claims: Claims): boole
   if (rule === "CD001") return claims.ciOnly && claims.replaceSafe;
   if (rule === "CD008") {
     const days = claims.consumerMinDays;
-    return claims.artifactPurpose !== "unknown"
+    return claims.artifactPurpose === "temporary"
       && days !== null
       && Number.isSafeInteger(days)
       && days >= 1
