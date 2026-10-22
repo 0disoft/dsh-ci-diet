@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
+import { findingFingerprint } from "../../src/core/analysis/fingerprint.ts";
 import { claimsFromTokens, evaluatePatchEligibility } from "../../src/core/patch/eligibility.ts";
+import { targetReasons } from "../../src/core/patch/target.ts";
+import { cd005Recommendations } from "../../src/core/rules/cd005.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { evaluateRules } from "../../src/core/rules/index.ts";
 import { parseWorkflow } from "../../src/core/workflow/index.ts";
@@ -323,6 +326,31 @@ function twentyJobs(runId: string): HistoryJob[] {
   return jobs;
 }
 
+const MATRIX_WORKFLOW = [
+  "name: pr",
+  "on:",
+  "  pull_request:",
+  "jobs:",
+  "  test:",
+  "    runs-on: ubuntu-latest",
+  "    strategy:",
+  "      matrix:",
+  "        os: [ubuntu-latest, windows-2022]",
+  "    steps:",
+  "      - run: echo hi",
+  "",
+].join("\n");
+
+/** Twenty fast Linux legs and twenty slow Windows legs of the same job. */
+function matrixJobs(runId: string): HistoryJob[] {
+  const jobs: HistoryJob[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    jobs.push({ ...job("f" + index, runId, "2026-10-19T00:00:00.000Z", (10 + index) * 1000), name: "test (ubuntu-latest)" });
+    jobs.push({ ...job("w" + index, runId, "2026-10-19T00:00:00.000Z", (600 + index) * 1000), name: "test (windows-2022)", labels: ["windows-2022"] });
+  }
+  return jobs;
+}
+
 test("CD005 keeps an equal or smaller literal timeout", () => {
   for (const minutes of [5, 6]) {
     const parsed = definition(TIMEOUT_WORKFLOW(minutes));
@@ -361,6 +389,41 @@ test("CD005 ignores a cohort whose definition hash is not the scanned file", () 
   const evaluation = rule(evaluateRules({ ...context(history), workflows: [edited] }, ["CD005"]), "CD005");
   assert.equal(evaluation.findings.length, 0);
   assert.equal(evaluation.results[0]?.outcome, "no_finding");
+});
+
+test("CD005 aggregates matrix legs into one job-wide recommendation", () => {
+  const parsed = definition(MATRIX_WORKFLOW);
+  const history = bundle([run("520", { jobs: matrixJobs("520"), definition: parsed })]);
+  const evaluation = rule(evaluateRules(context(history), ["CD005"]), "CD005");
+  assert.equal(evaluation.findings.length, 1);
+  const finding = evaluation.findings[0];
+  assert.ok(finding);
+  assert.equal(finding.patchability, "eligible");
+  assert.match(finding.title, /p95 is 618\.0 s/);
+  assert.match(finding.renderedText, /across 2 matrix\/runner cohorts with a slowest-cohort nearest-rank p95 of 618\.0 s/);
+  const matrixIdentity = [JSON.stringify({ os: "ubuntu-latest" }), JSON.stringify({ os: "windows-2022" })];
+  assert.equal(finding.fingerprint, findingFingerprint({
+    ruleId: "CD005",
+    ruleVersion: finding.ruleVersion,
+    workflowPath: ".github/workflows/pr.yml",
+    workflowHash: parsed.sha256,
+    identity: {
+      workflowPath: ".github/workflows/pr.yml",
+      workflowHash: parsed.sha256,
+      jobKey: "test",
+      runnerKey: "ubuntu-latest+windows-2022",
+      event: "pull_request",
+      sampleCount: 40,
+      matrix: matrixIdentity,
+    },
+  }));
+  const evidence = cd005Recommendations(history, ".github/workflows/pr.yml", parsed.sha256, "test");
+  assert.deepEqual(evidence.map((entry) => entry.recommendedMinutes), [21]);
+  assert.equal(evidence[0]?.sampleCount, 40);
+  const request = { rule: "CD005" as const, jobKey: "test", stepIndex: null, retentionDays: 7 };
+  const input = { finding, history, workflowText: MATRIX_WORKFLOW, workflow: parsed };
+  assert.deepEqual(targetReasons({ ...input, request: { ...request, minutes: 21 } }), []);
+  assert.ok(targetReasons({ ...input, request: { ...request, minutes: 6 } }).includes("MINUTES_NOT_FROM_EVIDENCE"));
 });
 
 test("CD008 treats retention-days: 0 as the repository default", () => {

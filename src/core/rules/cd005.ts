@@ -31,6 +31,7 @@ interface Cohort {
   readonly jobKey: string;
   readonly runnerKey: string;
   readonly event: string;
+  readonly matrixKey: string;
   readonly samples: Sample[];
 }
 
@@ -38,6 +39,25 @@ interface JobState {
   readonly timeoutMinutes: number | null;
   readonly timeoutPresent: boolean;
   readonly risky: boolean;
+}
+
+/** All cohorts of one job: a matrix or runner split must not be judged by its fastest leg. */
+interface JobCohorts {
+  readonly workflowPath: string;
+  readonly workflowHash: string;
+  readonly jobKey: string;
+  readonly cohorts: Cohort[];
+}
+
+interface JobAggregate {
+  readonly qualifying: Cohort[];
+  readonly totalSamples: number;
+  readonly p95Seconds: number;
+  readonly recommendedMinutes: number;
+  readonly cohortReady: boolean;
+  readonly runnerKey: string;
+  readonly event: string;
+  readonly matrixKeys: string[];
 }
 
 export function recommendedMinutes(p95Seconds: number): number {
@@ -81,6 +101,7 @@ function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
           jobKey: match.key,
           runnerKey,
           event: run.event,
+          matrixKey,
           samples: [sample],
         });
       } else {
@@ -89,6 +110,75 @@ function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
     }
   }
   return cohorts;
+}
+
+function uniqueJoined(values: readonly string[], separator: string): string {
+  return [...new Set(values)].sort().join(separator);
+}
+
+/** Group cohorts by workflow definition and job key; matrix and runner legs stay distinct cohorts. */
+function groupByJob(cohorts: Iterable<Cohort>): Map<string, JobCohorts> {
+  const groups = new Map<string, JobCohorts>();
+  for (const cohort of cohorts) {
+    const key = cohort.workflowPath + "|" + cohort.workflowHash + "|" + cohort.jobKey;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, {
+        workflowPath: cohort.workflowPath,
+        workflowHash: cohort.workflowHash,
+        jobKey: cohort.jobKey,
+        cohorts: [cohort],
+      });
+    } else {
+      existing.cohorts.push(cohort);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Aggregate every cohort of one job into the single recommendation a plan may
+ * write. Any measured leg (a matrix axis or runner split) that runs slower
+ * raises the recommendation for the whole job; a leg with too few samples
+ * makes the job review-only instead of being silently ignored.
+ */
+function aggregateJob(group: JobCohorts): JobAggregate | null {
+  const measured: { readonly cohort: Cohort; readonly p95: number; readonly minutes: number }[] = [];
+  for (const cohort of group.cohorts) {
+    if (cohort.samples.length < CD005_CANDIDATE_COHORT) continue;
+    const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
+    if (p95 === null) continue;
+    measured.push({ cohort, p95, minutes: recommendedMinutes(p95) });
+  }
+  if (measured.length === 0) return null;
+  let slowest = measured[0]!;
+  for (const entry of measured) {
+    if (entry.minutes > slowest.minutes || (entry.minutes === slowest.minutes && entry.p95 > slowest.p95)) slowest = entry;
+  }
+  const totalSamples = group.cohorts.reduce((total, cohort) => total + cohort.samples.length, 0);
+  const cohortReady = group.cohorts.every((cohort) => cohort.samples.length >= CD005_MIN_COHORT);
+  const matrixKeys = [...new Set(group.cohorts.map((cohort) => cohort.matrixKey))].sort();
+  return {
+    qualifying: measured.map((entry) => entry.cohort),
+    totalSamples,
+    p95Seconds: slowest.p95,
+    recommendedMinutes: slowest.minutes,
+    cohortReady,
+    runnerKey: uniqueJoined(group.cohorts.map((cohort) => cohort.runnerKey), "+"),
+    event: uniqueJoined(group.cohorts.map((cohort) => cohort.event), "+"),
+    matrixKeys,
+  };
+}
+
+function sampleRefs(cohorts: readonly Cohort[], limit: number): string[] {
+  const refs: string[] = [];
+  for (const cohort of cohorts) {
+    for (const sample of cohort.samples) {
+      if (refs.length >= limit) return refs;
+      refs.push("run:" + sample.runId + "#job:" + sample.jobId);
+    }
+  }
+  return refs;
 }
 
 /**
@@ -103,19 +193,18 @@ export function cd005Recommendations(
   jobKey: string,
 ): Cd005Evidence[] {
   const out: Cd005Evidence[] = [];
-  for (const cohort of collectCohorts(history).values()) {
-    if (cohort.workflowPath !== workflowPath) continue;
-    if (cohort.workflowHash !== workflowHash) continue;
-    if (cohort.jobKey !== jobKey) continue;
-    if (cohort.samples.length < CD005_CANDIDATE_COHORT) continue;
-    const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
-    if (p95 === null) continue;
+  for (const group of groupByJob(collectCohorts(history).values()).values()) {
+    if (group.workflowPath !== workflowPath) continue;
+    if (group.workflowHash !== workflowHash) continue;
+    if (group.jobKey !== jobKey) continue;
+    const aggregate = aggregateJob(group);
+    if (aggregate === null) continue;
     out.push({
-      sampleCount: cohort.samples.length,
-      p95Seconds: p95,
-      recommendedMinutes: recommendedMinutes(p95),
-      runnerKey: cohort.runnerKey,
-      event: cohort.event,
+      sampleCount: aggregate.totalSamples,
+      p95Seconds: aggregate.p95Seconds,
+      recommendedMinutes: aggregate.recommendedMinutes,
+      runnerKey: aggregate.runnerKey,
+      event: aggregate.event,
     });
   }
   return out;
@@ -132,21 +221,21 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
   const cohorts = collectCohorts(context.history);
 
   const findings: Finding[] = [];
-  for (const cohort of cohorts.values()) {
-    const n = cohort.samples.length;
-    if (n < CD005_CANDIDATE_COHORT) continue;
-    const definition = definitionFor(context, cohort.workflowPath, cohort.workflowHash);
+  for (const group of groupByJob(cohorts.values()).values()) {
+    const aggregate = aggregateJob(group);
+    if (aggregate === null) continue;
+    const definition = definitionFor(context, group.workflowPath, group.workflowHash);
     if (definition === null) continue;
-    const job = definition.jobs.find((candidate) => candidate.key === cohort.jobKey);
+    const job = definition.jobs.find((candidate) => candidate.key === group.jobKey);
     if (job === undefined) continue;
     const state: JobState = {
       timeoutMinutes: job.timeoutMinutes,
       timeoutPresent: job.timeoutRange !== null,
       risky: jobLooksRisky(job),
     };
-    const p95 = nearestRankP95(cohort.samples.map((sample) => sample.seconds));
-    if (p95 === null) continue;
-    const recommendation = recommendedMinutes(p95);
+    const n = aggregate.totalSamples;
+    const p95 = aggregate.p95Seconds;
+    const recommendation = aggregate.recommendedMinutes;
     const existingMinutes = state.timeoutMinutes;
     // Never raise a literal: keep an equal or smaller value, and propose only a
     // reduction when the existing literal is above the recommendation. A literal
@@ -154,8 +243,9 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
     if (existingMinutes !== null && (existingMinutes < 1 || existingMinutes <= recommendation)) continue;
     const reductionMinutes = existingMinutes !== null ? existingMinutes : null;
 
-    const cohortReady = n >= CD005_MIN_COHORT;
-    const excess = cohort.samples.some((sample) => sample.seconds > recommendation * 60);
+    const cohortReady = aggregate.cohortReady;
+    const excess = group.cohorts.some((cohort) =>
+      cohort.samples.some((sample) => sample.seconds > recommendation * 60));
 
     const blockers: string[] = [];
     if (!cohortReady) blockers.push("COHORT_BELOW_20");
@@ -166,53 +256,61 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
     const writeComposition = composeCoverage(context.coverage, RULE_ID, { editedJobEvidenceComplete: cohortReady });
     const eligible = cohortReady && blockers.length === 0 && writeComposition.writeAllowed && !state.timeoutPresent;
 
-    const sampleIds = cohort.samples.slice(0, 10).map((sample) => "run:" + sample.runId + "#job:" + sample.jobId);
+    const sampleIds = sampleRefs(group.cohorts, 10);
     const title =
       reductionMinutes !== null
-        ? "Job " + cohort.jobKey + " caps at " + reductionMinutes + " minutes; p95 is " + p95.toFixed(1) + " s"
+        ? "Job " + group.jobKey + " caps at " + reductionMinutes + " minutes; p95 is " + p95.toFixed(1) + " s"
         : state.timeoutPresent
-          ? "Job " + cohort.jobKey + " has an expression timeout; p95 is " + p95.toFixed(1) + " s"
-          : "Job " + cohort.jobKey + " has no timeout; p95 is " + p95.toFixed(1) + " s";
+          ? "Job " + group.jobKey + " has an expression timeout; p95 is " + p95.toFixed(1) + " s"
+          : "Job " + group.jobKey + " has no timeout; p95 is " + p95.toFixed(1) + " s";
     const proposal =
       reductionMinutes !== null
         ? "The existing timeout-minutes: " + reductionMinutes + " would be reduced to " + recommendation + " minutes."
         : state.timeoutPresent
           ? "The timeout is an expression, so CI Diet reports only and proposes no literal."
           : "A timeout of " + recommendation + " minutes is the proposal from ceil(max(2 * p95, p95 + 300) / 60).";
+    const evidencePhrase =
+      group.cohorts.length === 1
+        ? "ran successfully " + n + " times with a nearest-rank p95 of "
+        : "ran successfully " + n + " times across " + group.cohorts.length + " matrix/runner cohorts with a slowest-cohort nearest-rank p95 of ";
+    const cohortFacts =
+      group.cohorts.length === 1
+        ? "The cohort is definition " + group.workflowHash.slice(0, 19) + ", runner labels " + (aggregate.runnerKey === "" ? "(none)" : aggregate.runnerKey) + ", event " + aggregate.event + "."
+        : "The cohorts share definition " + group.workflowHash.slice(0, 19) + "; runner labels " + (aggregate.runnerKey === "" ? "(none)" : aggregate.runnerKey) +
+          ", matrix " + (aggregate.matrixKeys.join(" | ") === "" ? "(none)" : aggregate.matrixKeys.join(" | ")) + ", event " + aggregate.event + ".";
     findings.push(
       buildFinding({
         ruleId: RULE_ID,
         ruleVersion: RULE_VERSION,
-        workflowPath: cohort.workflowPath,
-        workflowHash: cohort.workflowHash,
+        workflowPath: group.workflowPath,
+        workflowHash: group.workflowHash,
         title,
         renderedText:
-          "Job " + cohort.jobKey + " on " + cohort.workflowPath + " ran successfully " + n + " times with a nearest-rank p95 of " +
-          p95.toFixed(1) + " s. " + proposal + " " +
-          "The cohort is definition " + cohort.workflowHash.slice(0, 19) + ", runner labels " + (cohort.runnerKey === "" ? "(none)" : cohort.runnerKey) + ", event " + cohort.event + ".",
-        // The localized titles in the catalogs describe an absent timeout, so a
-        // reduction or an expression timeout keeps the canonical English text.
-        ...(state.timeoutPresent
+          "Job " + group.jobKey + " on " + group.workflowPath + " " + evidencePhrase +
+          p95.toFixed(1) + " s. " + proposal + " " + cohortFacts,
+        // The localized text describes one cohort, so an aggregated job, a
+        // reduction, or an expression timeout keeps the canonical English text.
+        ...(state.timeoutPresent || group.cohorts.length > 1
           ? {}
           : {
               message: {
                 titleKey: "finding.CD005.title",
                 textKey: "finding.CD005.text",
                 params: {
-                  job: cohort.jobKey,
+                  job: group.jobKey,
                   p95: p95.toFixed(1),
-                  workflow: cohort.workflowPath,
+                  workflow: group.workflowPath,
                   samples: n,
                   minutes: recommendation,
-                  hash: cohort.workflowHash.slice(0, 19),
-                  runner: cohort.runnerKey === "" ? "(none)" : cohort.runnerKey,
-                  event: cohort.event,
+                  hash: group.workflowHash.slice(0, 19),
+                  runner: aggregate.runnerKey === "" ? "(none)" : aggregate.runnerKey,
+                  event: aggregate.event,
                 },
               },
             }),
         evidenceLevel: cohortReady ? "observed" : "inferred",
         patchability: eligible ? "eligible" : "review-only",
-        evidenceRefs: ["workflow:" + cohort.workflowPath + "#jobs." + cohort.jobKey + ".timeout-minutes", ...sampleIds],
+        evidenceRefs: ["workflow:" + group.workflowPath + "#jobs." + group.jobKey + ".timeout-minutes", ...sampleIds],
         assumptions: [
           "Only successful samples in the same workflow definition hash, job key, runner labels, matrix, and event share a cohort.",
           "Display names are mapped back to the YAML job key; unresolved jobs never seed a cohort.",
@@ -221,14 +319,15 @@ function evaluateCd005(context: RuleContext): RuleEvaluation {
         blockers,
         standaloneRunnerSeconds: cohortReady
           ? notApplicableSeconds("timeouts cap abnormal runs; normal runtime is unchanged")
-          : unknownSeconds("the cohort has fewer than 20 successful samples", "COHORT_BELOW_20"),
+          : unknownSeconds("a cohort of this job has fewer than 20 successful samples", "COHORT_BELOW_20"),
         identity: {
-          workflowPath: cohort.workflowPath,
-          workflowHash: cohort.workflowHash,
-          jobKey: cohort.jobKey,
-          runnerKey: cohort.runnerKey,
-          event: cohort.event,
+          workflowPath: group.workflowPath,
+          workflowHash: group.workflowHash,
+          jobKey: group.jobKey,
+          runnerKey: aggregate.runnerKey,
+          event: aggregate.event,
           sampleCount: n,
+          matrix: aggregate.matrixKeys.length === 1 && aggregate.matrixKeys[0] === "" ? null : aggregate.matrixKeys,
         },
       }),
     );
