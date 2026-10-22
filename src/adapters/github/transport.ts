@@ -180,7 +180,9 @@ function classify(status: number, headers: Readonly<Record<string, string>>, tex
     return new GitHubError("RATE_LIMITED", "GitHub primary rate limit exhausted" + suffix, 403, detail, retryAfterFromHeaders(headers));
   }
   if (status === 403) {
-    const retryAfter = retryAfterFromHeaders(headers);
+    // A reset header alone does not make this a secondary limit: a permission 403
+    // also carries the primary quota headers. Only Retry-After (or the body) proves it.
+    const retryAfter = parseRetryAfter(headers["retry-after"]);
     // Secondary limits arrive as 403 with Retry-After (or a descriptive body) while
     // the primary quota still has headroom, so they must not be reported as a token problem.
     if (retryAfter !== null || /secondary rate limit/i.test(text)) {

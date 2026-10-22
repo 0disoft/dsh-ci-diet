@@ -145,6 +145,10 @@ Keep a Changelog, and the project uses semantic versioning.
   clears the revision guard, so the reset cannot overwrite a change another
   screen saved first. Duplicate rule ids are canonicalized to one entry in
   contract order instead of failing the next tool call.
+- A permission 403 is no longer mistaken for a secondary rate limit just
+  because it carries a quota reset timestamp. Only `Retry-After` or the response
+  body marks a secondary limit, so an unreadable resource fails at once instead
+  of waiting for the rest of the primary quota window.
 - Degraded coverage no longer turns historical scenarios into known savings.
   CD001 keeps its candidate and `COVERAGE_DEGRADE` blocker, but reports the
   standalone seconds as unknown and emits no removal rows, so a partial history

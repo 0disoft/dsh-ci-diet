@@ -147,6 +147,9 @@ describe("gh transport", () => {
       [httpResponse(401, { message: "Bad credentials" }), "AUTH_REQUIRED"],
       [httpResponse(403, { message: "Forbidden" }), "PERMISSION_DENIED"],
       [httpResponse(403, { message: "API rate limit exceeded" }, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1700000000" }), "RATE_LIMITED"],
+      // A permission 403 keeps the primary quota headers; a reset timestamp alone
+      // must not turn it into a rate limit that waits (or fails) for hours.
+      [httpResponse(403, { message: "Resource not accessible" }, { "x-ratelimit-remaining": "4999", "x-ratelimit-reset": "4102444800" }), "PERMISSION_DENIED"],
       [httpResponse(404, { message: "Not Found" }), "NOT_FOUND"],
     ];
     for (const [stdout, expected] of cases) {
