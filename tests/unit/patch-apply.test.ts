@@ -797,6 +797,32 @@ test("a reverted change cannot be applied again with the stale approval", async 
   assert.equal(fixture.store.readChange(applied.change!.changeId)?.state, "REVERTED");
 });
 
+test("a conflicted approval cannot be replayed after the bytes are restored", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  t.mock.method(fixture.store, "consumeNonce", () => {
+    throw new Error("injected nonce cleanup failure");
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  writeFileSync(fixture.file, readFileSync(fixture.file, "utf8") + "# local edit\n", "utf8");
+  assert.equal((await revertChange({ store: fixture.store, changeId, now: fixture.now })).state, "CONFLICT");
+  // Restoring the pre-apply bytes does not revive the spent approval.
+  writeFileSync(fixture.file, fixture.text, "utf8");
+  const replay = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(replay.state, "not_applied");
+  assert.deepEqual(replay.reasons, ["NONCE_INVALID"]);
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.equal(fixture.store.readChange(changeId)?.state, "CONFLICT");
+});
 test("a conflicted revert converges once the original bytes are restored", async (t) => {
   const fixture = setup();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));

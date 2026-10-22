@@ -333,7 +333,8 @@ function journalBlocksApply(store: PatchStore, planId: string): boolean {
   const change = changeForPlan(store, planId);
   if (change === null) return false;
   return change.state === "APPLIED" || change.state === "APPLYING"
-    || change.state === "REVERTING" || change.state === "REVERTED";
+    || change.state === "REVERTING" || change.state === "REVERTED"
+    || change.state === "CONFLICT" || change.state === "RECOVERY_REQUIRED";
 }
 
 function readTargetHash(target: string): string | null {

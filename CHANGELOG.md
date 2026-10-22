@@ -31,7 +31,9 @@ Keep a Changelog, and the project uses semantic versioning.
   share a hash. Local action directories are capped by file count and bytes.
 - One approval authorizes one transaction. The journal, not the nonce, blocks a
   second apply after APPLIED, APPLYING, REVERTING, or REVERTED, including a
-  crash between a confirmed replacement and nonce cleanup.
+  crash between a confirmed replacement and nonce cleanup, and a change left in
+  CONFLICT or RECOVERY_REQUIRED cannot be replayed even after its workflow bytes
+  are restored by hand.
 
 ### Changed
 
