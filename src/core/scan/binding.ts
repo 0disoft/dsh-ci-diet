@@ -29,15 +29,54 @@ export function parseGithubRemote(url: string): GithubRemote | null {
   return null;
 }
 
-export function readGithubRemote(workspaceRoot: string): GithubRemote | null {
+export interface CommandResult {
+  readonly stdout: string;
+  readonly stderr?: string;
+}
+
+export interface CommandRunOptions {
+  readonly cwd: string;
+  readonly timeoutMs: number;
+  readonly signal?: AbortSignal;
+}
+
+/** Seam over local command execution so tests can inject git output or failure. */
+export interface CommandRunner {
+  run(argv: readonly string[], options: CommandRunOptions): CommandResult;
+}
+
+const DEFAULT_REMOTE_TIMEOUT_MS = 10_000;
+
+const defaultCommandRunner: CommandRunner = {
+  run(argv, options) {
+    return {
+      stdout: execFileSync("git", argv, {
+        cwd: options.cwd,
+        encoding: "utf8",
+        windowsHide: true,
+        timeout: options.timeoutMs,
+        stdio: ["ignore", "pipe", "ignore"],
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      }),
+    };
+  },
+};
+
+export interface ReadGithubRemoteOptions {
+  readonly commandRunner?: CommandRunner;
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+}
+
+export function readGithubRemote(workspaceRoot: string, options: ReadGithubRemoteOptions = {}): GithubRemote | null {
+  const runner = options.commandRunner ?? defaultCommandRunner;
   try {
-    const url = execFileSync("git", ["-C", workspaceRoot, "remote", "get-url", "origin"], {
-      encoding: "utf8",
-      windowsHide: true,
-      timeout: 10_000,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return parseGithubRemote(url);
+    const result = runner.run(["-C", workspaceRoot, "remote", "get-url", "origin"], {
+      cwd: workspaceRoot,
+      timeoutMs: options.timeoutMs ?? DEFAULT_REMOTE_TIMEOUT_MS,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    });
+    return parseGithubRemote(result.stdout.trim());
   } catch {
     return null;
   }
