@@ -23,6 +23,7 @@ interface LoadedBundle {
   readonly plugin: { readonly inject: readonly string[]; apply(ctx: unknown): void };
   readonly sections: SectionRegistration[];
   readonly registrations: { namespace: string; dictionaries: unknown }[];
+  readonly languages: { id: string; label: string; fallback: string }[];
 }
 
 function loadBundle(): LoadedBundle {
@@ -33,6 +34,7 @@ function loadBundle(): LoadedBundle {
   const entry = captured[0]!;
   const sections: SectionRegistration[] = [];
   const registrations: { namespace: string; dictionaries: unknown }[] = [];
+  const languages: { id: string; label: string; fallback: string }[] = [];
   const form = { getSnapshot: () => ({ status: "ready", writable: true }), subscribe: () => () => {}, mutate: async () => true, unset: async () => true };
   const plugin = entry.factory((id: string) => {
     if (id === "react") return { createElement: () => null, useState: () => [undefined, () => {}], useSyncExternalStore: () => ({ status: "loading", writable: false }) };
@@ -57,12 +59,19 @@ function loadBundle(): LoadedBundle {
         registrations.push({ namespace, dictionaries });
         return () => {};
       },
+      getLocale() {
+        return { locales: [{ id: "en" }, { id: "zh" }] };
+      },
+      addLanguage(language: { id: string; label: string; fallback: string }) {
+        languages.push(language);
+        return () => {};
+      },
     },
     configForms: { get: () => form },
     effect(run: () => unknown) { return run(); },
   };
   plugin.apply(ctx);
-  return { id: entry.id, plugin, sections, registrations };
+  return { id: entry.id, plugin, sections, registrations, languages };
 }
 
 test("the client bundle registers one settings section for the package", () => {
@@ -82,12 +91,14 @@ test("the client bundle registers one settings section for the package", () => {
   assert.equal(loaded.registrations.length, 1);
   assert.equal(loaded.registrations[0]!.namespace, NS);
   assert.equal(typeof loaded.sections[0]!.component, "function");
+  assert.deepEqual(loaded.languages.map((language) => language.id), ["ko", "hi", "es", "fr"]);
+  assert.ok(loaded.languages.every((language) => language.fallback === "en"));
 });
 
-test("all six dictionaries expose the same non-empty keys", () => {
+test("all six languages expose the same non-empty keys", () => {
   const expected = Object.keys(DICTIONARIES.en).sort();
   assert.ok(expected.length >= 40, "dictionary is unexpectedly small: " + expected.length);
-  for (const code of ["ko", "zh-Hans", "hi", "es", "fr"] as const) {
+  for (const code of ["ko", "zh", "zh-Hans", "hi", "es", "fr"] as const) {
     const dictionary = DICTIONARIES[code] as Record<string, string>;
     assert.deepEqual(Object.keys(dictionary).sort(), expected, code + " has a different key set");
     for (const [key, value] of Object.entries(dictionary)) {

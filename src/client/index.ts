@@ -1,7 +1,7 @@
 import * as React from "react";
 import { SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } from "./fields.ts";
 import type { SettingField } from "./fields.ts";
-import { DICTIONARIES, NS } from "./i18n.ts";
+import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 
 const FORM_NAMESPACE = "ciDiet.bootstrap";
 
@@ -286,9 +286,23 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
 
 interface ClientContext {
   readonly slots: { inject(name: string, register: () => unknown): unknown; register(options: Record<string, unknown>, component: unknown): unknown };
-  readonly locale?: { bind(namespace: string): Translate; register(namespace: string, dictionaries: unknown): () => void } | undefined;
+  readonly locale?: {
+    bind(namespace: string): Translate;
+    register(namespace: string, dictionaries: unknown): () => void;
+    getLocale?(): { readonly locales: readonly { readonly id: string }[] };
+    addLanguage?(language: { id: string; label: string; fallback: string }): () => void;
+  } | undefined;
   readonly configForms: { get(namespace: string): ConfigForm };
   effect?(run: () => unknown): unknown;
+}
+
+function registerLanguages(locale: ClientContext["locale"]): void {
+  if (locale === undefined || locale.addLanguage === undefined || locale.getLocale === undefined) return;
+  const known = new Set(locale.getLocale().locales.map((entry) => entry.id.toLowerCase()));
+  for (const language of CLIENT_LANGUAGES) {
+    if (known.has(language.id)) continue;
+    locale.addLanguage({ id: language.id, label: language.label, fallback: "en" });
+  }
 }
 
 const plugin = {
@@ -296,8 +310,12 @@ const plugin = {
   apply(ctx: ClientContext): void {
     const t = ctx.locale === undefined ? translateWith(EN) : ctx.locale.bind(NS);
     if (ctx.locale !== undefined && ctx.effect !== undefined) {
-      ctx.effect(() => ctx.locale!.register(NS, DICTIONARIES));
+      ctx.effect(() => {
+        const dispose = ctx.locale!.register(NS, DICTIONARIES);
+        return dispose;
+      });
     }
+    registerLanguages(ctx.locale);
     const register = () => ctx.slots.inject("settings.section", () => ctx.slots.register({
       name: "settings.section",
       id: "ci-diet",

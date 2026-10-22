@@ -339,13 +339,23 @@ const FR: Record<MessageKey, string> = {
   "field.billingAccountMinutesUsed": "Minutes utilisées ce cycle",
 };
 
+/** Simplified Chinese ships under the host id "zh" and the BCP 47 tag. */
 export const DICTIONARIES = {
   en: EN,
   ko: KO,
+  zh: ZH,
   "zh-Hans": ZH,
   hi: HI,
   es: ES,
   fr: FR,
 } as const;
+
+/** Languages a client may contribute when the host does not ship them. */
+export const CLIENT_LANGUAGES = [
+  { id: "ko", label: "한국어" },
+  { id: "hi", label: "हिन्दी" },
+  { id: "es", label: "Español" },
+  { id: "fr", label: "Français" },
+] as const;
 
 export type LocaleCode = keyof typeof DICTIONARIES;
