@@ -156,6 +156,9 @@ Keep a Changelog, and the project uses semantic versioning.
 - The release workflow builds workflow paths with the host separator, so the
   unit suite passes on Linux as well as Windows. The previously tagged 0.3.0
   was never published; 0.3.1 is its first public release.
+- A history sync deadline stays referenced until the collection finishes, so a
+  stalled child process cannot let the runtime exit before the timeout is
+  reported.
 - The Settings page now translates every visible field label. The state directory
   row and the six rule checkboxes fell back to raw dictionary keys because their
   entries were missing or named differently, which a live DSH check exposed; the

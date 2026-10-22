@@ -36,7 +36,6 @@ export function withDeadline(parent: AbortSignal | undefined, timeoutMs: number,
     expired = true;
     controller.abort(new DeadlineExceededError(operation, timeoutMs));
   }, timeoutMs);
-  if (typeof timer.unref === "function") timer.unref();
   let disposed = false;
   return {
     signal: controller.signal,
