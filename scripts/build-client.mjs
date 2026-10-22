@@ -12,7 +12,7 @@ const outDir = fileURLToPath(new URL("../client", import.meta.url));
 rmSync(buildDir, { recursive: true, force: true });
 execFileSync(process.execPath, [tsc, "-p", fileURLToPath(new URL("../tsconfig.client.json", import.meta.url))], { cwd: root, stdio: ["ignore", "inherit", "inherit"] });
 
-const moduleNames = ["fields", "i18n", "index"];
+const moduleNames = ["fields", "i18n", "styles", "index"];
 const modules = moduleNames.map((name) => {
   const code = readFileSync(fileURLToPath(new URL("../.client-build/" + name + ".js", import.meta.url)), "utf8");
   return ["  __define(" + JSON.stringify(name) + ", function (module, exports, require) {", code, "  });", ""].join("\n");

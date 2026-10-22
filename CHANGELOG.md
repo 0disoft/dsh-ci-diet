@@ -52,6 +52,12 @@ Keep a Changelog, and the project uses semantic versioning.
   reloading the plugin, and every tool call reads the current value.
   `localApplyEnabled` remains an ordinary reserved field until an apply tool
   exists and is not exposed.
+- The Settings page follows the host settings layout and resolves the same
+  `--dsw-alias-*` tokens as the built-in screens, so light and dark themes need
+  no fallback colors. The save bar sticks inside the scrollable settings body
+  instead of spanning the browser, keeps the last group reachable, and the
+  draft-discard action is named "Discard changes" instead of an ambiguous
+  reverse-change label.
 - The CLI accepts an injected process boundary (`executeCli(argv, context)`):
   cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
   and `--state-dir` paths resolve against the effective working directory,

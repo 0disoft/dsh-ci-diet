@@ -6,6 +6,7 @@ import test from "node:test";
 import vm from "node:vm";
 import { RULE_CHOICES, SETTINGS_FIELDS, collectSettingsEdits } from "../../src/client/fields.ts";
 import { DICTIONARIES, NS } from "../../src/client/i18n.ts";
+import { CSS_TEXT, STYLE_ATTRIBUTE, installStyles } from "../../src/client/styles.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
@@ -299,4 +300,47 @@ test("the draft batch keeps valid edits in field order and preserves switches", 
     { op: "set", path: ["historyMaxRuns"], value: 50 },
     { op: "set", path: ["billingIncludedMinutes"], value: 2000 },
   ]);
+});
+test("the section styles follow the host theme instead of a local palette", () => {
+  assert.match(CSS_TEXT, /\.ci-diet-actions \{[^}]*position: sticky/);
+  assert.match(CSS_TEXT, /settings-card-fill/);
+  assert.match(CSS_TEXT, /settings-card-stroke/);
+  assert.match(CSS_TEXT, /button-primary-fill/);
+  assert.match(CSS_TEXT, /label-primary-foreground/);
+  assert.match(CSS_TEXT, /border-l2/);
+  assert.equal(CSS_TEXT.includes("position: fixed"), false);
+  assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(CSS_TEXT), false, "the stylesheet must not carry fallback colours");
+});
+
+test("the stylesheet installs once and cleans up its own tag", () => {
+  const installed: { textContent: string; readonly attributes: Record<string, string>; removed: boolean; remove(): void; setAttribute(name: string, value: string): void } = {
+    textContent: "",
+    attributes: {},
+    removed: false,
+    remove() { this.removed = true; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+  };
+  let current: typeof installed | null = null;
+  const doc = {
+    head: { appendChild(node: typeof installed) { current = node; } },
+    querySelector() { return current; },
+    createElement() { return installed; },
+  };
+  const cleanup = installStyles(doc);
+  assert.equal(current, installed);
+  assert.equal(installed.textContent, CSS_TEXT);
+  assert.ok(STYLE_ATTRIBUTE in installed.attributes);
+  const secondCleanup = installStyles(doc);
+  assert.equal(installed.removed, false);
+  cleanup();
+  assert.equal(installed.removed, true);
+  secondCleanup();
+});
+
+test("the draft discard action is named as a discarding action in every language", () => {
+  assert.equal(DICTIONARIES.en["page.discard"], "Discard changes");
+  assert.equal(DICTIONARIES.ko["page.discard"], "변경 취소");
+  assert.notEqual(DICTIONARIES.ko["page.discard"], "되돌리기");
+  assert.equal(DICTIONARIES.zh["page.discard"], "放弃更改");
+  assert.equal(DICTIONARIES["zh-Hans"]["page.discard"], "放弃更改");
 });
