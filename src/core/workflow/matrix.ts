@@ -57,7 +57,8 @@ export function expandMatrix(
   matrix: MatrixPlan,
 ): Readonly<Record<string, CanonicalJsonValue>>[] | null {
   if (matrix.dynamic) return null;
-  let base: Record<string, CanonicalJsonValue>[] = [{}];
+  const includeOnly = matrix.axes.length === 0 && matrix.include.length > 0;
+  let base: Record<string, CanonicalJsonValue>[] = includeOnly ? [] : [{}];
   for (const axis of matrix.axes) {
     const next: Record<string, CanonicalJsonValue>[] = [];
     for (const prefix of base) {
@@ -88,21 +89,29 @@ export function expandMatrix(
         );
   const added: Record<string, CanonicalJsonValue>[] = [];
   for (const include of matrix.include) {
-    let merged = false;
-    for (const combination of combinations) {
-      const compatible = Object.entries(include).every(([key, value]) => {
-        const current = combination[key];
-        if (axisNames.has(key)) return current !== undefined && canonicalEqual(current, value);
-        return current === undefined || canonicalEqual(current, value);
-      });
-      if (!compatible) continue;
-      for (const [key, value] of Object.entries(include)) {
-        if (axisNames.has(key)) continue;
-        combination[key] = value;
+    // A matrix with no axes uses include as the row list, so entries stay
+    // separate even when they share keys; only axis products merge includes.
+    if (matrix.axes.length === 0) {
+      added.push({ ...include });
+    } else {
+      let merged = false;
+      for (const combination of combinations) {
+        const compatible = Object.entries(include).every(([key, value]) => {
+          const current = combination[key];
+          if (axisNames.has(key)) return current !== undefined && canonicalEqual(current, value);
+          // A non-axis key exists only because an earlier include added it; GitHub
+          // lets a later include overwrite such an added value.
+          return true;
+        });
+        if (!compatible) continue;
+        for (const [key, value] of Object.entries(include)) {
+          if (axisNames.has(key)) continue;
+          combination[key] = value;
+        }
+        merged = true;
       }
-      merged = true;
+      if (!merged) added.push({ ...include });
     }
-    if (!merged) added.push({ ...include });
     // The axis product is capped while it is built; an include list that keeps
     // adding new rows must hit the same cap instead of materializing unbounded
     // rows for downstream consumers.

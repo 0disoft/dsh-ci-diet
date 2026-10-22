@@ -67,7 +67,7 @@ test("include entries with no axis key merge into every row", () => {
   ]);
 });
 
-test("an include with a conflicting non-axis key becomes its own row", () => {
+test("a later include overwrites a non-axis value an earlier include added", () => {
   const expanded = expandMatrix(
     plan({
       axes: [{ name: "os", values: ["linux"] }],
@@ -75,10 +75,7 @@ test("an include with a conflicting non-axis key becomes its own row", () => {
     }),
   );
   assert.ok(expanded);
-  assert.deepEqual(expanded, [
-    { os: "linux", timeout: 5 },
-    { timeout: 6 },
-  ]);
+  assert.deepEqual(expanded, [{ os: "linux", timeout: 6 }]);
 });
 
 test("a later include never merges into a row an earlier include added", () => {
