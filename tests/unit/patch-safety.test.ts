@@ -344,6 +344,17 @@ test("leaves a retention-days value at or below the proposal untouched", () => {
   assert.equal(result.error?.code, "EDIT_NOT_APPLICABLE");
 });
 
+test("lowers a retention-days value of 0 because it is the repository default", () => {
+  const text = WORKFLOW.replace("retention-days: 90", "retention-days: 0");
+  const definition = parseWorkflow(PATH, text);
+  const result = planRetentionEdit(text, definition.jobs[0]!, definition.jobs[0]!.steps[1]!, 7);
+  assert.ok(result.edit);
+  assert.equal(result.edit.kind, "replaceScalar");
+  const applied = applyEdits(text, [result.edit]);
+  const reparsed = parseWorkflow(PATH, applied.text);
+  assert.equal(reparsed.jobs[0]!.steps[1]!.withEntries.find((entry) => entry.key === "retention-days")?.literal, "7");
+});
+
 test("checks policy freshness per rule instead of the newest policy", () => {
   const f = fixture("CD005");
   const staleProtection = f.policies.map((policy) =>

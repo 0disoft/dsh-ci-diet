@@ -167,7 +167,9 @@ export function planRetentionEdit(text: string, job: WorkflowJob, step: Workflow
     if (!Number.isSafeInteger(current) || current < 0) {
       return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "existing retention-days is not an integer" } };
     }
-    if (current <= days) {
+    // 0 means the repository default, which is normally far above the proposal,
+    // so it must be lowered like any larger literal (rules.md:195-199).
+    if (current >= 1 && current <= days) {
       return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "existing retention-days is already at or below the proposal" } };
     }
     return {
