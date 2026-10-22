@@ -1,11 +1,12 @@
 import * as React from "react";
-import { SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } from "./fields.ts";
+import { RULE_CHOICES, SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } from "./fields.ts";
+import type { SettingsDraftValue } from "./fields.ts";
 import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 
 const FORM_NAMESPACE = "ciDiet.bootstrap";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
-type Draft = Record<string, string | boolean>;
+type Draft = Record<string, SettingsDraftValue>;
 type Errors = Record<string, string>;
 
 interface FormSnapshot {
@@ -108,6 +109,30 @@ function switchControl(label: string, checked: boolean, disabled: boolean, onTog
   );
 }
 
+function rulesControl(
+  selected: readonly string[],
+  disabled: boolean,
+  labelFor: (id: string) => string,
+  onToggle: (id: string) => void,
+): unknown {
+  return React.createElement(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" } },
+    RULE_CHOICES.map((id) => React.createElement(
+      "label",
+      { key: id, style: { display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px" } },
+      React.createElement("input", {
+        type: "checkbox",
+        checked: selected.includes(id),
+        disabled,
+        onChange: () => onToggle(id),
+        "aria-label": labelFor(id),
+      }),
+      labelFor(id),
+    )),
+  );
+}
+
 function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
   const { form } = props;
   const t = props.t ?? translateWith(EN);
@@ -127,7 +152,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
 
   const disabled = !snapshot.writable || saving;
 
-  const edit = (key: string, value: string | boolean) => {
+  const edit = (key: string, value: SettingsDraftValue) => {
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
       const next = { ...current };
@@ -197,20 +222,26 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
       const raw = draft[field.key] !== undefined ? draft[field.key] : snapshot.value?.[field.key];
       const overridden = isOverridden(snapshot.user, field.key);
       const label = t("field." + field.key);
+      const selected = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
       const control = field.kind === "switch"
         ? switchControl(label, raw === true, disabled || readOnly, () => edit(field.key, raw !== true))
-        : React.createElement("input", {
-            id: "ci-diet-" + field.key,
-            type: field.kind === "number" ? "number" : "text",
-            value: raw === undefined || raw === null ? "" : String(raw),
-            min: field.min,
-            max: field.max,
-            step: field.kind === "number" ? 1 : undefined,
-            disabled: disabled || readOnly,
-            onChange: (event: { target: { value: string } }) => edit(field.key, event.target.value),
-            style: S.input,
-            "aria-label": label,
-          });
+        : field.kind === "rules"
+          ? rulesControl(selected, disabled || readOnly, (id) => t("field.rule" + id), (id) => {
+              const next = selected.includes(id) ? selected.filter((entry) => entry !== id) : [...selected, id];
+              edit(field.key, RULE_CHOICES.filter((entry) => next.includes(entry)));
+            })
+          : React.createElement("input", {
+              id: "ci-diet-" + field.key,
+              type: field.kind === "number" ? "number" : "text",
+              value: raw === undefined || raw === null ? "" : String(raw),
+              min: field.min,
+              max: field.max,
+              step: field.kind === "number" ? 1 : undefined,
+              disabled: disabled || readOnly,
+              onChange: (event: { target: { value: string } }) => edit(field.key, event.target.value),
+              style: S.input,
+              "aria-label": label,
+            });
       return React.createElement(
         "div",
         { key: field.key, style: S.row },

@@ -24,12 +24,15 @@ All engine fields are live: the next tool call reads the current value without
 reloading the plugin. The page validates numbers against the same contract the
 CLI uses, saves the batch atomically, and offers a per-field reset. A rejected
 write leaves the stored configuration unchanged. The CLI keeps its own
-`--config` file and flags; the page does not write them.
+`--config` file and flags; the page does not write them. The host schema itself
+enforces the contract bounds (lookback 1–30, concurrency 1–4, at least one
+analysis rule) while the form is written, so an out-of-contract save is refused
+before any tool reads it.
 
 | Group | Fields |
 | --- | --- |
 | Connection | `networkEnabled`, `stateDir` |
-| Analysis rules | `ruleCd001` … `ruleCd008`; at least one stays enabled |
+| Analysis rules | `rules` list (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD008`); at least one stays enabled |
 | History collection | `historyLookbackDays` (1–30), `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests` (1–4), `historyRequestTimeoutMs` |
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; 0 disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |

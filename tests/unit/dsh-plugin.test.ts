@@ -101,15 +101,22 @@ test("rejects an out-of-contract lookback and zero rules", () => {
     /history\/lookbackDays maximum must be <= 30/,
   );
   assert.throws(
-    () => engineSettingsOf({
-      ...defaultPluginSettings(),
-      ruleCd001: false,
-      ruleCd002: false,
-      ruleCd004: false,
-      ruleCd008: false,
-    }),
+    () => engineSettingsOf({ ...defaultPluginSettings(), rules: [] }),
     /at least one analysis rule/,
   );
+  assert.throws(() => engineSettingsOf({ ...defaultPluginSettings(), rules: ["CD999" as never] }), /unknown analysis rule: CD999/);
+  assert.throws(() => engineSettingsOf({ ...defaultPluginSettings(), rules: ["CD001", "CD001"] }), /listed twice: CD001/);
+});
+
+test("the host schema rejects an out-of-contract save before a tool call", () => {
+  const validate = Config as unknown as (input: Record<string, unknown>) => unknown;
+  assert.throws(() => validate({ rules: [] }), /rules/);
+  assert.throws(() => validate({ rules: ["CD001"], historyLookbackDays: 31 }), /historyLookbackDays/);
+  assert.throws(() => validate({ rules: ["CD001"], historyConcurrentRequests: 5 }), /historyConcurrentRequests/);
+  assert.throws(() => validate({ rules: ["CD999"] }), /rules/);
+  const saved = validate({ rules: ["CD001"], historyLookbackDays: 30, historyConcurrentRequests: 1 }) as Record<string, unknown>;
+  assert.deepEqual((saved.rules as { get(): unknown }).get(), ["CD001"]);
+  assert.equal((saved.historyLookbackDays as { get(): unknown }).get(), 30);
 });
 
 test("enables billing only when the switch is on", () => {
@@ -195,7 +202,7 @@ test("reads a changed rule switch on the next tool call", async () => {
   const scan = tools.get("ci_diet_scan")!;
   const first = (await scan.execute({ cwd: root }, { signal: new AbortController().signal })) as { findings: unknown[] };
   assert.equal(first.findings.length, 1);
-  (refs.ruleCd008 as ReturnType<typeof live<boolean>>).set(false);
+  (refs.rules as ReturnType<typeof live<readonly string[]>>).set(["CD001", "CD002", "CD004"]);
   const second = (await scan.execute({ cwd: root }, { signal: new AbortController().signal })) as { findings: unknown[] };
   assert.equal(second.findings.length, 0);
 });

@@ -10,12 +10,8 @@ import type { Config } from "../contracts/schema.ts";
 export interface PluginSettingsValues {
   readonly networkEnabled: boolean;
   readonly stateDir: string;
-  readonly ruleCd001: boolean;
-  readonly ruleCd002: boolean;
-  readonly ruleCd003: boolean;
-  readonly ruleCd004: boolean;
-  readonly ruleCd005: boolean;
-  readonly ruleCd008: boolean;
+  /** Enabled analysis rules in display order; the host schema refuses an empty list. */
+  readonly rules: readonly RuleId[];
   readonly historyLookbackDays: number;
   readonly historyMaxRuns: number;
   readonly historyMaxRequests: number;
@@ -40,28 +36,12 @@ export interface EngineSettings {
   readonly stateDir: string;
 }
 
-/** Rule names as they appear in workflow settings, keyed by the contract id. */
-export const RULE_SETTING_KEYS: Readonly<Record<RuleId, keyof PluginSettingsValues>> = {
-  CD001: "ruleCd001",
-  CD002: "ruleCd002",
-  CD003: "ruleCd003",
-  CD004: "ruleCd004",
-  CD005: "ruleCd005",
-  CD008: "ruleCd008",
-};
-
 /** Shipped defaults, shared by the DSH schema and the settings page. */
 export function defaultPluginSettings(): PluginSettingsValues {
-  const enabled = new Set(DEFAULT_ENABLED_RULES);
   return {
     networkEnabled: DEFAULT_CONFIG.networkEnabled,
     stateDir: "",
-    ruleCd001: enabled.has("CD001"),
-    ruleCd002: enabled.has("CD002"),
-    ruleCd003: enabled.has("CD003"),
-    ruleCd004: enabled.has("CD004"),
-    ruleCd005: enabled.has("CD005"),
-    ruleCd008: enabled.has("CD008"),
+    rules: [...DEFAULT_ENABLED_RULES],
     historyLookbackDays: DEFAULT_CONFIG.history.lookbackDays,
     historyMaxRuns: DEFAULT_CONFIG.history.maxRuns,
     historyMaxRequests: DEFAULT_CONFIG.history.maxRequests,
@@ -79,13 +59,25 @@ export function defaultPluginSettings(): PluginSettingsValues {
   };
 }
 
+/** Reject rule ids the contract does not know, duplicates, and an empty selection. */
+function enabledRulesOf(selected: readonly RuleId[]): readonly RuleId[] {
+  if (!Array.isArray(selected)) throw new Error("analysis rules must be a list");
+  const unique = new Set<string>();
+  for (const ruleId of selected) {
+    if (!(RULE_IDS as readonly string[]).includes(ruleId)) throw new Error("unknown analysis rule: " + String(ruleId));
+    if (unique.has(ruleId)) throw new Error("analysis rule listed twice: " + ruleId);
+    unique.add(ruleId);
+  }
+  if (unique.size === 0) throw new Error("at least one analysis rule must stay enabled");
+  return RULE_IDS.filter((ruleId) => unique.has(ruleId));
+}
+
 /**
  * Build the same nested Config the CLI validates through a config file, so the
  * settings page cannot drift from the frozen contract or the shipped defaults.
  */
 export function engineSettingsOf(values: PluginSettingsValues): EngineSettings {
-  const enabledRules = RULE_IDS.filter((ruleId) => values[RULE_SETTING_KEYS[ruleId]] === true);
-  if (enabledRules.length === 0) throw new Error("at least one analysis rule must stay enabled");
+  const enabledRules = enabledRulesOf(values.rules);
   const override = {
     networkEnabled: values.networkEnabled,
     history: {

@@ -1,6 +1,9 @@
 /** Settings groups and controls rendered by the CI Diet settings page. */
 export type SettingGroupId = "general" | "rules" | "history" | "storage" | "billing";
-export type SettingKind = "switch" | "number" | "text";
+export type SettingKind = "switch" | "number" | "text" | "rules";
+
+/** Analysis rules a human can enable, in contract order. */
+export const RULE_CHOICES = ["CD001", "CD002", "CD003", "CD004", "CD005", "CD008"] as const;
 
 export interface SettingField {
   readonly key: string;
@@ -15,12 +18,7 @@ export const SETTINGS_FIELDS: readonly SettingField[] = [
   { key: "networkEnabled", group: "general", kind: "switch" },
   { key: "stateDir", group: "general", kind: "text" },
 
-  { key: "ruleCd001", group: "rules", kind: "switch" },
-  { key: "ruleCd002", group: "rules", kind: "switch" },
-  { key: "ruleCd003", group: "rules", kind: "switch" },
-  { key: "ruleCd004", group: "rules", kind: "switch" },
-  { key: "ruleCd005", group: "rules", kind: "switch" },
-  { key: "ruleCd008", group: "rules", kind: "switch" },
+  { key: "rules", group: "rules", kind: "rules" },
 
   { key: "historyLookbackDays", group: "history", kind: "number", min: 1, max: 30, integer: true },
   { key: "historyMaxRuns", group: "history", kind: "number", min: 1, integer: true },
@@ -52,9 +50,11 @@ export interface SettingsEditBatch {
   readonly errors: Readonly<Record<string, string>>;
 }
 
+export type SettingsDraftValue = string | number | boolean | readonly string[];
+
 /** Validate a staged draft exactly like the page and produce one atomic edit batch. */
 export function collectSettingsEdits(
-  draft: Readonly<Record<string, string | number | boolean>>,
+  draft: Readonly<Record<string, SettingsDraftValue>>,
   message: (key: string, params?: Record<string, string | number>) => string,
 ): SettingsEditBatch {
   const ops: SettingsDraftEdit[] = [];
@@ -63,6 +63,20 @@ export function collectSettingsEdits(
     if (!Object.prototype.hasOwnProperty.call(draft, field.key)) continue;
     const key = field.key;
     const raw = draft[key]!;
+    if (field.kind === "rules") {
+      const selected = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
+      const unknown = selected.filter((id) => !(RULE_CHOICES as readonly string[]).includes(id));
+      if (unknown.length > 0) {
+        errors[key] = message("page.unknownRule", { rule: unknown[0]! });
+        continue;
+      }
+      if (selected.length === 0) {
+        errors[key] = message("page.noRules");
+        continue;
+      }
+      ops.push({ op: "set", path: [key], value: RULE_CHOICES.filter((id) => selected.includes(id)) });
+      continue;
+    }
     if (field.kind === "switch") {
       ops.push({ op: "set", path: [key], value: raw === true });
       continue;

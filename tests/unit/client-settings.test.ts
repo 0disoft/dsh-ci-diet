@@ -112,11 +112,12 @@ test("all six languages expose the same non-empty keys", () => {
 test("field descriptors cover every live setting under a known group", () => {
   const keys = SETTINGS_FIELDS.map((field) => field.key);
   assert.equal(new Set(keys).size, keys.length);
-  for (const key of ["networkEnabled", "ruleCd001", "ruleCd008", "historyLookbackDays", "historyConcurrentRequests", "storageStoreMaxBytes", "storageReportDays", "billingIncludedMinutes", "billingAccountMinutesUsed"]) {
+  for (const key of ["networkEnabled", "stateDir", "rules", "historyLookbackDays", "historyConcurrentRequests", "storageStoreMaxBytes", "storageReportDays", "billingIncludedMinutes", "billingAccountMinutesUsed"]) {
     assert.ok(keys.includes(key), "missing descriptor " + key);
   }
   for (const field of SETTINGS_FIELDS) {
     assert.ok(["general", "rules", "history", "storage", "billing"].includes(field.group));
+    if (field.kind === "rules") assert.equal(field.key, "rules");
     if (field.kind === "number") assert.equal(typeof field.min, "number", field.key);
   }
 });
@@ -132,15 +133,17 @@ test("the draft batch rejects contract violations before any write", () => {
   assert.equal(collectSettingsEdits({ historyMaxRuns: "" }, message).errors.historyMaxRuns!.startsWith("page.invalidNumber"), true);
   assert.equal(collectSettingsEdits({ historyMaxRuns: "many" }, message).errors.historyMaxRuns!.startsWith("page.invalidNumber"), true);
   assert.deepEqual(collectSettingsEdits({ notASetting: "1" }, message).ops, []);
+  assert.equal(collectSettingsEdits({ rules: [] }, message).errors.rules!.startsWith("page.noRules"), true);
+  assert.match(collectSettingsEdits({ rules: ["CD999"] }, message).errors.rules!, /page\.unknownRule\{"rule":"CD999"\}/);
 });
 
 test("the draft batch keeps valid edits in field order and preserves switches", () => {
-  const batch = collectSettingsEdits({ networkEnabled: true, ruleCd001: false, stateDir: "D:/state", historyMaxRuns: 50, billingIncludedMinutes: 2000 }, (key) => key);
+  const batch = collectSettingsEdits({ networkEnabled: true, rules: ["CD004", "CD001"], stateDir: "D:/state", historyMaxRuns: 50, billingIncludedMinutes: 2000 }, (key) => key);
   assert.deepEqual(batch.errors, {});
   assert.deepEqual(batch.ops, [
     { op: "set", path: ["networkEnabled"], value: true },
     { op: "set", path: ["stateDir"], value: "D:/state" },
-    { op: "set", path: ["ruleCd001"], value: false },
+    { op: "set", path: ["rules"], value: ["CD001", "CD004"] },
     { op: "set", path: ["historyMaxRuns"], value: 50 },
     { op: "set", path: ["billingIncludedMinutes"], value: 2000 },
   ]);

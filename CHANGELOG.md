@@ -32,7 +32,7 @@ Keep a Changelog, and the project uses semantic versioning.
 ### Changed
 
 - The DSH plugin marks every engine setting as live: network access, state
-  directory, the six analysis rules, history caps, storage limits, and the cost
+  directory, the enabled-rule list, history caps, storage limits, and the cost
   estimate. The Plugins page and the new Settings page can edit them without
   reloading the plugin, and every tool call reads the current value.
   `localApplyEnabled` remains an ordinary reserved field until an apply tool
@@ -127,6 +127,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Saving the DSH settings now validates the whole engine contract in the host
+  schema: the enabled rules are one field that rejects an empty list, an unknown
+  id, or a duplicate, and every numeric field carries its contract bounds. An
+  out-of-contract lookback or an all-off rule set is refused at save time instead
+  of failing on the next tool call.
 - A failing git origin lookup is no longer reported as a missing remote: the
   CLI and the DSH tool show the git explanation, and coverage reasons keep the
   GitHub error code alongside its message. A gh response with no HTTP block but

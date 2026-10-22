@@ -4,9 +4,10 @@ import Schema from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { defaultPluginSettings, engineSettingsOf } from "../../core/config/plugin-settings.ts";
 import type { PluginSettingsValues } from "../../core/config/plugin-settings.ts";
-import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN } from "../../core/policy/constants.ts";
+import { HISTORY_CONCURRENT_REQUESTS_MAX, HISTORY_CONCURRENT_REQUESTS_MIN, HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN } from "../../core/policy/constants.ts";
 import { buildHistoryReport } from "../../core/analysis/report.ts";
 import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
+import { DEFAULT_ENABLED_RULES } from "../../core/rules/index.ts";
 import type { RuleId } from "../../core/model/domain.ts";
 import type { Coverage, Dimension } from "../../core/contracts/schema.ts";
 import { PatchStore } from "../../core/patch/store.ts";
@@ -38,12 +39,7 @@ export interface Config {
   /** Reserved for applying plans from the Web UI; not a settings surface yet. */
   localApplyEnabled: boolean;
   stateDir: Volatile<string>;
-  ruleCd001: Volatile<boolean>;
-  ruleCd002: Volatile<boolean>;
-  ruleCd003: Volatile<boolean>;
-  ruleCd004: Volatile<boolean>;
-  ruleCd005: Volatile<boolean>;
-  ruleCd008: Volatile<boolean>;
+  rules: Volatile<readonly RuleId[]>;
   historyLookbackDays: Volatile<number>;
   historyMaxRuns: Volatile<number>;
   historyMaxRequests: Volatile<number>;
@@ -62,30 +58,29 @@ export interface Config {
 
 const SHIPPED = defaultPluginSettings();
 
+const RULE_SCHEMA = Schema.union(RULE_IDS.map((ruleId) => Schema.const(ruleId)));
+
 export const Config = Schema.object({
   networkEnabled: Schema.boolean().default(SHIPPED.networkEnabled).volatile(),
   localApplyEnabled: Schema.boolean().default(false),
   stateDir: Schema.string().default(SHIPPED.stateDir).volatile(),
-  ruleCd001: Schema.boolean().default(SHIPPED.ruleCd001).volatile(),
-  ruleCd002: Schema.boolean().default(SHIPPED.ruleCd002).volatile(),
-  ruleCd003: Schema.boolean().default(SHIPPED.ruleCd003).volatile(),
-  ruleCd004: Schema.boolean().default(SHIPPED.ruleCd004).volatile(),
-  ruleCd005: Schema.boolean().default(SHIPPED.ruleCd005).volatile(),
-  ruleCd008: Schema.boolean().default(SHIPPED.ruleCd008).volatile(),
-  historyLookbackDays: Schema.number().default(SHIPPED.historyLookbackDays).volatile(),
-  historyMaxRuns: Schema.number().default(SHIPPED.historyMaxRuns).volatile(),
-  historyMaxRequests: Schema.number().default(SHIPPED.historyMaxRequests).volatile(),
-  historyConcurrentRequests: Schema.number().default(SHIPPED.historyConcurrentRequests).volatile(),
-  historyRequestTimeoutMs: Schema.number().default(SHIPPED.historyRequestTimeoutMs).volatile(),
-  storageStoreMaxBytes: Schema.number().default(SHIPPED.storageStoreMaxBytes).volatile(),
-  storageWorkflowMaxBytes: Schema.number().default(SHIPPED.storageWorkflowMaxBytes).volatile(),
-  storageCacheMaxBytes: Schema.number().default(SHIPPED.storageCacheMaxBytes).volatile(),
-  storageCacheDays: Schema.number().default(SHIPPED.storageCacheDays).volatile(),
-  storageReportDays: Schema.number().default(SHIPPED.storageReportDays).volatile(),
-  storagePlanDays: Schema.number().default(SHIPPED.storagePlanDays).volatile(),
+  // The contract lives in the schema itself: a save that disables every rule is
+  // rejected here, before the next tool call has to fail.
+  rules: Schema.array(RULE_SCHEMA).min(1).default([...DEFAULT_ENABLED_RULES]).volatile(),
+  historyLookbackDays: Schema.number().min(HISTORY_LOOKBACK_DAYS_MIN).max(HISTORY_LOOKBACK_DAYS_MAX).step(1).default(SHIPPED.historyLookbackDays).volatile(),
+  historyMaxRuns: Schema.number().min(1).step(1).default(SHIPPED.historyMaxRuns).volatile(),
+  historyMaxRequests: Schema.number().min(1).step(1).default(SHIPPED.historyMaxRequests).volatile(),
+  historyConcurrentRequests: Schema.number().min(HISTORY_CONCURRENT_REQUESTS_MIN).max(HISTORY_CONCURRENT_REQUESTS_MAX).step(1).default(SHIPPED.historyConcurrentRequests).volatile(),
+  historyRequestTimeoutMs: Schema.number().min(1).step(1).default(SHIPPED.historyRequestTimeoutMs).volatile(),
+  storageStoreMaxBytes: Schema.number().min(0).step(1).default(SHIPPED.storageStoreMaxBytes).volatile(),
+  storageWorkflowMaxBytes: Schema.number().min(0).step(1).default(SHIPPED.storageWorkflowMaxBytes).volatile(),
+  storageCacheMaxBytes: Schema.number().min(0).step(1).default(SHIPPED.storageCacheMaxBytes).volatile(),
+  storageCacheDays: Schema.number().min(0).step(1).default(SHIPPED.storageCacheDays).volatile(),
+  storageReportDays: Schema.number().min(0).step(1).default(SHIPPED.storageReportDays).volatile(),
+  storagePlanDays: Schema.number().min(0).step(1).default(SHIPPED.storagePlanDays).volatile(),
   billingEnabled: Schema.boolean().default(SHIPPED.billingEnabled).volatile(),
-  billingIncludedMinutes: Schema.number().default(SHIPPED.billingIncludedMinutes).volatile(),
-  billingAccountMinutesUsed: Schema.number().default(SHIPPED.billingAccountMinutesUsed).volatile(),
+  billingIncludedMinutes: Schema.number().min(0).step(1).default(SHIPPED.billingIncludedMinutes).volatile(),
+  billingAccountMinutesUsed: Schema.number().min(0).step(1).default(SHIPPED.billingAccountMinutesUsed).volatile(),
 });
 
 /** Read every engine-facing setting from its live reference. */
@@ -93,12 +88,7 @@ export function readPluginSettings(config: Config): PluginSettingsValues {
   return {
     networkEnabled: config.networkEnabled.get(),
     stateDir: config.stateDir.get(),
-    ruleCd001: config.ruleCd001.get(),
-    ruleCd002: config.ruleCd002.get(),
-    ruleCd003: config.ruleCd003.get(),
-    ruleCd004: config.ruleCd004.get(),
-    ruleCd005: config.ruleCd005.get(),
-    ruleCd008: config.ruleCd008.get(),
+    rules: [...config.rules.get()],
     historyLookbackDays: config.historyLookbackDays.get(),
     historyMaxRuns: config.historyMaxRuns.get(),
     historyMaxRequests: config.historyMaxRequests.get(),
