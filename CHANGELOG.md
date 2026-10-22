@@ -32,6 +32,9 @@ Keep a Changelog, and the project uses semantic versioning.
   journal, policy, and byte verification) and a commit phase that only records
   intent and replaces the file. The refusal paths and transaction order are
   unchanged.
+- The CLI and the DSH plan tool share one requested-plan use case. It builds the
+  named edit, dependency snapshot, attestation, eligibility re-check, policy
+  snapshots, and plan, while each caller keeps its own storage and error text.
 - Patch and analysis limits live in one shared policy module. Plan lifetime, policy
   freshness, approval lifetime, and attestation lifetime accept the configured
   values; CLI lookback and timeout bounds use the same constants as the contract.

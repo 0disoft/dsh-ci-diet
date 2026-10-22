@@ -9,13 +9,11 @@ import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
 import type { RuleId } from "../../core/model/domain.ts";
 import type { Coverage, Dimension } from "../../core/contracts/schema.ts";
 import { PatchStore } from "../../core/patch/store.ts";
-import { PROPOSED_RETENTION_DAYS, planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../../core/patch/edits.ts";
+import { PROPOSED_RETENTION_DAYS } from "../../core/patch/edits.ts";
 import type { ByteEdit } from "../../core/contracts/schema.ts";
-import { claimsFromTokens, evaluatePatchEligibility } from "../../core/patch/eligibility.ts";
+import { claimsFromTokens } from "../../core/patch/eligibility.ts";
 import type { PatchRule } from "../../core/patch/eligibility.ts";
-import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../../core/patch/plan.ts";
-import { createAttestation } from "../../core/patch/attestation.ts";
-import { collectDependencies } from "../../core/patch/dependencies.ts";
+import { buildRequestedPlan } from "../../core/patch/request-plan.ts";
 import { findFindingForRequest, targetReasons } from "../../core/patch/target.ts";
 import type { PlanRequest } from "../../core/patch/target.ts";
 import { createLocalBinding, readGithubRemote } from "../../core/scan/binding.ts";
@@ -24,7 +22,6 @@ import { runStaticScan } from "../../core/scan/scan.ts";
 import { defaultStateDir } from "../../core/state/paths.ts";
 import { syncRepositoryHistory } from "../../core/history/sync.ts";
 import { parseWorkflow } from "../../core/workflow/parse.ts";
-import type { WorkflowJob } from "../../core/workflow/model.ts";
 import { localizedFinding } from "../../core/report/localize.ts";
 import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 import { createTranslator } from "../../shared/i18n/index.ts";
@@ -366,111 +363,42 @@ export function apply(ctx: Context, config: Config) {
         minutes: args.minutes ?? null,
         retentionDays: PROPOSED_RETENTION_DAYS,
       };
-      const jobs = workflow.jobs;
-      const job: WorkflowJob | undefined = request.jobKey === null ? undefined : jobs.find((entry) => entry.key === request.jobKey);
       const findings = report.findings.filter((finding) => finding.ruleId === rule && finding.workflowPath === workflowPath);
       const chosenFinding = findFindingForRequest(findings, request);
       const blockers: string[] = [];
       if (chosenFinding === null) blockers.push("FINDING_NOT_FOUND");
       else blockers.push(...targetReasons({ finding: chosenFinding, request, history, workflowText: file.text, workflow }));
 
-      const edits: ByteEdit[] = [];
-      let scope: "workflow" | "job" | "step" = "workflow";
-      let jobKey: string | null = null;
-      let stepKey: string | null = null;
-      let expected: { group?: string; minutes?: number; days?: number } = {};
-      if (rule === "CD001") {
-        if (workflow.concurrency !== null) blockers.push("EXISTING_CONCURRENCY");
-        else {
-          const result = planConcurrencyEdit(file.text, workflow, binding.repositoryId);
-          if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-          else {
-            edits.push(result.edit);
-            expected = { group: result.edit.replacementUtf8.split("group: ")[1]?.trim() ?? "" };
-          }
-        }
-      } else if (rule === "CD005") {
-        if (job === undefined || request.minutes === null) blockers.push("JOB_AND_MINUTES_REQUIRED");
-        else {
-          const result = planTimeoutEdit(file.text, workflow, job, request.minutes);
-          if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-          else {
-            edits.push(result.edit);
-            scope = "job";
-            jobKey = job.key;
-            expected = { minutes: request.minutes };
-          }
-        }
-      } else {
-        if (job === undefined || request.stepIndex === null) blockers.push("JOB_AND_STEP_REQUIRED");
-        else {
-          const step = job.steps[request.stepIndex];
-          if (step === undefined) blockers.push("STEP_NOT_FOUND");
-          else {
-            const result = planRetentionEdit(file.text, job, step, PROPOSED_RETENTION_DAYS);
-            if (result.edit === null) blockers.push(result.error?.code ?? "EDIT_NOT_APPLICABLE");
-            else {
-              edits.push(result.edit);
-              scope = "step";
-              jobKey = job.key;
-              stepKey = "steps[" + request.stepIndex + "]";
-              expected = { days: PROPOSED_RETENTION_DAYS };
-            }
-          }
-        }
-      }
-
-      const claims = claimsFromTokens((args.claims ?? []) as string[]);
-      const eligibility = chosenFinding === null
-        ? null
-        : evaluatePatchEligibility({
-            rule,
-            finding: chosenFinding,
-            coverage: report.coverage,
-            claims,
-            history,
-            currentDefinitionParsed: true,
-            editedJobEvidenceComplete: true,
-            now,
-          });
-      if (eligibility !== null && !eligibility.allowed) blockers.push(...eligibility.reasons);
-
-      const dependencyReport = collectDependencies(binding.workspaceRoot, workflow);
-      for (const ref of dependencyReport.unresolved) blockers.push("UNRESOLVED_DEPENDENCY:" + ref);
-
+      let edits: readonly ByteEdit[] = [];
       let planDigest: string | null = null;
-      if (blockers.length === 0 && history !== null) {
-        const attestation = createAttestation({
-          bindingId: binding.bindingId,
-          workflowPath: file.path,
-          workflowHash: workflow.sha256,
-          dependencyHash: dependencyHashOf(dependencyReport.dependencies),
-          scope,
-          jobKey,
-          stepKey,
+      let coverageLevel = "skip";
+      const claims = claimsFromTokens((args.claims ?? []) as string[]);
+      if (chosenFinding !== null) {
+        const requested = buildRequestedPlan({
+          binding,
+          workflow,
+          text: file.text,
+          rule,
+          jobKey: request.jobKey,
+          stepIndex: request.stepIndex,
+          minutes: request.minutes,
+          finding: chosenFinding,
+          coverage: report.coverage,
           claims,
-          evidenceRefs: ["dsh:plan:" + rule],
+          history,
+          evidenceRef: "dsh:plan:" + rule,
           issuedBy: { channel: "human-cli", subjectId: "dsh-session" },
           now,
+          policyMaxAgeSeconds: DEFAULT_CONFIG.apply.policyMaxAgeSeconds,
+          attestationTtlSeconds: DEFAULT_CONFIG.apply.attestationMaxAgeDays * 24 * 60 * 60,
         });
-        const policies = buildPolicySnapshots({ binding, protection: history.protection, retention: history.retention, now });
-        try {
-          const built = buildPatchPlan({
-            binding,
-            workflow,
-            text: file.text,
-            edits,
-            attestations: [attestation],
-            policies,
-            blockers: eligibility === null ? [] : eligibility.remainingBlockers,
-            coverageWriteAllowed: true,
-            now,
-            dependencies: dependencyReport.dependencies,
-            expected,
-          });
-          planDigest = built.plan.planDigest;
-        } catch (error) {
-          blockers.push(error instanceof Error ? error.message : "PLAN_REJECTED");
+        edits = requested.edits;
+        coverageLevel = requested.coverageLevel ?? "skip";
+        if (requested.ok) {
+          planDigest = requested.plan.planDigest;
+        } else {
+          blockers.push(requested.blocker);
+          blockers.push(...requested.reasons);
         }
       }
       const nextCommand = buildNextCommand({
@@ -483,10 +411,10 @@ export function apply(ctx: Context, config: Config) {
       });
       return {
         workflowPath,
-        edits,
+        edits: [...edits],
         planDigest: planDigest ?? "",
         writeAllowed: blockers.length === 0,
-        coverageLevel: eligibility === null ? "skip" : eligibility.coverageLevel,
+        coverageLevel,
         blockers,
         nextCommand,
       };

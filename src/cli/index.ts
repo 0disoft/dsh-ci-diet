@@ -13,8 +13,9 @@ import { syncRepositoryHistory } from "../core/history/sync.ts";
 import { defaultStateDir } from "../core/state/paths.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
 import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagnostics.ts";
-import { PROPOSED_RETENTION_DAYS, HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../core/policy/constants.ts";
-import { claimsFromTokens, evaluatePatchEligibility } from "../core/patch/eligibility.ts";
+import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN, PROPOSED_RETENTION_DAYS, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../core/policy/constants.ts";
+import { buildRequestedPlan } from "../core/patch/request-plan.ts";
+import { claimsFromTokens } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import { ConfigFileError, loadConfigFile } from "../core/config/load.ts";
 import type { Config } from "../core/contracts/schema.ts";
@@ -25,14 +26,8 @@ import { ContractViolationError } from "../core/contracts/validate.ts";
 import { ENGINE_VERSION } from "../core/version.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreCorruptionError, StoreQuotaError } from "../core/patch/store.ts";
 import type { PlanMeta } from "../core/patch/store.ts";
-import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "../core/patch/plan.ts";
-import { collectDependencies } from "../core/patch/dependencies.ts";
 import { findFindingForRequest, targetReasons } from "../core/patch/target.ts";
 import type { PlanRequest } from "../core/patch/target.ts";
-import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "../core/patch/edits.ts";
-import type { EditResult } from "../core/patch/edits.ts";
-import type { ByteEdit } from "../core/contracts/schema.ts";
-import { createAttestation } from "../core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../core/patch/approval.ts";
 import { applyPlan, revertChange } from "../core/patch/apply.ts";
 import { renderHtmlReport } from "../core/report/html.ts";
@@ -531,10 +526,6 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   return EXIT_OK;
 }
 
-function requireEdit(result: EditResult): ByteEdit {
-  if (result.edit === null) throw new UsageError("INVALID_VALUE:edit");
-  return result.edit;
-}
 
 function pickWorkflowPath(options: Options, available: readonly string[]): string {
   if (options.workflow !== null) {
@@ -623,103 +614,46 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     return EXIT_INCOMPLETE;
   }
 
-  let edits: ByteEdit[] = [];
-  let scope: "workflow" | "job" | "step" = "workflow";
-  let jobKey: string | null = null;
-  let stepKey: string | null = null;
-  let expected: { group?: string; minutes?: number; days?: number } = {};
-  if (rule === "CD001") {
-    if (workflow.concurrency !== null) {
-      writeErr(t("cli.plan.existingConcurrency") + "\n");
-      return EXIT_USAGE;
-    }
-    edits = [requireEdit(planConcurrencyEdit(file.text, workflow, binding.repositoryId))];
-    const group = edits[0]?.replacementUtf8.split("group: ")[1]?.trim() ?? "";
-    expected = { group };
-  } else if (rule === "CD005") {
-    const job = workflow.jobs.find((entry) => entry.key === options.job);
-    if (job === undefined || options.minutes === null) {
-      writeErr(t("cli.plan.jobRequired") + "\n");
-      return EXIT_USAGE;
-    }
-    edits = [requireEdit(planTimeoutEdit(file.text, workflow, job, options.minutes))];
-    scope = "job";
-    jobKey = job.key;
-    expected = { minutes: options.minutes };
-  } else {
-    const job = workflow.jobs.find((entry) => entry.key === options.job);
-    const step = job?.steps[options.step ?? -1];
-    if (job === undefined || step === undefined || options.step === null) {
-      writeErr(t("cli.plan.stepRequired") + "\n");
-      return EXIT_USAGE;
-    }
-    const days = PROPOSED_RETENTION_DAYS;
-    edits = [requireEdit(planRetentionEdit(file.text, job, step, days))];
-    scope = "step";
-    jobKey = job.key;
-    stepKey = "steps[" + options.step + "]";
-    expected = { days };
-  }
-
-  const dependencyReport = collectDependencies(binding.workspaceRoot, workflow);
-  const attestation = createAttestation({
-    bindingId: binding.bindingId,
-    workflowPath: file.path,
-    workflowHash: workflow.sha256,
-    dependencyHash: dependencyHashOf(dependencyReport.dependencies),
-    scope,
-    jobKey,
-    stepKey,
-    claims: claimsFromTokens(options.claims),
-    evidenceRefs: ["cli:plan:" + rule],
-    issuedBy: { channel: "human-cli", subjectId: options.subject },
-    ttlSeconds: options.config.apply.attestationMaxAgeDays * 24 * 60 * 60,
-    now: plannedAt,
-  });
-
-  const eligibility = evaluatePatchEligibility({
-    rule,
-    finding: chosenFinding,
-    coverage: report.coverage,
-    claims: attestation.claims,
-    history: historyJson,
-    currentDefinitionParsed: true,
-    editedJobEvidenceComplete: true,
-    policyMaxAgeSeconds: options.config.apply.policyMaxAgeSeconds,
-    now: plannedAt,
-  });
-  if (!eligibility.allowed) {
-    writeErr(t("cli.plan.notEligible", { rule }) + "\n");
-    for (const reason of eligibility.reasons) writeErr("  - " + reason + "\n");
-    return EXIT_INCOMPLETE;
-  }
-  store.saveAttestation(attestation);
-
-  const policies = buildPolicySnapshots({
-    binding,
-    protection: historyJson.protection,
-    retention: historyJson.retention,
-    now: plannedAt,
-  });
-
-  const built = buildPatchPlan({
+  const requested = buildRequestedPlan({
     binding,
     workflow,
     text: file.text,
-    edits,
-    attestations: [attestation],
-    policies,
-    blockers: [
-      ...eligibility.remainingBlockers,
-      ...dependencyReport.unresolved.map((ref) => "UNRESOLVED_DEPENDENCY:" + ref),
-    ],
-    coverageWriteAllowed: true,
+    rule,
+    jobKey: options.job,
+    stepIndex: rule === "CD008" ? options.step : null,
+    minutes: options.minutes,
+    finding: chosenFinding,
+    coverage: report.coverage,
+    claims: claimsFromTokens(options.claims),
+    history: historyJson,
+    evidenceRef: "cli:plan:" + rule,
+    issuedBy: { channel: "human-cli", subjectId: options.subject },
     now: plannedAt,
-    dependencies: dependencyReport.dependencies,
-    expected,
+    policyMaxAgeSeconds: options.config.apply.policyMaxAgeSeconds,
+    attestationTtlSeconds: options.config.apply.attestationMaxAgeDays * 24 * 60 * 60,
   });
-
-  const plan = built.plan;
+  if (!requested.ok) {
+    switch (requested.blocker) {
+      case "EXISTING_CONCURRENCY":
+        writeErr(t("cli.plan.existingConcurrency") + "\n");
+        return EXIT_USAGE;
+      case "JOB_REQUIRED":
+        writeErr(t("cli.plan.jobRequired") + "\n");
+        return EXIT_USAGE;
+      case "STEP_REQUIRED":
+        writeErr(t("cli.plan.stepRequired") + "\n");
+        return EXIT_USAGE;
+      case "NOT_ELIGIBLE":
+        writeErr(t("cli.plan.notEligible", { rule }) + "\n");
+        for (const reason of requested.reasons) writeErr("  - " + reason + "\n");
+        return EXIT_INCOMPLETE;
+      default:
+        writeErr((requested.reasons[0] ?? requested.blocker) + "\n");
+        return EXIT_INCOMPLETE;
+    }
+  }
+  store.saveAttestation(requested.attestation);
+  const plan = requested.plan;
   const meta: PlanMeta = { coverageWriteAllowed: true, reportId: report.reportId };
   store.savePlan(plan, meta);
 
