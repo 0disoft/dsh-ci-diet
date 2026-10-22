@@ -478,6 +478,11 @@ function blockReplacement(root: string, file: string): () => void {
 }
 
 test("a failed replacement leaves the change not applied and keeps the approval retryable", async (t) => {
+  if (process.platform !== "win32" && typeof process.getuid === "function" && process.getuid() === 0) {
+    // Root bypasses directory write bits, so this filesystem seam cannot fail the rename.
+    t.skip("root ignores the non-writable directory used to inject the failure");
+    return;
+  }
   const fixture = setup();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
   approvePlan({

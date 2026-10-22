@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative as relativePath, resolve, sep } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AppliedChange, Attestation, PatchPlan, PolicySnapshot } from "../contracts/schema.ts";
@@ -123,7 +123,9 @@ const CLAIM_POLL_MS = 20;
 function acquireLock(lockRoot: string, name: string, waitMs: number, message: string): StoreLock {
   mkdirSync(lockRoot, { recursive: true });
   const path = join(lockRoot, name + ".claim");
-  const token = "claim_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
+  // The token must stay parseable by leaseOwnerAlive: a claim left behind by a
+  // crashed process is broken immediately, not held until its mtime expires.
+  const token = "lease_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
   const deadline = Date.now() + waitMs;
   for (;;) {
     try {
@@ -158,6 +160,26 @@ function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
+/**
+ * Lock directories live inside the 0700 store and hold only an owner token, but
+ * they must not inherit a wider umask mode either. Filesystems without POSIX
+ * modes (a mounted share, a FAT volume) keep working without the tighten.
+ */
+function tightenLockPath(path: string, mode: number): void {
+  if (process.platform === "win32") return;
+  try {
+    chmodSync(path, mode);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
+  }
+}
+
+function createLockDirectory(path: string): void {
+  mkdirSync(path, { recursive: true });
+  tightenLockPath(path, 0o700);
+}
+
 function ageOf(path: string): number | null {
   try {
     return Date.now() - statSync(path).mtimeMs;
@@ -168,8 +190,9 @@ function ageOf(path: string): number | null {
 
 function createClaim(path: string, token: string): void {
   mkdirSync(path);
+  tightenLockPath(path, 0o700);
   try {
-    writeFileSync(join(path, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx" });
+    writeFileSync(join(path, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
     rmSync(path, { recursive: true, force: true });
     throw error;
@@ -227,7 +250,7 @@ function releaseLock(path: string, token: string): void {
 function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T> {
   const lockRoot = join(store.root, "locks");
   const lease = join(lockRoot, "writer");
-  mkdirSync(lockRoot, { recursive: true });
+  createLockDirectory(lockRoot);
   const token = "lease_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
   acquireWriterLease(lockRoot, lease, token);
   return (async () => {
@@ -334,8 +357,9 @@ function restorePath(trash: string, path: string): void {
 
 function createWriterLease(lease: string, token: string): void {
   mkdirSync(lease);
+  tightenLockPath(lease, 0o700);
   try {
-    writeFileSync(join(lease, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx" });
+    writeFileSync(join(lease, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
     // A lease directory without its token would block every writer until it
     // expires, so a failed create must remove what it just made.

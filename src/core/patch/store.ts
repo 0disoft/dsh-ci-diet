@@ -167,7 +167,7 @@ export class PatchStore {
   static open(root: string, limits: StorageLimits | null = null): PatchStore {
     const store = new PatchStore(root, limits);
     store.ensureDirectory(root);
-    for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history"]) {
+    for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history", "locks"]) {
       store.ensureDirectory(join(root, directory));
     }
     return store;
