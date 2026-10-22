@@ -31,9 +31,11 @@ Keep a Changelog, and the project uses semantic versioning.
 - CD005 aggregates every matrix and runner leg into one job-wide recommendation
   and never proposes a timeout below the slowest measured leg; every leg needs
   20 samples.
-- Matrix expansion applies `exclude` before `include`, lets a later include
-  overwrite a value an earlier include added, keeps include-only matrices as
-  separate rows, and caps include rows together with the axis product.
+- Matrix expansion applies `exclude` to the axis product before enforcing the
+  256-row cap, so an excluded oversized product is accepted; it still applies
+  `exclude` before `include`, lets a later include overwrite a value an earlier
+  include added, keeps include-only matrices as separate rows, and caps include
+  rows together with the axis product.
 - CD008 treats `retention-days: 0` as the repository default and requires a
   temporary artifact purpose before a retention edit.
 - GitHub transport keeps the server's `Retry-After` without a 30 s cap, treats a
@@ -43,6 +45,18 @@ Keep a Changelog, and the project uses semantic versioning.
   budget is donated across stages.
 - POSIX stores create and repair `0700` directories and `0600` records
   regardless of the umask.
+- Plan, attestation, and nonce expiry share one boundary rule: a record is
+  expired once the clock reaches its timestamp. Policy freshness uses absolute
+  age, so a future-dated snapshot 600 s ahead is stale exactly like a back-dated
+  one.
+- The GitHub transport retries only rate limits, 502/503/504, and network-level
+  failures; deterministic 4xx responses such as 400 and 422 surface on the first
+  attempt instead of consuming additional quota.
+- `sync --days` accepts only 1 through 30 to match the config contract, and the
+  sync entry point validates the whole config before making a request.
+- The patch layer accepts optional clock and id seams, and workflow binding
+  accepts an optional command runner, so lease aging, expiry, and git discovery
+  are testable without real time or a spawned process.
 
 ### Fixed
 
@@ -52,6 +66,10 @@ Keep a Changelog, and the project uses semantic versioning.
   usable when the target is untouched.
 - A revert crash after restoring bytes converges to REVERTED on retry, including
   from a CONFLICT record.
+- A repository with genuinely zero runs in the lookback window reports a
+  complete history instead of a partial collection.
+- A known runner SKU with no removable minutes reports a known `$0.000000`
+  marginal estimate instead of an unknown SKU.
 - A file-permission test skips when the process can bypass directory permissions
   instead of failing the suite under root.
 
