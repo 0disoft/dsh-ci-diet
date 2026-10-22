@@ -2,7 +2,7 @@
 
 Find wasted GitHub Actions runner time and propose small, reviewable patches.
 
-Status: **alpha**, release `dsh-ci-diet@0.3.0` prepared. The contracts,
+Status: **alpha**, `dsh-ci-diet@0.3.0` is released on npm. The contracts,
 specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
 self-contained HTML report are implemented and tested. The DSH Web client has a
 Settings screen; the report and apply screens are still open.
@@ -60,9 +60,24 @@ is not shipped.
 
 ## Install
 
+The CLI needs Node `^22.19.0 || >=24.0.0`. The DSH plugin needs DSH
+`>=0.2.1-rc.2 <0.3.0-0` or `>=0.2.2-rc.1 <0.3.0-0`. Release `0.3.0` was tested
+against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported yet.
+
+Install the CLI:
+
 ```
-npm install --global dsh-ci-diet
-dsh plugin --profile web add dsh-ci-diet
+npm install --global dsh-ci-diet@0.3.0
+ci-diet --version
+```
+
+If you do not want a global install, `npx dsh-ci-diet@0.3.0` runs the same CLI.
+
+Install the DSH plugin into a profile:
+
+```
+dsh plugin --profile web add dsh-ci-diet@0.3.0
+dsh --profile web
 ```
 
 The plugin adds one disabled loader entry and a **Settings → CI Diet** page.
@@ -70,10 +85,18 @@ The page edits every engine setting used by the DSH tools: analysis rules, histo
 caps, storage limits, the cost estimate, network access, and the state directory.
 Values use the same contract validation and defaults as `ci-diet --config`, apply
 to the next tool call without a restart, and never rewrite the CLI's own config.
-`localApplyEnabled` is not exposed because there is no apply tool yet. Installing
-the package globally is optional: `npx dsh-ci-diet` runs the same CLI, and the DSH
-plugin only needs the package in the profile. Release tags are on GitHub; the
-matching npm version is `0.3.0`.
+`localApplyEnabled` is not exposed because there is no apply tool yet.
+
+Update an existing install:
+
+```
+npm install --global dsh-ci-diet@latest
+dsh plugin --profile web add dsh-ci-diet@latest
+```
+
+Restart DSH after updating the plugin. `dsh plugin --profile web list` shows the
+installed plugin version, and `ci-diet --version` (or
+`npx dsh-ci-diet@latest --version`) shows the CLI version.
 
 ## Run it
 

@@ -59,19 +59,43 @@ CI Diet는 두 가지를 읽고 비교합니다.
 
 ## 설치
 
+CLI는 Node `^22.19.0 || >=24.0.0`이 필요합니다. DSH 플러그인은 DSH
+`>=0.2.1-rc.2 <0.3.0-0` 또는 `>=0.2.2-rc.1 <0.3.0-0`이 필요합니다. `0.3.0`
+릴리스는 DSH `0.2.1-rc.2`에서 검증했으며 DSH `0.3.0`은 아직 지원하지 않습니다.
+
+CLI 설치:
+
 ```
-npm install --global dsh-ci-diet
-dsh plugin --profile web add dsh-ci-diet
+npm install --global dsh-ci-diet@0.3.0
+ci-diet --version
+```
+
+전역 설치를 원하지 않으면 `npx dsh-ci-diet@0.3.0`으로 같은 CLI를 실행할 수
+있습니다.
+
+DSH 플러그인 설치:
+
+```
+dsh plugin --profile web add dsh-ci-diet@0.3.0
+dsh --profile web
 ```
 
 플러그인은 기본으로 꺼진 로더 항목 하나와 **설정 → CI Diet** 페이지를 추가합니다.
 이 페이지에서 분석 규칙, 이력 상한, 저장 공간 한도, 비용 추정, 네트워크 접근,
 상태 디렉터리를 모두 바꿀 수 있습니다. 값은 `ci-diet --config`와 같은 계약 검증과
 기본값을 쓰며, 재시작 없이 다음 도구 호출부터 적용되고 CLI의 설정 파일은 건드리지
-않습니다. 적용 도구가 아직 없어 `localApplyEnabled`는 노출하지 않습니다. 전역 설치는
-선택 사항입니다. `npx dsh-ci-diet`로 같은 CLI를 실행할 수 있고, DSH 플러그인은
-프로필에 패키지가 있으면 됩니다. 릴리스 태그는 GitHub에, 같은 버전은 npm `0.3.0`에
-게시됩니다.
+않습니다. 적용 도구가 아직 없어 `localApplyEnabled`는 노출하지 않습니다.
+
+기존 설치 업데이트:
+
+```
+npm install --global dsh-ci-diet@latest
+dsh plugin --profile web add dsh-ci-diet@latest
+```
+
+플러그인을 업데이트한 뒤 DSH를 재시작합니다. `dsh plugin --profile web list`로
+설치된 플러그인 버전을, `ci-diet --version`(또는
+`npx dsh-ci-diet@latest --version`)으로 CLI 버전을 확인할 수 있습니다.
 
 ## 실행
 
