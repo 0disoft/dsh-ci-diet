@@ -54,10 +54,11 @@ Keep a Changelog, and the project uses semantic versioning.
   exists and is not exposed.
 - The Settings page follows the host settings layout and resolves the same
   `--dsw-alias-*` tokens as the built-in screens, so light and dark themes need
-  no fallback colors. The save bar sticks inside the scrollable settings body
-  instead of spanning the browser, keeps the last group reachable, and the
-  draft-discard action is named "Discard changes" instead of an ambiguous
-  reverse-change label.
+  no fallback colors. Only the settings body scrolls; the save bar sits below it
+  as a separate footer inside the page width, so scrolled content never shows
+  underneath the bar and the last field stays reachable. The draft-discard
+  action is named "Discard changes" instead of an ambiguous reverse-change
+  label.
 - The CLI accepts an injected process boundary (`executeCli(argv, context)`):
   cwd, stdout, stderr, environment, clock, and abort signal. Relative `--out`
   and `--state-dir` paths resolve against the effective working directory,

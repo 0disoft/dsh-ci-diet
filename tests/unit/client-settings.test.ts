@@ -148,6 +148,27 @@ test("the client bundle registers one settings section for the package", () => {
   assert.ok(loaded.languages.every((language) => language.fallback === "en"));
 });
 
+test("the action bar sits outside the scrolling page body", () => {
+  buildBundle();
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision: 1, value: { rules: ["CD001"], stateDir: "" } }),
+    subscribe: () => () => {},
+    mutate: async () => true,
+  };
+  const tree = renderPage(fake.react, loaded.sections[0]!.component, { form, t: (key: string) => key });
+  const page = findElement(tree, (element) => element.props.className === "ci-diet-page");
+  assert.ok(page !== undefined, "the page frame is missing");
+  const children = page.props.children as FakeElement[];
+  assert.ok(Array.isArray(children), "the page frame needs its body and footer");
+  const bodyIndex = children.findIndex((child) => child.props.className === "ci-diet-body");
+  const actionsIndex = children.findIndex((child) => child.props.className === "ci-diet-actions");
+  assert.ok(bodyIndex >= 0, "the scrolling body is missing");
+  assert.equal(actionsIndex, bodyIndex + 1, "the action bar must be a sibling after the body");
+  assert.equal(findElement(children[bodyIndex], (element) => element.props.className === "ci-diet-actions"), undefined);
+});
+
 test("the page saves against the revision it started editing", async () => {
   buildBundle();
   const fake = fakeReact();
@@ -302,13 +323,14 @@ test("the draft batch keeps valid edits in field order and preserves switches", 
   ]);
 });
 test("the section styles follow the host theme instead of a local palette", () => {
-  assert.match(CSS_TEXT, /\.ci-diet-actions \{[^}]*position: sticky/);
+  assert.match(CSS_TEXT, /\.ci-diet-body \{[^}]*flex: 1 1 auto[^}]*overflow-y: auto/);
+  assert.match(CSS_TEXT, /\.ci-diet-actions \{[^}]*flex: 0 0 auto/);
+  assert.equal(/position:\s*(sticky|fixed)/.test(CSS_TEXT), false, "the page must not stick to the settings viewport");
   assert.match(CSS_TEXT, /settings-card-fill/);
   assert.match(CSS_TEXT, /settings-card-stroke/);
   assert.match(CSS_TEXT, /button-primary-fill/);
   assert.match(CSS_TEXT, /label-primary-foreground/);
   assert.match(CSS_TEXT, /border-l2/);
-  assert.equal(CSS_TEXT.includes("position: fixed"), false);
   assert.equal(/#[0-9a-fA-F]{3,8}\b/.test(CSS_TEXT), false, "the stylesheet must not carry fallback colours");
 });
 

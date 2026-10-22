@@ -2,8 +2,8 @@
  *
  * Every colour comes from the DSH theme aliases the built-in settings screens
  * use, so light and dark themes follow the host instead of a local fallback.
- * The page never fixes itself to the browser viewport: its footer is sticky
- * inside the settings panel's own scroll container.
+ * The page owns its scrolling: only the settings body scrolls, and the action
+ * bar sits below that body as a separate footer inside the settings panel.
  */
 export const STYLE_ATTRIBUTE = "data-dsh-ci-diet-settings";
 
@@ -11,16 +11,27 @@ export const CSS_TEXT = [
   "/* Scoped styles for the CI Diet settings section.",
   " * Every colour comes from the DSH theme aliases the built-in settings screens",
   " * use, so light and dark themes follow the host instead of a local fallback.",
-  " * The page never fixes itself to the browser viewport: its footer is sticky",
-  " * inside the settings panel's own scroll container (.VOzbGW_options). */",
+  " * Only the settings body scrolls; the action bar is a separate footer below",
+  " * it, inside the settings panel (.VOzbGW_options). */",
   ".ci-diet-page {",
   "  box-sizing: border-box;",
   "  display: flex;",
   "  flex-direction: column;",
-  "  gap: 16px;",
   "  width: 100%;",
   "  max-width: 720px;",
+  "  height: 100%;",
+  "  min-height: 0;",
   "  color: var(--dsw-alias-label-primary);",
+  "}",
+  ".ci-diet-body {",
+  "  display: flex;",
+  "  flex-direction: column;",
+  "  flex: 1 1 auto;",
+  "  gap: 16px;",
+  "  min-height: 0;",
+  "  overflow-y: auto;",
+  "  overscroll-behavior: contain;",
+  "  padding-bottom: 16px;",
   "}",
   ".ci-diet-title {",
   "  margin: 0;",
@@ -212,15 +223,13 @@ export const CSS_TEXT = [
   "  transform: translateX(16px);",
   "}",
   ".ci-diet-actions {",
-  "  position: sticky;",
-  "  bottom: 0;",
-  "  z-index: 2;",
+  "  flex: 0 0 auto;",
   "  display: flex;",
   "  flex-wrap: wrap;",
   "  align-items: center;",
   "  gap: 8px;",
   "  box-sizing: border-box;",
-  "  padding: 12px 0 4px;",
+  "  padding: 12px 0 0;",
   "  border-top: 0.5px solid var(--dsw-alias-border-l2);",
   "  background: var(--dsw-alias-bg-layer-2);",
   "}",
