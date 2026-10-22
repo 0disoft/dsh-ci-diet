@@ -511,6 +511,72 @@ test("releasing the lease never removes a lease owned by another writer", async 
   assert.equal(readFileSync(join(lease, "owner"), "utf8"), "foreign-owner");
 });
 
+test("concurrent approvals are serialized per plan", async (t) => {
+  const f = fixture("CD005");
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const saveNonce = f.store.saveNonce.bind(f.store);
+  let nested: unknown = null;
+  t.mock.method(f.store, "saveNonce", (planId: string, nonce: Parameters<PatchStore["saveNonce"]>[1]) => {
+    try {
+      approve(f.store, f.plan);
+    } catch (error) {
+      nested = error;
+    }
+    saveNonce(planId, nonce);
+  });
+  const approved = approvePlan({
+    store: f.store,
+    planId: f.plan.planId,
+    confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: NOW,
+  });
+  assert.match(String(nested), /WRITE_CONFLICT/);
+  assert.equal(approved.plan.status.state, "approved");
+  const stored = f.store.readPlan(f.plan.planId);
+  const nonce = f.store.readNonce(f.plan.planId);
+  assert.equal(stored?.plan.status.approvalNonceId, nonce?.nonceId);
+  assert.equal(nonce?.subjectId, "tester");
+  assert.deepEqual(readdirSync(join(f.store.root, "locks")), []);
+});
+
+test("an approval claim left by a dead process does not block approval", async (t) => {
+  const f = fixture("CD005");
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const claim = join(f.store.root, "locks", "approve-" + f.plan.planId + ".claim");
+  mkdirSync(claim, { recursive: true });
+  writeFileSync(join(claim, "owner"), leaseToken(await deadPid()), "utf8");
+  const approved = approvePlan({
+    store: f.store,
+    planId: f.plan.planId,
+    confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: NOW,
+  });
+  assert.equal(approved.plan.status.state, "approved");
+  assert.equal(existsSync(claim), false);
+  assert.equal(f.store.readNonce(f.plan.planId)?.nonceId, approved.plan.status.approvalNonceId);
+});
+
+test("a writer claim blocks a second writer while the lease path is free", async (t) => {
+  const f = fixture("CD005");
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  approve(f.store, f.plan);
+  const claim = join(f.store.root, "locks", "writer.claim");
+  mkdirSync(claim, { recursive: true });
+  writeFileSync(join(claim, "owner"), leaseToken(process.pid, "holder"), "utf8");
+  // Without the claim nobody may create the lease, so the gap the old rename
+  // takeover opened (A and C both writers) is closed.
+  await assert.rejects(applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" }), /WRITE_CONFLICT/);
+  assert.equal(existsSync(join(f.store.root, "locks", "writer")), false);
+  assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
+  rmSync(claim, { recursive: true, force: true });
+  const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" });
+  assert.equal(result.state, "applied");
+});
+
 test("CD008 eligibility needs an attested purpose and a consumer floor", () => {
   const unknownPurpose = evaluatePatchEligibility({
     rule: "CD008",

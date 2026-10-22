@@ -106,25 +106,128 @@ export interface LeaseObservation {
   readonly mtimeMs: number;
 }
 
+export interface StoreLock {
+  release(): void;
+}
+
+const LEASE_CLAIM_STALE_MS = 60_000;
+const CLAIM_POLL_MS = 20;
+/**
+ * A claim is held for microseconds. Breaking a claim whose owner process is
+ * gone is safe even when its mtime is fresh: a dead process cannot release it.
+ * A claim directory without an owner token is only broken once it is old,
+ * because its creator may still be inside its mkdir/write window.
+ */
+function acquireLock(lockRoot: string, name: string, waitMs: number, message: string): StoreLock {
+  mkdirSync(lockRoot, { recursive: true });
+  const path = join(lockRoot, name + ".claim");
+  const token = "claim_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      createClaim(path, token);
+      return { release: () => releaseLock(path, token) };
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw new Error(message);
+    }
+    const observed = readLeaseObservation(path);
+    if (observed === null) {
+      const age = ageOf(path);
+      if (age === null) continue;
+      if (age > LEASE_CLAIM_STALE_MS) {
+        rmSync(path, { recursive: true, force: true });
+        continue;
+      }
+    } else if (!leaseOwnerAlive(observed.owner)) {
+      breakStaleClaim(path, observed, token, message);
+      continue;
+    }
+    if (Date.now() >= deadline) throw new Error(message);
+    sleepSync(CLAIM_POLL_MS);
+  }
+}
+
+/** Take a named store lock (a directory with an owner token) and return its release handle. */
+export function acquireStoreLock(store: PatchStore, name: string, waitMs: number): StoreLock {
+  return acquireLock(join(store.root, "locks"), name, waitMs, "WRITE_CONFLICT: another ci-diet process is updating the same record");
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+function ageOf(path: string): number | null {
+  try {
+    return Date.now() - statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+function createClaim(path: string, token: string): void {
+  mkdirSync(path);
+  try {
+    writeFileSync(join(path, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    rmSync(path, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function breakStaleClaim(path: string, observed: LeaseObservation, token: string, message: string): void {
+  // rename is atomic, so only one breaker can move the stale claim aside.
+  const trash = path + ".stale-" + token;
+  try {
+    renameSync(path, trash);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return;
+    throw new Error(message);
+  }
+  const moved = readLeaseObservation(trash);
+  if (moved === null || moved.owner !== observed.owner) {
+    restorePath(trash, path);
+    return;
+  }
+  rmSync(trash, { recursive: true, force: true });
+}
+
+function releaseLock(path: string, token: string): void {
+  const current = readLeaseObservation(path);
+  if (current === null || current.owner !== token) return;
+  const trash = path + ".release-" + token;
+  try {
+    renameSync(path, trash);
+  } catch {
+    return;
+  }
+  const moved = readLeaseObservation(trash);
+  if (moved === null || moved.owner !== token) {
+    restorePath(trash, path);
+    return;
+  }
+  rmSync(trash, { recursive: true, force: true });
+}
+
 /**
  * Serialize ci-diet writers with a directory lease.
  *
  * Two concurrent applies could interleave their backup and rename steps; the
  * lease makes the read-backup-replace sequence single-writer without depending
- * on platform file locking. A stale lease (a crashed process) expires by mtime.
- * The lease carries a unique owner token so a release only removes its own
- * lease, and a stale lease is taken over with rename, never remove-then-create.
- * A stale mtime only means the lease might be abandoned; the takeover first
- * checks that the recorded owner process is gone, so a live long-running writer
- * is never moved out of the lease path. After the rename it verifies the moved
- * token again and restores the lease instead of stealing a live one.
+ * on platform file locking. A stale lease (a crashed process) expires by mtime,
+ * and its owner process must be gone before anyone takes it over.
+ *
+ * Every mutation of the lease path happens while holding a short-lived claim
+ * lock (a sibling directory): creating the lease, replacing a stale lease and
+ * releasing are all serialized by it. The takeover therefore never moves a
+ * lease path that another writer may be about to claim: it re-reads the lease
+ * under the claim and leaves a live lease exactly where it is.
  */
 function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T> {
   const lockRoot = join(store.root, "locks");
   const lease = join(lockRoot, "writer");
   mkdirSync(lockRoot, { recursive: true });
   const token = "lease_" + process.pid.toString(36) + "_" + Date.now().toString(36) + "_" + randomUUID().slice(0, 8);
-  acquireWriterLease(lease, token);
+  acquireWriterLease(lockRoot, lease, token);
   return (async () => {
     try {
       return await run();
@@ -134,31 +237,55 @@ function withWriterLease<T>(store: PatchStore, run: () => Promise<T>): Promise<T
   })();
 }
 
-function acquireWriterLease(lease: string, token: string): void {
+function acquireWriterLease(lockRoot: string, lease: string, token: string): void {
+  // Heartbeat-free contention: a second writer fails fast instead of waiting.
+  const claim = acquireLock(lockRoot, "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace");
   try {
-    createWriterLease(lease, token);
-    return;
-  } catch (error) {
-    if ((error as { code?: string }).code !== "EEXIST") throw error;
-  }
-  const observed = readLeaseObservation(lease);
-  if (observed === null) {
-    // The lease vanished between mkdir and stat: try to become the owner now.
     try {
       createWriterLease(lease, token);
       return;
-    } catch (retryError) {
-      if ((retryError as { code?: string }).code === "EEXIST") throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-      throw new Error("WRITE_CONFLICT: could not acquire the writer lease");
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
     }
+    const observed = readLeaseObservation(lease);
+    if (observed === null) {
+      // A lease directory without an owner token is a crash leftover. Under the
+      // claim nobody else can create a lease, but only an old leftover is safe
+      // to remove: a very recent one may be mid-create by an older writer.
+      const age = ageOf(lease);
+      if (age !== null && age > WRITER_LEASE_STALE_MS) {
+        rmSync(lease, { recursive: true, force: true });
+        createWriterLease(lease, token);
+        return;
+      }
+      throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
+    }
+    if (Date.now() - observed.mtimeMs <= WRITER_LEASE_STALE_MS || leaseOwnerAlive(observed.owner)) {
+      throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
+    }
+    removeStaleWriterLease(lease, observed, token);
+    createWriterLease(lease, token);
+  } finally {
+    claim.release();
   }
-  if (Date.now() - observed.mtimeMs <= WRITER_LEASE_STALE_MS) {
+}
+
+/** Move one observed-stale lease aside, verifying it under the writer claim. */
+function removeStaleWriterLease(lease: string, observed: LeaseObservation, token: string): void {
+  const trash = lease + ".stale-" + token;
+  try {
+    renameSync(lease, trash);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return;
+    throw new Error("WRITE_CONFLICT: another ci-diet writer is taking over the lease");
+  }
+  const moved = readLeaseObservation(trash);
+  if (moved === null || moved.owner !== observed.owner || leaseOwnerAlive(moved.owner)) {
+    // Never delete a lease that turned out to have a live owner.
+    restorePath(trash, lease);
     throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
   }
-  if (leaseOwnerAlive(observed.owner)) {
-    throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-  }
-  takeOverWriterLease(lease, token, observed);
+  rmSync(trash, { recursive: true, force: true });
 }
 
 function readLeaseObservation(lease: string): LeaseObservation | null {
@@ -174,55 +301,32 @@ function readLeaseObservation(lease: string): LeaseObservation | null {
   return { owner, mtimeMs };
 }
 
-/** Exported so the lease-race test can replay the takeover decision directly. */
+/**
+ * Exported so the lease-race test can replay the takeover decision directly.
+ * The decision is taken under the writer claim, exactly like a real acquire, so
+ * a lease that changed owner after it was observed is never moved.
+ */
 export function takeOverWriterLease(lease: string, token: string, observed: LeaseObservation): void {
-  // Never move a lease whose owner process is still alive, even if its mtime
-  // looks stale: the owner may simply be in a long apply.
-  if (leaseOwnerAlive(observed.owner)) {
-    throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-  }
-  // rename is the atomic primitive: exactly one process can move the stale
-  // directory aside, so two takeovers cannot both become the writer. The moved
-  // directory is then checked against what was observed: a live writer may have
-  // released the stale lease and created a fresh one after that check.
-  const trash = lease + ".stale-" + token;
+  const claim = acquireLock(dirname(lease), "writer", 0, "WRITE_CONFLICT: another ci-diet writer holds the workspace");
   try {
-    renameSync(lease, trash);
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") {
-      // Someone else took over or released first; only an uncontended mkdir wins.
-      try {
-        createWriterLease(lease, token);
-      } catch (retryError) {
-        if ((retryError as { code?: string }).code === "EEXIST") throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-        throw new Error("WRITE_CONFLICT: could not acquire the writer lease");
-      }
-      return;
+    const current = readLeaseObservation(lease);
+    if (current === null) return;
+    if (current.owner !== observed.owner || leaseOwnerAlive(current.owner)) {
+      throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
     }
-    throw new Error("WRITE_CONFLICT: another ci-diet writer is taking over the lease");
-  }
-  const moved = readLeaseObservation(trash);
-  if (moved === null || moved.owner !== observed.owner || leaseOwnerAlive(moved.owner)) {
-    // The lease we moved is not the stale one we observed. Put the live lease
-    // back so its owner keeps serialization; never delete another token.
-    restoreWriterLease(trash, lease);
-    throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-  }
-  rmSync(trash, { recursive: true, force: true });
-  try {
+    removeStaleWriterLease(lease, current, token);
     createWriterLease(lease, token);
-  } catch (error) {
-    if ((error as { code?: string }).code === "EEXIST") throw new Error("WRITE_CONFLICT: another ci-diet writer holds the workspace");
-    throw new Error("WRITE_CONFLICT: could not acquire the writer lease");
+  } finally {
+    claim.release();
   }
 }
 
-function restoreWriterLease(trash: string, lease: string): void {
+function restorePath(trash: string, path: string): void {
   try {
-    renameSync(trash, lease);
+    renameSync(trash, path);
   } catch {
-    // The lease path is occupied again or cannot be restored. Keep the moved
-    // lease under its trash name: deleting it would erase a live writer token.
+    // The path is occupied again or cannot be restored. Keep the moved record
+    // under its trash name: deleting it would erase a live owner token.
   }
 }
 
@@ -241,22 +345,7 @@ function createWriterLease(lease: string, token: string): void {
 function releaseWriterLease(lease: string, token: string): void {
   // Never move a lease that is not ours: if the owner token changed, the path
   // belongs to someone else and must stay where other writers can see it.
-  const current = readLeaseObservation(lease);
-  if (current === null || current.owner !== token) return;
-  // Move our own lease aside and inspect it once more, so a lease that changed
-  // owners between the token read and the delete is restored instead of removed.
-  const trash = lease + ".release-" + token;
-  try {
-    renameSync(lease, trash);
-  } catch {
-    return;
-  }
-  const moved = readLeaseObservation(trash);
-  if (moved === null || moved.owner !== token) {
-    restoreWriterLease(trash, lease);
-    return;
-  }
-  rmSync(trash, { recursive: true, force: true });
+  releaseLock(lease, token);
 }
 
 async function replaceAtomically(path: string, text: string, mode: number): Promise<string> {

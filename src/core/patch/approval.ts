@@ -1,6 +1,9 @@
 import type { PatchPlan } from "../contracts/schema.ts";
 import type { ApprovalNonce, PatchStore } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
+import { acquireStoreLock } from "./apply.ts";
+
+const APPROVE_LOCK_WAIT_MS = 250;
 
 export interface ApproveInput {
   readonly store: PatchStore;
@@ -23,6 +26,21 @@ export function approvalConfirmation(plan: PatchPlan): string {
 }
 
 export function approvePlan(input: ApproveInput): ApproveResult {
+  // Read once to validate the id through the store before it names a lock path.
+  const initial = input.store.readPlan(input.planId);
+  if (initial === null) throw new Error("PLAN_NOT_FOUND: " + input.planId);
+  // The approval is a two-step write (nonce, then plan status). Serialize it per
+  // plan so concurrent approvers cannot leave a nonce without its status, or a
+  // status pointing at a nonce that a second approval overwrote.
+  const lock = acquireStoreLock(input.store, "approve-" + initial.plan.planId, APPROVE_LOCK_WAIT_MS);
+  try {
+    return approveLocked(input);
+  } finally {
+    lock.release();
+  }
+}
+
+function approveLocked(input: ApproveInput): ApproveResult {
   const stored = input.store.readPlan(input.planId);
   if (stored === null) throw new Error("PLAN_NOT_FOUND: " + input.planId);
   const plan = stored.plan;
