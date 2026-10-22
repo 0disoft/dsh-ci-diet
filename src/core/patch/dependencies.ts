@@ -185,7 +185,8 @@ function stepBase(
 }
 
 interface DependencySink {
-  add(base: string, candidate: string): void;
+  /** True when the named file resolved inside the workspace; callers use it instead of resolving twice. */
+  add(base: string, candidate: string): boolean;
   miss(base: string, candidate: string): void;
   unresolved(message: string): void;
   addActionDirectory(base: string, candidate: string): void;
@@ -195,15 +196,16 @@ interface DependencySink {
 function createDependencySink(realRoot: string): DependencySink {
   const found = new Map<string, string>();
   const unresolved = new Set<string>();
-  const add = (base: string, candidate: string): void => {
+  const add = (base: string, candidate: string): boolean => {
     const real = resolveFile(realRoot, base, candidate);
-    if (real === null) return;
+    if (real === null) return false;
     const relativePath = toPosix(relative(realRoot, real));
-    if (relativePath === "" || relativePath.startsWith("..")) return;
-    if (found.has(relativePath)) return;
+    if (relativePath === "" || relativePath.startsWith("..")) return false;
+    if (found.has(relativePath)) return true;
     const hash = hashFile(real);
-    if (hash === null) return;
+    if (hash === null) return false;
     found.set(relativePath, hash);
+    return true;
   };
   const miss = (base: string, candidate: string): void => {
     const display = joinRelative(base, candidate);
@@ -306,16 +308,12 @@ function collectRunSegment(
   const head = segment[0] ?? "";
   if (head === "cd" && segment[1] !== undefined) return;
   if (head.startsWith("./") || head.startsWith("../")) {
-    add(base, head);
-    if (resolveFile(realRoot, base, head) === null) miss(base, head);
+    if (!add(base, head)) miss(base, head);
     return;
   }
   if (SHELL_SOURCE_COMMANDS.has(head)) {
     const script = segment[1];
-    if (script !== undefined) {
-      add(base, script);
-      if (resolveFile(realRoot, base, script) === null) miss(base, script);
-    }
+    if (script !== undefined && !add(base, script)) miss(base, script);
     return;
   }
   const interpreter = INTERPRETERS.has(baseName(head)) ? baseName(head) : null;
@@ -328,13 +326,8 @@ function collectRunSegment(
   const flagValue = (value: string): void => {
     const target = flagValuePath(value);
     if (target === null) return;
-    add(base, target);
-    if (
-      (target.startsWith("./") || target.startsWith("../") || target.startsWith("/")) &&
-      resolveFile(realRoot, base, target) === null
-    ) {
-      miss(base, target);
-    }
+    const resolved = add(base, target);
+    if (!resolved && (target.startsWith("./") || target.startsWith("../") || target.startsWith("/"))) miss(base, target);
   };
   let index = 1;
   let moduleMode = false;
@@ -378,8 +371,7 @@ function collectRunSegment(
   }
   const script = segment[index];
   if (script === undefined) return;
-  add(base, script);
-  if (resolveFile(realRoot, base, script) === null) miss(base, script);
+  if (!add(base, script)) miss(base, script);
   for (let extra = index + 1; extra < segment.length; extra += 1) {
     const token = segment[extra] as string;
     if (token.includes("/")) add(base, token);
