@@ -184,16 +184,15 @@ function stepBase(
   return normalizeBase(raw);
 }
 
-export function collectDependencies(
-  workspaceRoot: string,
-  workflow: WorkflowDefinition,
-): DependencyCollection {
-  let realRoot: string;
-  try {
-    realRoot = realpathSync(workspaceRoot);
-  } catch {
-    return { dependencies: [], unresolved: ["<workspace>"] };
-  }
+interface DependencySink {
+  add(base: string, candidate: string): void;
+  miss(base: string, candidate: string): void;
+  unresolved(message: string): void;
+  addActionDirectory(base: string, candidate: string): void;
+  result(): DependencyCollection;
+}
+
+function createDependencySink(realRoot: string): DependencySink {
   const found = new Map<string, string>();
   const unresolved = new Set<string>();
   const add = (base: string, candidate: string): void => {
@@ -281,120 +280,162 @@ export function collectDependencies(
     if (byteLimit) unresolved.add(dirDisplay + " (byte limit reached)");
     if (collected === 0) unresolved.add(dirDisplay);
   };
+  return {
+    add,
+    miss,
+    unresolved: (message: string) => unresolved.add(message),
+    addActionDirectory,
+    result: () => ({
+      dependencies: [...found.entries()]
+        .map(([ref, sha256]) => ({ ref, sha256 }))
+        .sort((left, right) => (left.ref < right.ref ? -1 : left.ref > right.ref ? 1 : 0)),
+      unresolved: [...unresolved].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
+    }),
+  };
+}
 
+/** Record the files a script segment names, and the ones it cannot resolve. */
+function collectRunSegment(
+  realRoot: string,
+  sink: DependencySink,
+  base: string,
+  segment: readonly string[],
+): void {
+  const add = sink.add;
+  const miss = sink.miss;
+  const head = segment[0] ?? "";
+  if (head === "cd" && segment[1] !== undefined) return;
+  if (head.startsWith("./") || head.startsWith("../")) {
+    add(base, head);
+    if (resolveFile(realRoot, base, head) === null) miss(base, head);
+    return;
+  }
+  if (SHELL_SOURCE_COMMANDS.has(head)) {
+    const script = segment[1];
+    if (script !== undefined) {
+      add(base, script);
+      if (resolveFile(realRoot, base, script) === null) miss(base, script);
+    }
+    return;
+  }
+  const interpreter = INTERPRETERS.has(baseName(head)) ? baseName(head) : null;
+  if (interpreter === null) {
+    for (const token of segment) {
+      if (token.includes("/")) add(base, token);
+    }
+    return;
+  }
+  const flagValue = (value: string): void => {
+    const target = flagValuePath(value);
+    if (target === null) return;
+    add(base, target);
+    if (
+      (target.startsWith("./") || target.startsWith("../") || target.startsWith("/")) &&
+      resolveFile(realRoot, base, target) === null
+    ) {
+      miss(base, target);
+    }
+  };
+  let index = 1;
+  let moduleMode = false;
+  let inline = false;
+  while (index < segment.length) {
+    const token = segment[index] as string;
+    if (INLINE_FLAGS.has(token)) {
+      inline = true;
+      break;
+    }
+    if (MODULE_FLAGS.has(token)) {
+      moduleMode = true;
+      index += 1;
+      break;
+    }
+    const equals = token.startsWith("--") ? token.indexOf("=") : -1;
+    if (equals > 2) {
+      const name = token.slice(0, equals);
+      if (FLAGS_WITH_VALUE.has(name)) flagValue(token.slice(equals + 1));
+      index += 1;
+      continue;
+    }
+    if (FLAGS_WITH_VALUE.has(token)) {
+      const value = segment[index + 1];
+      if (value !== undefined) flagValue(value);
+      index += 2;
+      continue;
+    }
+    if (token.startsWith("-")) {
+      index += 1;
+      continue;
+    }
+    break;
+  }
+  if (inline || moduleMode) {
+    for (let extra = index; extra < segment.length; extra += 1) {
+      const token = segment[extra] as string;
+      if (token.includes("/")) add(base, token);
+    }
+    return;
+  }
+  const script = segment[index];
+  if (script === undefined) return;
+  add(base, script);
+  if (resolveFile(realRoot, base, script) === null) miss(base, script);
+  for (let extra = index + 1; extra < segment.length; extra += 1) {
+    const token = segment[extra] as string;
+    if (token.includes("/")) add(base, token);
+  }
+}
+
+/** Walk the shell commands one step runs, following `cd` and interpreter flags. */
+function collectRunScript(
+  realRoot: string,
+  sink: DependencySink,
+  workflow: WorkflowDefinition,
+  job: WorkflowJob,
+  step: WorkflowStep,
+): void {
+  if (step.run === null) return;
+  const base = stepBase(workflow, job, step);
+  if (base === null) {
+    sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (dynamic working-directory)");
+    return;
+  }
+  if (step.run.includes("${{")) {
+    sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (dynamic run script)");
+    return;
+  }
+  let working = base;
+  for (const segment of commandSegments(step.run)) {
+    const head = segment[0] ?? "";
+    if (head === "cd" && segment[1] !== undefined) {
+      const next = normalizeBase(joinRelative(working, segment[1]));
+      if (next !== null) working = next;
+      continue;
+    }
+    collectRunSegment(realRoot, sink, working, segment);
+  }
+}
+
+/** Pin every repository file the workflow runs from, or explain what was missed. */
+export function collectDependencies(
+  workspaceRoot: string,
+  workflow: WorkflowDefinition,
+): DependencyCollection {
+  let realRoot: string;
+  try {
+    realRoot = realpathSync(workspaceRoot);
+  } catch {
+    return { dependencies: [], unresolved: ["<workspace>"] };
+  }
+  const sink = createDependencySink(realRoot);
   for (const job of workflow.jobs) {
     for (const step of job.steps) {
-      const base = stepBase(workflow, job, step);
       if (step.uses !== null && step.uses.startsWith("./")) {
         // Local actions resolve from the repository root, not the step working directory.
-        addActionDirectory("", step.uses.slice(2));
+        sink.addActionDirectory("", step.uses.slice(2));
       }
-      if (step.run === null) continue;
-      if (base === null) {
-        unresolved.add(
-          "jobs." + job.key + ".steps[" + step.index + "] (dynamic working-directory)",
-        );
-        continue;
-      }
-      if (step.run.includes("${{")) {
-        unresolved.add("jobs." + job.key + ".steps[" + step.index + "] (dynamic run script)");
-        continue;
-      }
-      let working = base;
-      for (const segment of commandSegments(step.run)) {
-        const head = segment[0] ?? "";
-        if (head === "cd" && segment[1] !== undefined) {
-          const next = normalizeBase(joinRelative(working, segment[1]));
-          if (next !== null) working = next;
-          continue;
-        }
-        if (head.startsWith("./") || head.startsWith("../")) {
-          add(working, head);
-          if (resolveFile(realRoot, working, head) === null) miss(working, head);
-          continue;
-        }
-        if (SHELL_SOURCE_COMMANDS.has(head)) {
-          const script = segment[1];
-          if (script !== undefined) {
-            add(working, script);
-            if (resolveFile(realRoot, working, script) === null) miss(working, script);
-          }
-          continue;
-        }
-        const interpreter = INTERPRETERS.has(baseName(head)) ? baseName(head) : null;
-        if (interpreter === null) {
-          for (const token of segment) {
-            if (token.includes("/")) add(working, token);
-          }
-          continue;
-        }
-        const flagValue = (value: string): void => {
-          const target = flagValuePath(value);
-          if (target === null) return;
-          add(working, target);
-          if (
-            (target.startsWith("./") || target.startsWith("../") || target.startsWith("/")) &&
-            resolveFile(realRoot, working, target) === null
-          ) {
-            miss(working, target);
-          }
-        };
-        let index = 1;
-        let moduleMode = false;
-        let inline = false;
-        while (index < segment.length) {
-          const token = segment[index] as string;
-          if (INLINE_FLAGS.has(token)) {
-            inline = true;
-            break;
-          }
-          if (MODULE_FLAGS.has(token)) {
-            moduleMode = true;
-            index += 1;
-            break;
-          }
-          const equals = token.startsWith("--") ? token.indexOf("=") : -1;
-          if (equals > 2) {
-            const name = token.slice(0, equals);
-            if (FLAGS_WITH_VALUE.has(name)) flagValue(token.slice(equals + 1));
-            index += 1;
-            continue;
-          }
-          if (FLAGS_WITH_VALUE.has(token)) {
-            const value = segment[index + 1];
-            if (value !== undefined) flagValue(value);
-            index += 2;
-            continue;
-          }
-          if (token.startsWith("-")) {
-            index += 1;
-            continue;
-          }
-          break;
-        }
-        if (inline || moduleMode) {
-          for (let extra = index; extra < segment.length; extra += 1) {
-            const token = segment[extra] as string;
-            if (token.includes("/")) add(working, token);
-          }
-          continue;
-        }
-        const script = segment[index];
-        if (script === undefined) continue;
-        add(working, script);
-        if (resolveFile(realRoot, working, script) === null) miss(working, script);
-        for (let extra = index + 1; extra < segment.length; extra += 1) {
-          const token = segment[extra] as string;
-          if (token.includes("/")) add(working, token);
-        }
-      }
+      collectRunScript(realRoot, sink, workflow, job, step);
     }
   }
-
-  return {
-    dependencies: [...found.entries()]
-      .map(([ref, sha256]) => ({ ref, sha256 }))
-      .sort((left, right) => (left.ref < right.ref ? -1 : left.ref > right.ref ? 1 : 0)),
-    unresolved: [...unresolved].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0)),
-  };
+  return sink.result();
 }

@@ -35,6 +35,9 @@ Keep a Changelog, and the project uses semantic versioning.
 - The CLI and the DSH plan tool share one requested-plan use case. It builds the
   named edit, dependency snapshot, attestation, eligibility re-check, policy
   snapshots, and plan, while each caller keeps its own storage and error text.
+- Dependency collection separates the hash sink, the local-action walk, and the
+  per-command interpreter parsing. Each piece is independent of the workflow
+  loop, so the traversal rules can be tested without building a repository.
 - Patch and analysis limits live in one shared policy module. Plan lifetime, policy
   freshness, approval lifetime, and attestation lifetime accept the configured
   values; CLI lookback and timeout bounds use the same constants as the contract.
