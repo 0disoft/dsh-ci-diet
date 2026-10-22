@@ -49,7 +49,9 @@ but unsupported `--lang` falls back to English rather than to the host setting.
 Reports are stored in English. Translation happens when text is displayed:
 finding titles and descriptions come from message keys, while rule ids, error
 codes, enum values, paths, hashes, and numbers are never translated. The HTML
-report sets its `lang` attribute accordingly. Model tool descriptions and render
+report sets its `lang` attribute accordingly. The Settings page registers its own
+client dictionaries in all six languages and contributes any language the host
+does not ship, with English as its fallback. Model tool descriptions and render
 templates are captured when the plugin loads, so change the DSH language
 preference and reload the plugin to see new text.
 
