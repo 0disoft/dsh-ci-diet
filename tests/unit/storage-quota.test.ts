@@ -147,6 +147,57 @@ test("a failed report write leaves the previous generation committed", () => {
   });
 });
 
+test("readReport resolves a report kept by an earlier generation", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const binding = createLocalBinding(root, "2026-10-20T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const first = history("2026-10-20T01:00:00Z");
+    const firstReport = reportFor(binding, first);
+    assert.equal(store.saveHistorySnapshot(binding, first, firstReport), true);
+    const second = history("2026-10-20T02:00:00Z");
+    const secondReport = reportFor(binding, second);
+    assert.equal(store.saveHistorySnapshot(binding, second, secondReport), true);
+    assert.equal(store.readReport(firstReport.reportId)?.reportId, firstReport.reportId);
+    assert.equal(store.readReport(secondReport.reportId)?.reportId, secondReport.reportId);
+  });
+});
+
+test("prune removes expired generation reports and their pointers", () => {
+  withRoot((root) => {
+    const state = join(root, "state");
+    const store = PatchStore.open(state);
+    const binding = createLocalBinding(root, "2026-01-01T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const first = history("2026-01-01T01:00:00Z");
+    assert.equal(store.saveHistorySnapshot(binding, first, reportFor(binding, first)), true);
+    const second = history("2026-01-02T01:00:00Z");
+    const secondReport = reportFor(binding, second);
+    assert.equal(store.saveHistorySnapshot(binding, second, secondReport), true);
+    const before = store.usage().bytes;
+
+    const result = store.prune(new Date("2027-01-01T00:00:00Z"), { reportDays: 90, planDays: 7, cacheDays: 30 });
+    assert.equal(result.removedReports, 2);
+    assert.ok(result.bytesFreed > 0, String(result.bytesFreed));
+    assert.equal(existsSync(join(state, "snapshots", "current", binding.bindingId + ".json")), false);
+    assert.equal(store.readLatestHistory(binding.bindingId), null);
+    assert.equal(store.readReport(secondReport.reportId), null);
+    assert.ok(store.usage().bytes < before, "prune frees generation bytes");
+  });
+});
+
+test("latestReport trusts a valid index without scanning unrelated records", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const binding = createLocalBinding(root, "2026-10-20T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const report = reportFor(binding, history("2026-10-20T01:00:00Z"));
+    store.saveReport(report);
+    // A valid pointer must answer without reading every report; a corrupt
+    // unrelated record would throw if the scan still ran.
+    writeFileSync(join(store.root, "reports", "broken.json"), "{", "utf8");
+    assert.equal(store.latestReport()?.reportId, report.reportId);
+    assert.equal(store.latestReportForBinding(binding.bindingId)?.reportId, report.reportId);
+  });
+});
+
 test("refuses a backup write that would cross the store quota and leaves no directory behind", () => {
   withRoot((root) => {
     const store = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: 2048 }));

@@ -122,7 +122,11 @@ Keep a Changelog, and the project uses semantic versioning.
   pointer switch, so a quota or I/O failure while writing the report leaves the
   previous generation visible instead of a new binding and history without a
   report. When an older overlapping sync finishes last, it writes nothing and
-  says so.
+  says so. A report kept by an earlier generation stays addressable by its id,
+  and `prune` applies report retention to generation reports and removes an
+  expired generation together with its pointer.
+- A valid report index answers latest-report lookups without parsing every stored
+  report, so unrelated or corrupt older records no longer slow the common path.
 - Coverage documents, merged configs, and attestations copy the arrays and
   objects they receive, so mutating a result or an input can no longer change
   the other object. Job parsing returns its unsupported-feature list instead of

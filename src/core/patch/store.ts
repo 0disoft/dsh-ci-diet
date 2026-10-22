@@ -397,26 +397,30 @@ export class PatchStore {
     const id = requireId(reportId, "reportId");
     const direct = this.readJson<AnalysisReport>(this.path("reports", id + ".json"), "AnalysisReport");
     if (direct !== null) return direct;
-    return this.snapshotReport(id);
+    // A generation keeps its report after it stops being current, so a stored
+    // report id stays addressable until prune removes that generation.
+    return this.generationReport(id);
   }
 
   latestReport(): AnalysisReport | null {
     const snapshotLatest = this.latestSnapshotReport(null);
     const pointer = this.readReportPointer(this.latestReportPointer());
     const pointerReport = pointer === null ? null : this.readReportPointerReport(pointer, null);
+    if (pointerReport !== null) {
+      // The index is authoritative while it agrees with its record; comparing it
+      // with the current generation avoids rescanning every stored report.
+      return newestReport(snapshotLatest, pointerReport);
+    }
     const scanned = this.scanLatestReport(null);
-    const latest = newestReport(snapshotLatest, newestReport(pointerReport, scanned));
+    const latest = newestReport(snapshotLatest, scanned);
     if (latest === null || latest === snapshotLatest) return latest;
-    // A report file is authoritative for its index pointer. Snapshot reports
-    // live in their generation and deliberately do not get a report pointer.
     this.saveReportPointers(latest, this.latestReportPointer());
     return latest;
   }
 
   /** Latest report produced for one binding, never another repository's report. */
   latestReportForBinding(bindingId: string): AnalysisReport | null {
-    const snapshot = this.readCurrentSnapshot(bindingId);
-    const snapshotReport = snapshot?.report ?? null;
+    const snapshotReport = this.latestSnapshotReport(bindingId);
     let pointerReport: AnalysisReport | null = null;
     // A binding id is a file name here, so only pattern-safe ids get a pointer;
     // other schema-valid ids still work through the scan below.
@@ -426,8 +430,9 @@ export class PatchStore {
         pointerReport = this.readReportPointerReport(pointer, bindingId);
       }
     }
+    if (pointerReport !== null) return newestReport(snapshotReport, pointerReport);
     const scanned = this.scanLatestReport(bindingId);
-    const latest = newestReport(snapshotReport, newestReport(pointerReport, scanned));
+    const latest = newestReport(snapshotReport, scanned);
     if (latest === null || latest === snapshotReport) return latest;
     this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
     return latest;
@@ -516,20 +521,100 @@ export class PatchStore {
     return snapshots;
   }
 
-  private latestSnapshotReport(bindingId: string | null): AnalysisReport | null {
-    let latest: AnalysisReport | null = null;
-    for (const snapshot of this.currentSnapshots()) {
-      if (bindingId !== null && snapshot.report.bindingId !== bindingId) continue;
-      latest = newestReport(latest, snapshot.report);
+  /** Snapshot pointers newest first; loading only the newest avoids reading every generation. */
+  private snapshotPointers(bindingId: string | null): SnapshotPointer[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.path("snapshots", "current"));
+    } catch {
+      return [];
     }
-    return latest;
+    const pointers: SnapshotPointer[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const id = name.slice(0, -".json".length);
+      if (!ID_PATTERN.test(id) || (bindingId !== null && id !== bindingId)) continue;
+      const pointer = this.readSnapshotPointer(id);
+      if (pointer !== null) pointers.push(pointer);
+    }
+    return pointers.sort((left, right) => Date.parse(right.generatedAt) - Date.parse(left.generatedAt));
   }
 
-  private snapshotReport(reportId: string): AnalysisReport | null {
-    for (const snapshot of this.currentSnapshots()) {
-      if (snapshot.report.reportId === reportId) return snapshot.report;
+  private latestSnapshotReport(bindingId: string | null): AnalysisReport | null {
+    for (const pointer of this.snapshotPointers(bindingId)) {
+      const snapshot = this.readCurrentSnapshot(pointer.bindingId);
+      if (snapshot === null) continue;
+      if (bindingId !== null && snapshot.report.bindingId !== bindingId) continue;
+      return snapshot.report;
     }
     return null;
+  }
+
+  private generationReport(reportId: string): AnalysisReport | null {
+    const root = this.path("snapshots", "generations");
+    let bindings;
+    try {
+      bindings = readdirSync(root, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+    for (const binding of bindings) {
+      if (!binding.isDirectory() || !ID_PATTERN.test(binding.name)) continue;
+      let generations;
+      try {
+        generations = readdirSync(join(root, binding.name), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const generation of generations) {
+        if (!generation.isDirectory() || !ID_PATTERN.test(generation.name)) continue;
+        const report = this.readJson<AnalysisReport>(join(root, binding.name, generation.name, "report.json"), "AnalysisReport");
+        if (report !== null && report.reportId === reportId) return report;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Apply report retention to committed generations. A generation stores its
+   * report beside the binding and history, so an expired generation is removed
+   * as a unit; when it is current, its pointer goes with it.
+   */
+  private pruneExpiredSnapshots(reportCutoff: number): { removedReports: number; bytesFreed: number } {
+    const root = this.path("snapshots", "generations");
+    let bindings;
+    try {
+      bindings = readdirSync(root, { withFileTypes: true });
+    } catch {
+      return { removedReports: 0, bytesFreed: 0 };
+    }
+    let removedReports = 0;
+    let bytesFreed = 0;
+    for (const binding of bindings) {
+      if (!binding.isDirectory() || !ID_PATTERN.test(binding.name)) continue;
+      const pointer = this.readSnapshotPointer(binding.name);
+      let generations;
+      try {
+        generations = readdirSync(join(root, binding.name), { withFileTypes: true });
+      } catch {
+        continue;
+      }
+      for (const generation of generations) {
+        if (!generation.isDirectory() || !ID_PATTERN.test(generation.name)) continue;
+        const directory = join(root, binding.name, generation.name);
+        const report = this.readJson<AnalysisReport>(join(directory, "report.json"), "AnalysisReport");
+        if (report === null) continue;
+        const at = Date.parse(report.generatedAt);
+        if (!Number.isFinite(at) || at >= reportCutoff) continue;
+        bytesFreed += deepBytes(directory);
+        rmSync(directory, { recursive: true, force: true });
+        removedReports += 1;
+        if (pointer !== null && pointer.generationId === generation.name) {
+          rmSync(this.snapshotPointerPath(binding.name), { force: true });
+        }
+      }
+    }
+    return { removedReports, bytesFreed };
   }
 
   /** Keep the committed generation and one predecessor; readers retry the pointer. */
@@ -935,6 +1020,12 @@ export class PatchStore {
       rmSync(full, { force: true });
       removedReports += 1;
     }
+
+    // Generations are also reports; prune them under the write lock so a
+    // concurrent sync cannot switch the pointer to a generation being removed.
+    const generations = this.withWriteLock(() => this.pruneExpiredSnapshots(reportCutoff));
+    removedReports += generations.removedReports;
+    bytesFreed += generations.bytesFreed;
 
     for (const stored of this.listPlans()) {
       const createdAt = Date.parse(stored.plan.payload.createdAt);

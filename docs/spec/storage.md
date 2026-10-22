@@ -98,6 +98,12 @@ concurrent save removed that generation, and fall back to the legacy
 `bindings/`, `snapshots/history/`, and `reports/` records for stores written by
 an older version.
 
+A retained generation keeps its report, so `readReport(<id>)` resolves reports
+from earlier generations until cleanup removes them. `prune` applies
+`reportDays` to each generation report and deletes the whole generation as one
+unit; when the removed generation is current, its pointer is removed too. A valid
+report index is trusted without rescanning unrelated reports.
+
 ## Configuration
 
 `examples/default-config.json` is the authority for exact defaults. Network access
