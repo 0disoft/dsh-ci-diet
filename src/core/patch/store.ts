@@ -190,8 +190,9 @@ export class PatchStore {
       try {
         chmodSync(current, 0o700);
       } catch (error) {
+        // Filesystems without POSIX modes (a mounted share, a FAT volume) cannot honor 0700; the store still works.
         const code = (error as { code?: string }).code;
-        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT") throw error;
+        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
       }
       if (current === this.root) break;
       current = dirname(current);
@@ -472,7 +473,7 @@ export class PatchStore {
         chmodSync(path, 0o600);
       } catch (error) {
         const code = (error as { code?: string }).code;
-        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT") throw error;
+        if (code !== "EPERM" && code !== "EACCES" && code !== "ENOENT" && code !== "ENOTSUP" && code !== "EOPNOTSUPP") throw error;
       }
     }
   }
