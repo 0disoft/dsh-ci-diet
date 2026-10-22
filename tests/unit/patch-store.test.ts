@@ -169,3 +169,34 @@ test("a missing, corrupt, or dangling index pointer falls back to a scan and is 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("a pointer that disagrees with its report record is ignored", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-store-"));
+  try {
+    const store = PatchStore.open(join(root, "state"));
+    const scan = runStaticScan({ workspaceRoot: root, generatedAt: "2026-10-20T00:00:00Z" });
+    store.saveBinding(scan.binding);
+    const bindingId = scan.binding.bindingId;
+    const older = { ...scan.report, reportId: "r_" + "1".repeat(24), generatedAt: "2026-10-20T00:00:00Z" };
+    const newer = { ...scan.report, reportId: "r_" + "2".repeat(24), generatedAt: "2026-10-20T01:00:00Z" };
+    store.saveReport(older);
+    store.saveReport(newer);
+    // The pointer names an existing report but claims a different generation.
+    writeFileSync(join(store.root, "index", "latest-report.json"), JSON.stringify({
+      reportId: older.reportId,
+      generatedAt: "2099-01-01T00:00:00Z",
+      bindingId,
+    }));
+    assert.equal(store.latestReport()?.reportId, newer.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, newer.reportId);
+    writeFileSync(join(store.root, "index", "latest-report-" + bindingId + ".json"), JSON.stringify({
+      reportId: older.reportId,
+      generatedAt: "2099-01-01T00:00:00Z",
+      bindingId,
+    }));
+    assert.equal(store.latestReportForBinding(bindingId)?.reportId, newer.reportId);
+    assert.equal(reportPointer(store, "latest-report-" + bindingId + ".json")?.reportId, newer.reportId);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

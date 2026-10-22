@@ -341,7 +341,7 @@ export class PatchStore {
   latestReport(): AnalysisReport | null {
     const pointer = this.readReportPointer(this.latestReportPointer());
     if (pointer !== null) {
-      const report = this.readReportPointerReport(pointer.reportId, null);
+      const report = this.readReportPointerReport(pointer, null);
       if (report !== null) return report;
     }
     const latest = this.scanLatestReport(null);
@@ -358,7 +358,7 @@ export class PatchStore {
     if (ID_PATTERN.test(bindingId)) {
       const pointer = this.readReportPointer(this.latestReportPointerFor(bindingId));
       if (pointer !== null && pointer.bindingId === bindingId) {
-        const report = this.readReportPointerReport(pointer.reportId, bindingId);
+        const report = this.readReportPointerReport(pointer, bindingId);
         if (report !== null) return report;
       }
     }
@@ -369,9 +369,16 @@ export class PatchStore {
     return latest;
   }
 
-  private readReportPointerReport(reportId: string, bindingId: string | null): AnalysisReport | null {
-    const report = this.readReport(reportId);
+  /**
+   * A pointer is only a cache hint. It must agree with the record it names on
+   * both the generation and the binding, otherwise a corrupted or overwritten
+   * pointer could answer with a report that is no longer the latest.
+   */
+  private readReportPointerReport(pointer: ReportPointer, bindingId: string | null): AnalysisReport | null {
+    const report = this.readReport(pointer.reportId);
     if (report === null) return null;
+    if (report.generatedAt !== pointer.generatedAt) return null;
+    if (report.bindingId !== pointer.bindingId) return null;
     if (bindingId !== null && report.bindingId !== bindingId) return null;
     return report;
   }
