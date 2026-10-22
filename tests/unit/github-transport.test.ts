@@ -235,6 +235,27 @@ describe("gh transport", () => {
     assert.deepEqual(waits, [120_000]);
   });
 
+  it("fails fast on a Retry-After longer than the configured bound", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(429, null, { "retry-after": "86400" }), httpResponse(200, { ok: true }));
+    const waits: number[] = [];
+    const transport = new GhTransport({ budget: budget(), runner, sleep: async (milliseconds) => { waits.push(milliseconds); } });
+    await assert.rejects(
+      transport.get({ path: "/repos/owner/repo" }, "discovery"),
+      (error: unknown) => error instanceof GitHubError && error.code === "RATE_LIMITED",
+    );
+    assert.equal(calls.length, 1);
+    assert.deepEqual(waits, []);
+  });
+
+  it("classifies an unauthenticated gh response as a credential problem", async () => {
+    const runner: GhRunner = async () => ({ exitCode: 0, stdout: "To get started with GitHub CLI, run: gh auth login", stderr: "" });
+    const transport = new GhTransport({ budget: budget(), runner });
+    await assert.rejects(
+      transport.get({ path: "/repos/owner/repo" }, "discovery"),
+      (error: unknown) => error instanceof GitHubError && error.code === "AUTH_REQUIRED",
+    );
+  });
+
   it("retries a secondary-limit 403 signaled by Retry-After", async () => {
     const { runner, calls } = runnerFrom(
       httpResponse(403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "2", "x-ratelimit-remaining": "100" }),

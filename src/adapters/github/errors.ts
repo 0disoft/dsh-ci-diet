@@ -16,8 +16,8 @@ export class GitHubError extends Error {
   /** Server-requested pause before a retry, when GitHub supplied one. */
   readonly retryAfterMs: number | null;
 
-  constructor(code: GitHubErrorCode, message: string, status: number | null = null, detail: string | null = null, retryAfterMs: number | null = null) {
-    super(message);
+  constructor(code: GitHubErrorCode, message: string, status: number | null = null, detail: string | null = null, retryAfterMs: number | null = null, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause });
     this.name = "GitHubError";
     this.code = code;
     this.status = status;

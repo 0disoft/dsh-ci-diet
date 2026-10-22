@@ -8,6 +8,8 @@ import { API_VERSION, GhTransport, readGhVersion } from "../../adapters/github/t
 import { GitHubClient } from "../../adapters/github/client.ts";
 import type { GitHubRun } from "../../adapters/github/client.ts";
 import { durationMillisBetween, skuForLabels } from "./model.ts";
+import { DEFAULT_SYNC_DEADLINE_MS } from "../policy/constants.ts";
+import { withDeadline } from "../support/deadline.ts";
 import type { ArtifactRecord, HistoryBundle, HistoryJob, HistoryPull, HistoryRun, ProtectionSnapshot, RetentionSnapshot } from "./model.ts";
 
 const PAGE_SIZE = 100;
@@ -22,6 +24,12 @@ export interface SyncResult {
 
 function isoSeconds(date: Date): string {
   return date.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+/** Keep the machine code with the human message when a collection step degrades. */
+function failureReason(error: unknown, fallback: string): string {
+  if (error instanceof GitHubError) return error.code + ": " + error.message;
+  return error instanceof Error ? error.message : fallback;
 }
 
 function missingScope(partial: Omit<MissingScope, "runId" | "attempt" | "path" | "pullRequest" | "branch" | "from" | "to"> & Partial<MissingScope>): MissingScope {
@@ -61,8 +69,7 @@ function workflowFilePath(run: GitHubRun, knownPaths: ReadonlyMap<number, string
   return listed ?? splitWorkflowRef(run.path, run.head_branch);
 }
 
-/** Collect one bounded history window through the read-only transport. */
-export async function syncRepositoryHistory(options: {
+export interface SyncOptions {
   readonly owner: string;
   readonly repo: string;
   readonly config: Config;
@@ -71,16 +78,29 @@ export async function syncRepositoryHistory(options: {
   readonly runner?: import("../../adapters/github/transport.ts").GhRunner;
   /** Cancels collection between requests, waits, and stages. */
   readonly signal?: AbortSignal;
+  /** Overall bound for the whole collection; defaults to five minutes. */
+  readonly deadlineMs?: number;
   /** Called after each run is collected, for interactive progress only. */
   readonly onProgress?: (snapshot: { readonly runsProcessed: number; readonly runsTotal: number; readonly jobsFetched: number }) => void;
-}): Promise<SyncResult> {
+}
+
+/** Collect one bounded history window through the read-only transport. */
+export async function syncRepositoryHistory(options: SyncOptions): Promise<SyncResult> {
+  const deadline = withDeadline(options.signal, options.deadlineMs ?? DEFAULT_SYNC_DEADLINE_MS, "history sync");
+  try {
+    return await collectHistory(options, deadline.signal);
+  } finally {
+    deadline.dispose();
+  }
+}
+
+async function collectHistory(options: SyncOptions, signal: AbortSignal): Promise<SyncResult> {
   const { config, now } = options;
-  const signal = options.signal;
-  signal?.throwIfAborted();
+  signal.throwIfAborted();
   assertValidDocument("Config", config);
   const historyConfig = config.history;
   const budget = new RequestBudget(historyConfig.quotas);
-  const ghVersion = options.transport === undefined ? await readGhVersion(options.runner, signal) : null;
+  const ghVersion = options.transport === undefined ? await readGhVersion(options.runner, signal, historyConfig.requestTimeoutMs) : null;
   const versionLabel = ghVersion ?? "unknown";
   const transport = options.transport ?? new GhTransport({
     budget,
@@ -139,7 +159,7 @@ export async function syncRepositoryHistory(options: {
   } catch (error) {
     signal?.throwIfAborted();
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-    historyError = error instanceof Error ? error.message : String(error);
+    historyError = failureReason(error, "HISTORY_UNAVAILABLE");
   }
   // Discovery is finished; unused discovery quota may fund the jobs stage.
   budget.finish("discovery");
@@ -200,7 +220,7 @@ export async function syncRepositoryHistory(options: {
       } catch (error) {
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: error instanceof Error ? error.message : "JOBS_UNAVAILABLE", resumable: true }));
+        missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: failureReason(error, "JOBS_UNAVAILABLE"), resumable: true }));
       }
     }
     collectedRuns.push({ run, workflowPath, attempts, jobs, pullRequestNumbers });
@@ -221,7 +241,7 @@ export async function syncRepositoryHistory(options: {
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
         definition = null;
-        missingScopes.push(missingScope({ family: "definitions", resource: "contents", runId: String(run.id), path: workflowPath, reason: error instanceof Error ? error.message : "DEFINITION_UNAVAILABLE", resumable: true }));
+        missingScopes.push(missingScope({ family: "definitions", resource: "contents", runId: String(run.id), path: workflowPath, reason: failureReason(error, "DEFINITION_UNAVAILABLE"), resumable: true }));
       }
       definitions.set(definitionKey, definition);
     }
@@ -270,13 +290,13 @@ export async function syncRepositoryHistory(options: {
       } catch (error) {
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: error instanceof Error ? error.message : "PULL_FILES_UNAVAILABLE", resumable: true }));
+        missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: failureReason(error, "PULL_FILES_UNAVAILABLE"), resumable: true }));
       }
       pulls.set(number, { number, baseBranch: pull.baseBranch, headBranch: pull.headBranch, files });
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-      missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls", pullRequest: number, reason: error instanceof Error ? error.message : "PULL_UNAVAILABLE", resumable: true }));
+      missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls", pullRequest: number, reason: failureReason(error, "PULL_UNAVAILABLE"), resumable: true }));
     }
   }
 
@@ -292,7 +312,7 @@ export async function syncRepositoryHistory(options: {
     signal?.throwIfAborted();
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
     retentionStatus = error instanceof GitHubError && error.code === "PERMISSION_DENIED" ? "partial" : "unavailable";
-    retentionReasons.push(error instanceof Error ? error.message : "RETENTION_UNAVAILABLE");
+    retentionReasons.push(failureReason(error, "RETENTION_UNAVAILABLE"));
   }
 
   let protection: ProtectionSnapshot | null = null;
@@ -307,7 +327,7 @@ export async function syncRepositoryHistory(options: {
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-      protectionReasons.push(error instanceof Error ? error.message : "BRANCH_PROTECTION_UNAVAILABLE");
+      protectionReasons.push(failureReason(error, "BRANCH_PROTECTION_UNAVAILABLE"));
     }
     protection = { defaultBranch, ruleCount: rules.length, classicProtection: classic, fetchedAt: now.toISOString() };
     protectionStatus = classic === null ? "partial" : "complete";
@@ -315,7 +335,7 @@ export async function syncRepositoryHistory(options: {
     signal?.throwIfAborted();
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
     protectionStatus = error instanceof GitHubError && error.code === "PERMISSION_DENIED" ? "partial" : "unavailable";
-    protectionReasons.push(error instanceof Error ? error.message : "PROTECTION_UNAVAILABLE");
+    protectionReasons.push(failureReason(error, "PROTECTION_UNAVAILABLE"));
   }
 
   const artifacts: ArtifactRecord[] = [];
@@ -341,7 +361,7 @@ export async function syncRepositoryHistory(options: {
   } catch (error) {
     signal?.throwIfAborted();
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-    missingScopes.push(missingScope({ family: "policyAndFiles", resource: "actions.artifacts", reason: error instanceof Error ? error.message : "ARTIFACTS_UNAVAILABLE", resumable: true }));
+    missingScopes.push(missingScope({ family: "policyAndFiles", resource: "actions.artifacts", reason: failureReason(error, "ARTIFACTS_UNAVAILABLE"), resumable: true }));
   }
 
   const unresolvedDefinitions = historyRuns.filter((run) => run.definitionResolution === "unresolved").length;

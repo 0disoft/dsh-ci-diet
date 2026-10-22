@@ -7,6 +7,8 @@ import type { Family, RequestBudget } from "./budget.ts";
 export const API_VERSION = "2026-03-10";
 export const DEFAULT_TIMEOUT_MS = 20_000;
 export const DEFAULT_RETRIES = 2;
+/** Never honor a server pause longer than this; surface the rate limit instead. */
+export const MAX_RETRY_WAIT_MS = 60 * 60_000;
 
 export interface GhResult {
   readonly exitCode: number;
@@ -34,6 +36,8 @@ export interface TransportOptions {
   readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   readonly cache?: boolean;
   readonly signal?: AbortSignal;
+  /** Upper bound for a server-supplied Retry-After pause. */
+  readonly maxRetryWaitMs?: number;
 }
 
 const ACCEPT = "Accept: application/vnd.github+json";
@@ -104,10 +108,10 @@ export const ghCliRunner: GhRunner = (args, timeoutMs = DEFAULT_TIMEOUT_MS, sign
   });
 
 /** Read the installed gh version for provenance. Returns null when gh is missing. */
-export async function readGhVersion(runner: GhRunner = ghCliRunner, signal?: AbortSignal): Promise<string | null> {
+export async function readGhVersion(runner: GhRunner = ghCliRunner, signal?: AbortSignal, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<string | null> {
   throwIfAborted(signal);
   try {
-    const result = await runner(["--version"], DEFAULT_TIMEOUT_MS, signal);
+    const result = await runner(["--version"], timeoutMs, signal);
     if (result.exitCode !== 0) return null;
     const match = /^gh version ([^\s]+)/m.exec(result.stdout);
     return match === null ? null : match[1] ?? null;
@@ -185,6 +189,15 @@ function classify(status: number, headers: Readonly<Record<string, string>>, tex
     return new GitHubError("PERMISSION_DENIED", "the token cannot read this resource", 403, detail);
   }
   if (status === 404) return new GitHubError("NOT_FOUND", "resource not found or not accessible", 404, detail);
+  if (status === 0) {
+    // gh writes authentication and transport failures to stderr without an HTTP
+    // block; classify them here so the CLI can show the real remediation instead
+    // of a generic "HTTP 0".
+    if (/gh auth login|not logged in|authentication required|bad credentials|requires authentication|http 401/i.test(text)) {
+      return new GitHubError("AUTH_REQUIRED", "GitHub rejected the stored credentials; run gh auth login", 0, detail);
+    }
+    return new GitHubError("NETWORK_ERROR", "gh could not complete the request; check the network and proxy settings", 0, detail);
+  }
   if (status === 429) return new GitHubError("RATE_LIMITED", "GitHub secondary rate limit hit", 429, detail, retryAfterFromHeaders(headers));
   return new GitHubError("NETWORK_ERROR", "unexpected GitHub response: HTTP " + String(status), status, detail);
 }
@@ -216,6 +229,7 @@ export class GhTransport {
   private readonly runner: GhRunner;
   private readonly timeoutMs: number;
   private readonly retries: number;
+  private readonly maxRetryWaitMs: number;
   private readonly sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   private readonly cache: boolean;
   private readonly signal: AbortSignal | undefined;
@@ -226,6 +240,7 @@ export class GhTransport {
     this.runner = options.runner ?? ghCliRunner;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = options.retries ?? DEFAULT_RETRIES;
+    this.maxRetryWaitMs = options.maxRetryWaitMs ?? MAX_RETRY_WAIT_MS;
     this.sleep = options.sleep ?? delay;
     this.cache = options.cache ?? true;
     this.signal = options.signal;
@@ -250,6 +265,9 @@ export class GhTransport {
         lastError = failure;
         if (!isRetryable(failure) || attempt === this.retries) break;
         const wait = retryDelay(failure, attempt);
+        // A server can ask for hours. Do not turn that into a hung process: keep
+        // the pause bounded and surface the rate limit so the operator can act.
+        if (wait > this.maxRetryWaitMs) break;
         await this.sleep(wait, this.signal);
         throwIfAborted(this.signal);
       } finally {
@@ -269,7 +287,7 @@ export class GhTransport {
       result = await this.runner(args, this.timeoutMs, this.signal);
     } catch (error) {
       if (this.signal?.aborted === true) throw abortError(this.signal);
-      throw new GitHubError("NETWORK_ERROR", "gh invocation failed: " + String(error));
+      throw new GitHubError("NETWORK_ERROR", "gh invocation failed: " + String(error), null, null, null, error);
     }
     if (result.exitCode === 127) throw new GitHubError("GH_NOT_INSTALLED", "gh CLI is not installed or not on PATH", null, result.stderr.trim());
     if (result.timedOut === true) throw new GitHubError("NETWORK_ERROR", "gh timed out after " + String(this.timeoutMs) + "ms", 0);

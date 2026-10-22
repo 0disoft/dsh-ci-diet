@@ -30,6 +30,9 @@ export const CLAIM_POLL_MS = 20;
 export const STORE_WRITE_LOCK_WAIT_MS = 10_000;
 export const APPROVE_LOCK_WAIT_MS = 250;
 
+/** Overall bound for one history sync, including retries and backoff. */
+export const DEFAULT_SYNC_DEADLINE_MS = 5 * 60_000;
+
 export const HISTORY_LOOKBACK_DAYS_MIN = 1;
 export const HISTORY_LOOKBACK_DAYS_MAX = 30;
 

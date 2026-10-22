@@ -3,7 +3,8 @@ import { test } from "node:test";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { syncRepositoryHistory } from "../../src/core/history/sync.ts";
 import { GitHubError } from "../../src/adapters/github/errors.ts";
-import type { GhResponse, GhTransport } from "../../src/adapters/github/transport.ts";
+import type { GhResponse, GhRunner, GhTransport } from "../../src/adapters/github/transport.ts";
+import { DeadlineExceededError } from "../../src/core/support/deadline.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -92,6 +93,16 @@ function fakeTransport(overrides: { readonly files?: () => never } = {}): GhTran
 function config() {
   return { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: 7, maxRuns: 100 } };
 }
+
+test("stops a collection that outlives its deadline", async () => {
+  const runner: GhRunner = (_argv, _timeoutMs, signal) => new Promise((_resolve, reject) => {
+    signal?.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+  await assert.rejects(
+    syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, runner, deadlineMs: 50 }),
+    (error: unknown) => error instanceof DeadlineExceededError,
+  );
+});
 
 test("marks changed files partial when pull request files are denied", async () => {
   const result = await syncRepositoryHistory({
