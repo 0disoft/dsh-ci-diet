@@ -1,4 +1,5 @@
 import type { Finding } from "../contracts/schema.ts";
+import type { HistoryRun } from "../history/model.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
 import { knownSeconds, unknownSeconds } from "../savings/metrics.ts";
 import { isAnalyzable } from "../workflow/index.ts";
@@ -28,21 +29,52 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
   const composition = composeCoverage(context.coverage, RULE_ID);
   if (composition.level === "skip") return skipped(inputHash, composition.reasons);
 
+  // One pass over the runs builds every pull request bucket; the docs-only
+  // pull loop then walks its own runs in history order instead of rescanning
+  // all runs for each pull. A pull number repeated in one run is recorded once.
+  const runsByPull = new Map<number, HistoryRun[]>();
+  for (const run of context.history.runs) {
+    if (run.event !== "pull_request") continue;
+    for (const number of new Set(run.pullRequestNumbers)) {
+      const bucket = runsByPull.get(number);
+      if (bucket === undefined) runsByPull.set(number, [run]);
+      else bucket.push(run);
+    }
+  }
+  interface HeavyTotals {
+    readonly count: number;
+    readonly seconds: number;
+    readonly refs: string[];
+  }
+  const heavyByRun = new Map<string, HeavyTotals>();
+  const heavyTotals = (run: HistoryRun): HeavyTotals => {
+    const cached = heavyByRun.get(run.runId);
+    if (cached !== undefined) return cached;
+    const heavy = run.jobs.filter((job) => {
+      const seconds = jobSeconds(job);
+      return seconds !== null && seconds >= CD003_HEAVY_SECONDS;
+    });
+    const totals: HeavyTotals = {
+      count: heavy.length,
+      seconds: heavy.reduce((sum, job) => sum + (jobSeconds(job) ?? 0), 0),
+      refs: heavy.map((job) => "job:" + job.jobId),
+    };
+    heavyByRun.set(run.runId, totals);
+    return totals;
+  };
+
   const findings: Finding[] = [];
   for (const [number, pull] of context.history.pulls) {
     if (pull.files === null || pull.files.length === 0) continue;
     const allDocs = pull.files.every(nonProductDoc);
     if (!allDocs) continue;
-    for (const run of context.history.runs) {
-      if (run.event !== "pull_request") continue;
-      if (!run.pullRequestNumbers.includes(number)) continue;
+    const pullRuns = runsByPull.get(number);
+    if (pullRuns === undefined) continue;
+    for (const run of pullRuns) {
       if (run.definition === null || !isAnalyzable(run.definition)) continue;
-      const heavy = run.jobs.filter((job) => {
-        const seconds = jobSeconds(job);
-        return seconds !== null && seconds >= CD003_HEAVY_SECONDS;
-      });
-      if (heavy.length === 0) continue;
-      const heavySeconds = heavy.reduce((sum, job) => sum + (jobSeconds(job) ?? 0), 0);
+      const heavy = heavyTotals(run);
+      if (heavy.count === 0) continue;
+      const heavySeconds = heavy.seconds;
       const blockers = ["PATH_FILTER_NOT_GENERATED", "REQUIRED_CHECK_PENDING_RISK"];
       if (context.coverage.protectionRules.status !== "complete") blockers.push("PROTECTION_RULES_UNVERIFIED");
       const observed = composition.level === "full";
@@ -55,7 +87,7 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
           title: "Documentation-only pull request #" + number + " ran heavy checks",
           renderedText:
             "Pull request #" + number + " changed only non-product documentation (" + pull.files.join(", ") + "), yet " +
-            heavy.length + " job(s) ran for at least " + CD003_HEAVY_SECONDS + " seconds each (" + heavySeconds.toFixed(1) + " runner seconds total). " +
+            heavy.count + " job(s) ran for at least " + CD003_HEAVY_SECONDS + " seconds each (" + heavySeconds.toFixed(1) + " runner seconds total). " +
             "CI Diet does not generate path filters in v0.1: a workflow-level paths skip can leave a required check Pending.",
           message: {
             titleKey: "finding.CD003.title",
@@ -63,14 +95,14 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
             params: {
               pullRequest: number,
               files: pull.files.join(", "),
-              heavy: heavy.length,
+              heavy: heavy.count,
               seconds: CD003_HEAVY_SECONDS,
               total: heavySeconds.toFixed(1),
             },
           },
           evidenceLevel: observed ? "observed" : "inferred",
           patchability: "review-only",
-          evidenceRefs: ["pull:" + number, ...heavy.map((job) => "job:" + job.jobId)],
+          evidenceRefs: ["pull:" + number, ...heavy.refs],
           assumptions: [
             "Only README, CHANGELOG, and docs/notes count as non-product documentation by default.",
             "MDX, documentation sites, API schemas, translations, fixtures, lockfiles, CI files, and shared scripts are product code.",

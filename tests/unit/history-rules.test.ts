@@ -446,3 +446,73 @@ test("CD008 keeps a 7-day literal and reports a larger one", () => {
   assert.match(reported.findings[0]?.title ?? "", /30 days/);
 });
 
+test("CD003 records a run once even when it repeats the same pull request number", () => {
+  const pulls = new Map([[7, { number: 7, baseBranch: "main", headBranch: "feature", files: ["README.md"] }]]);
+  const history = bundle([run("710", { pullRequestNumbers: [7, 7], jobs: [job("j710", "710", "2026-10-19T00:00:00.000Z", 120000)] })], pulls);
+  const evaluation = rule(evaluateRules(context(history), ["CD003"]), "CD003");
+  assert.equal(evaluation.findings.length, 1);
+});
+
+test("CD003 emits findings in pull request map order, not run order", () => {
+  const docsPull = (number: number) => ({ number, baseBranch: "main", headBranch: "feature", files: ["README.md"] });
+  const pulls = new Map([[8, docsPull(8)], [7, docsPull(7)]]);
+  const history = bundle([
+    run("720", { pullRequestNumbers: [7], jobs: [job("j720", "720", "2026-10-19T00:00:00.000Z", 120000)] }),
+    run("721", { pullRequestNumbers: [8], jobs: [job("j721", "721", "2026-10-19T00:00:00.000Z", 120000)] }),
+  ], pulls);
+  const evaluation = rule(evaluateRules(context(history), ["CD003"]), "CD003");
+  assert.deepEqual(evaluation.findings.map((entry) => entry.title), [
+    "Documentation-only pull request #8 ran heavy checks",
+    "Documentation-only pull request #7 ran heavy checks",
+  ]);
+});
+
+test("CD001 skips a same-head rerun and uses the next different head", () => {
+  const first = run("330", { sha: "7".repeat(40), createdAt: "2026-10-19T00:00:00.000Z", jobs: [job("j330", "330", "2026-10-19T00:00:10.000Z", 600000)] });
+  const rerun = run("331", { sha: "7".repeat(40), createdAt: "2026-10-19T00:01:00.000Z" });
+  const third = run("332", { sha: "8".repeat(40), createdAt: "2026-10-19T00:02:00.000Z" });
+  const evaluation = rule(evaluateRules(context(bundle([first, rerun, third], pull("main"), { classicProtection: false }))), "CD001");
+  assert.equal(evaluation.findings.length, 1);
+  assert.ok(evaluation.findings[0]?.evidenceRefs.includes("run:332"));
+  assert.ok(!evaluation.findings[0]?.evidenceRefs.includes("run:331"));
+});
+
+test("CD001 treats an equal createdAt tie as no replacement", () => {
+  const first = run("340", { sha: "9".repeat(40), createdAt: "2026-10-19T00:00:00.000Z", jobs: [job("j340", "340", "2026-10-19T00:00:10.000Z", 600000)] });
+  const tie = run("341", { sha: "a".repeat(40), createdAt: "2026-10-19T00:00:00.000Z" });
+  const evaluation = rule(evaluateRules(context(bundle([first, tie], pull("main"), { classicProtection: false }))), "CD001");
+  assert.equal(evaluation.results[0]?.outcome, "no_finding");
+});
+
+test("CD005 keeps definition hashes and job keys in separate cohorts", () => {
+  const testDefinition = definition(PR_ONLY);
+  const lintDefinition = definition([
+    "name: pr",
+    "on:",
+    "  pull_request:",
+    "jobs:",
+    "  lint:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - run: echo hi",
+    "",
+  ].join("\n"));
+  const testJobs: HistoryJob[] = [];
+  const lintJobs: HistoryJob[] = [];
+  for (let index = 0; index < 20; index += 1) {
+    testJobs.push(job("a" + index, "610", "2026-10-19T00:00:00.000Z", (10 + index) * 1000));
+    lintJobs.push(job("b" + index, "611", "2026-10-19T00:00:00.000Z", (100 + index) * 1000));
+  }
+  const history = bundle([
+    run("610", { definition: testDefinition, jobs: testJobs }),
+    run("611", { definition: lintDefinition, jobs: lintJobs }),
+  ]);
+  const evaluation = rule(evaluateRules(context(history), ["CD005"]), "CD005");
+  assert.equal(evaluation.findings.length, 2);
+  assert.match(evaluation.findings[0]?.title ?? "", /^Job test /);
+  assert.match(evaluation.findings[1]?.title ?? "", /^Job lint /);
+  assert.equal(cd005Recommendations(history, ".github/workflows/pr.yml", testDefinition.sha256, "test").length, 1);
+  assert.equal(cd005Recommendations(history, ".github/workflows/pr.yml", lintDefinition.sha256, "lint").length, 1);
+  assert.equal(cd005Recommendations(history, ".github/workflows/pr.yml", testDefinition.sha256, "lint").length, 0);
+});
+

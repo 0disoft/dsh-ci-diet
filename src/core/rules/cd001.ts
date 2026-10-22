@@ -21,22 +21,54 @@ interface RemovalAt {
   readonly durationMillis: number;
 }
 
-function replacementOf(runs: readonly HistoryRun[], run: HistoryRun): HistoryRun | null {
+/** Sorted-bucket lookup tables reused for every run of the bucket. */
+interface BucketIndex {
+  /** createdAt of each run in bucket order, with unparseable stamps as 0. */
+  readonly times: number[];
+  /** Index of the first later run with a different head, or -1. */
+  readonly nextDifferent: number[];
+}
+
+function indexBucket(runs: readonly HistoryRun[]): BucketIndex {
+  const times = runs.map((run) => millis(run.createdAt) ?? 0);
+  const nextDifferent = runs.map(() => -1);
+  for (let index = runs.length - 2; index >= 0; index -= 1) {
+    const current = runs[index];
+    const later = runs[index + 1];
+    if (current === undefined || later === undefined) continue;
+    nextDifferent[index] = current.headSha !== later.headSha ? index + 1 : (nextDifferent[index + 1] ?? -1);
+  }
+  return { times, nextDifferent };
+}
+
+/** First bucket index whose createdAt is strictly after the given stamp. */
+function firstAfter(times: readonly number[], created: number): number {
+  let low = 0;
+  let high = times.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if ((times[middle] ?? 0) <= created) low = middle + 1;
+    else high = middle;
+  }
+  return low;
+}
+
+/**
+ * The replacement is the earliest strictly newer run in bucket order whose head
+ * commit differs. The bucket is sorted by createdAt, so a binary search finds
+ * the first strictly newer run and the precomputed jump skips same-head runs.
+ */
+function replacementOf(runs: readonly HistoryRun[], index: number, bucketIndex: BucketIndex): HistoryRun | null {
+  const run = runs[index];
+  if (run === undefined) return null;
   const created = millis(run.createdAt);
   if (created === null) return null;
-  let best: HistoryRun | null = null;
-  let bestAt = Number.POSITIVE_INFINITY;
-  for (const candidate of runs) {
-    if (candidate.runId === run.runId) continue;
-    if (candidate.headSha === run.headSha) continue;
-    const at = millis(candidate.createdAt);
-    if (at === null || at <= created) continue;
-    if (at < bestAt) {
-      best = candidate;
-      bestAt = at;
-    }
-  }
-  return best;
+  const candidateIndex = firstAfter(bucketIndex.times, created);
+  const candidate = runs[candidateIndex];
+  if (candidate === undefined) return null;
+  if (candidate.headSha !== run.headSha) return candidate;
+  const different = bucketIndex.nextDifferent[candidateIndex] ?? -1;
+  return different === -1 ? null : runs[different] ?? null;
 }
 
 function collectRemovals(run: HistoryRun, replacement: HistoryRun, lagSeconds: number): RemovalAt[] {
@@ -123,8 +155,11 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
       const right = millis(b.createdAt) ?? 0;
       return left === right ? (a.runId < b.runId ? -1 : 1) : left - right;
     });
-    for (const run of bucket) {
-      const replacement = replacementOf(bucket, run);
+    const bucketIndex = indexBucket(bucket);
+    for (let index = 0; index < bucket.length; index += 1) {
+      const run = bucket[index];
+      if (run === undefined) continue;
+      const replacement = replacementOf(bucket, index, bucketIndex);
       if (replacement === null) continue;
       if (run.definition === null || replacement.definition === null) continue;
       const definition = run.definition;
