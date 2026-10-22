@@ -145,6 +145,10 @@ Keep a Changelog, and the project uses semantic versioning.
   clears the revision guard, so the reset cannot overwrite a change another
   screen saved first. Duplicate rule ids are canonicalized to one entry in
   contract order instead of failing the next tool call.
+- Degraded coverage no longer turns historical scenarios into known savings.
+  CD001 keeps its candidate and `COVERAGE_DEGRADE` blocker, but reports the
+  standalone seconds as unknown and emits no removal rows, so a partial history
+  window cannot inflate the report's saved total.
 - A job display name that two jobs or two matrix legs render identically is now
   unattributed instead of silently picking the first match, so one leg's
   samples cannot stand in for another leg's cohort.

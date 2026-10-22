@@ -182,6 +182,31 @@ test("CD001 finds a superseded pull request run and records a removal", () => {
   assert.ok((evaluation.removals[0]?.endMillis ?? 0) > 0);
 });
 
+test("CD001 keeps the candidate but drops savings when coverage degrades", () => {
+  const first = run("300", {
+    sha: "1".repeat(40),
+    createdAt: "2026-10-19T00:00:00.000Z",
+    jobs: [job("j300", "300", "2026-10-19T00:00:10.000Z", 600000)],
+  });
+  const second = run("301", {
+    sha: "2".repeat(40),
+    createdAt: "2026-10-19T00:02:00.000Z",
+    jobs: [job("j301", "301", "2026-10-19T00:02:10.000Z", 300000)],
+  });
+  const ctx = context(bundle([first, second], pull("main"), { classicProtection: false }));
+  (ctx.coverage.history as { status: string }).status = "partial";
+  const evaluation = rule(evaluateRules(ctx), "CD001");
+  assert.equal(evaluation.results[0]?.outcome, "finding");
+  const finding = evaluation.findings[0];
+  assert.ok(finding);
+  assert.equal(finding.patchability, "review-only");
+  assert.ok(finding.blockers.includes("COVERAGE_DEGRADE"));
+  assert.equal(finding.standaloneRunnerSeconds.status, "unknown");
+  assert.equal(finding.standaloneRunnerSeconds.reason, "COVERAGE_DEGRADE");
+  assert.match(finding.renderedText, /Coverage is degraded/);
+  assert.doesNotMatch(finding.renderedText, /0 s lag/);
+  assert.equal(evaluation.removals.length, 0);
+});
 function supersededRuns(parsed: WorkflowDefinition, prefix: string): HistoryRun[] {
   return [
     run(prefix + "0", { sha: "5".repeat(40), createdAt: "2026-10-19T00:00:00.000Z", definition: parsed, jobs: [job(prefix + "--job", prefix + "0", "2026-10-19T00:00:10.000Z", 600000)] }),

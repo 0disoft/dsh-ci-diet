@@ -82,7 +82,10 @@ edge as truncated instead of pretending the interval started at zero.
 The moment a replacement run is created is only an approximation of when the old
 run could have been cancelled. Compute the scenario with
 `cancellationLagSeconds = 0` and `30` and present it as a range; never call it a
-measured cancellation time. Exclude targets whose cleanup hooks or artifact
+measured cancellation time. When coverage forces `degrade`, keep the finding as a
+candidate but set `standaloneRunnerSeconds` to unknown with reason
+`COVERAGE_DEGRADE` and record no removal rows, so a partial window is never
+reported as known savings. Exclude targets whose cleanup hooks or artifact
 consumers would change.
 
 Automatic planning is allowed only when the workflow's `on` keys are exactly

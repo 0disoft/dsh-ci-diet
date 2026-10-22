@@ -180,6 +180,7 @@ export const en = {
   "metric.actualBilledUsd": "Actual billed (USD)",
   "finding.CD001.title": "Pull request #{pullRequest} left a superseded run on {workflow}",
   "finding.CD001.text": "Run {runId} for pull request #{pullRequest} started before a newer run on a different head commit. Cancelling it when the replacement was created would have saved about {removedZero} runner seconds at a 0 s lag, or {removedThirty} runner seconds at a 30 s lag. The lag is a scenario, not a measured cancellation time.",
+  "finding.CD001.degradedText": "Run {runId} for pull request #{pullRequest} started before a newer run on a different head commit. Coverage is degraded, so this is a candidate and its scenario savings are not reported.",
   "finding.CD002.title": "Workflow {workflow} runs on both push and pull_request",
   "finding.CD002.text": "Workflow {workflow} is triggered by both push and pull_request. That is not waste by itself: runs are equivalent only when the event, verified tree, permissions, inputs, job definitions, and checkout ref match. CI Diet shows the two trigger clusters on a time axis and does not offer a trigger removal or a combined savings scenario in v0.1.",
   "finding.CD003.title": "Documentation-only pull request #{pullRequest} ran heavy checks",

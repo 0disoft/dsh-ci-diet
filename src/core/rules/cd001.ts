@@ -2,7 +2,7 @@ import type { Finding } from "../contracts/schema.ts";
 import type { HistoryRun } from "../history/model.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
-import { knownSeconds } from "../savings/metrics.ts";
+import { knownSeconds, unknownSeconds } from "../savings/metrics.ts";
 import type { RuleRemoval } from "./types.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
@@ -172,27 +172,38 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
       const blockers = staticBlockers(context, definition, run);
       if (composition.level !== "full") blockers.push("COVERAGE_" + composition.level.toUpperCase());
       const eligible = blockers.length === 0 && composition.writeAllowed;
+      // A degraded coverage level keeps the candidate but drops every historical
+      // savings scenario, so no number here can be mistaken for a measurement.
+      const degraded = composition.level !== "full";
       const finding = buildFinding({
         ruleId: RULE_ID,
         ruleVersion: RULE_VERSION,
         workflowPath: run.workflowPath,
         workflowHash: definition.sha256,
         title: "Pull request #" + pullRequest + " left a superseded run on " + run.workflowPath,
-        renderedText:
-          "Run " + run.runId + " for pull request #" + pullRequest + " started before a newer run on a different head commit. " +
-          "Cancelling it when the replacement was created would have saved about " + removedZero.toFixed(1) + " runner seconds at a 0 s lag, or " +
-          removedThirty.toFixed(1) + " runner seconds at a 30 s lag. The lag is a scenario, not a measured cancellation time.",
-        message: {
-          titleKey: "finding.CD001.title",
-          textKey: "finding.CD001.text",
-          params: {
-            pullRequest,
-            workflow: run.workflowPath,
-            runId: run.runId,
-            removedZero: removedZero.toFixed(1),
-            removedThirty: removedThirty.toFixed(1),
+        renderedText: degraded
+          ? "Run " + run.runId + " for pull request #" + pullRequest + " started before a newer run on a different head commit. " +
+            "Coverage is degraded, so this is a candidate and its scenario savings are not reported."
+          : "Run " + run.runId + " for pull request #" + pullRequest + " started before a newer run on a different head commit. " +
+            "Cancelling it when the replacement was created would have saved about " + removedZero.toFixed(1) + " runner seconds at a 0 s lag, or " +
+            removedThirty.toFixed(1) + " runner seconds at a 30 s lag. The lag is a scenario, not a measured cancellation time.",
+        message: degraded
+          ? {
+            titleKey: "finding.CD001.title",
+            textKey: "finding.CD001.degradedText",
+            params: { pullRequest, workflow: run.workflowPath, runId: run.runId },
+          }
+          : {
+            titleKey: "finding.CD001.title",
+            textKey: "finding.CD001.text",
+            params: {
+              pullRequest,
+              workflow: run.workflowPath,
+              runId: run.runId,
+              removedZero: removedZero.toFixed(1),
+              removedThirty: removedThirty.toFixed(1),
+            },
           },
-        },
         evidenceLevel: "observed",
         patchability: eligible ? "eligible" : "review-only",
         evidenceRefs: [
@@ -207,7 +218,9 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
           "A human Attestation must cover ciOnly and replaceSafe before any plan is approved.",
         ],
         blockers,
-        standaloneRunnerSeconds: knownSeconds(removedZero, "runner seconds in the superseded run after the replacement started"),
+        standaloneRunnerSeconds: degraded
+          ? unknownSeconds("runner seconds in the superseded run after the replacement started", "COVERAGE_DEGRADE")
+          : knownSeconds(removedZero, "runner seconds in the superseded run after the replacement started"),
         identity: {
           workflowPath: run.workflowPath,
           pullRequest,
@@ -218,6 +231,7 @@ function evaluateCd001(context: RuleContext): RuleEvaluation {
         },
       });
       findings.push(finding);
+      if (degraded) continue;
       for (const row of removalsAtZero) {
         removals.push({
           findingId: finding.findingId,

@@ -181,6 +181,7 @@ export const zhHans: Record<MessageKey, string> = {
   "metric.actualBilledUsd": "实际账单（USD）",
   "finding.CD001.title": "拉取请求 #{pullRequest} 在 {workflow} 上留下了被取代的运行",
   "finding.CD001.text": "拉取请求 #{pullRequest} 的运行 {runId} 在另一个 head 提交的更新运行之前开始。若在替代运行创建时取消它，0 秒延迟下约可节省 {removedZero} 运行器秒，30 秒延迟下可节省 {removedThirty} 运行器秒。该延迟是场景，不是实测的取消时间。",
+  "finding.CD001.degradedText": "拉取请求 #{pullRequest} 的运行 {runId} 在另一个 head 提交的更新运行之前开始。覆盖率已降级，因此这是一条候选项，不报告其场景节省。",
   "finding.CD002.title": "工作流 {workflow} 同时由 push 和 pull_request 触发",
   "finding.CD002.text": "工作流 {workflow} 同时由 push 和 pull_request 触发。这本身不是浪费：只有事件、已验证的树、权限、输入、作业定义和检出 ref 都一致时，运行才等价。CI Diet 在时间轴上显示两个触发簇，v0.1 不提供触发器移除或合并节省场景。",
   "finding.CD003.title": "仅文档变更的拉取请求 #{pullRequest} 运行了重检查",

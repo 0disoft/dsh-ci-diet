@@ -181,6 +181,7 @@ export const ko: Record<MessageKey, string> = {
   "metric.actualBilledUsd": "실제 청구(USD)",
   "finding.CD001.title": "풀 리퀘스트 #{pullRequest}에 교체된 실행이 남아 있습니다: {workflow}",
   "finding.CD001.text": "풀 리퀘스트 #{pullRequest}의 실행 {runId}은(는) 다른 head 커밋의 더 새로운 실행보다 먼저 시작했습니다. 교체 실행이 만들어질 때 취소했다면 0초 지연에서 약 {removedZero} 러너 초, 30초 지연에서 {removedThirty} 러너 초를 아꼈을 것입니다. 지연은 측정값이 아니라 시나리오입니다.",
+  "finding.CD001.degradedText": "풀 리퀘스트 #{pullRequest}의 실행 {runId}은(는) 다른 head 커밋의 더 새로운 실행보다 먼저 시작했습니다. 수집 범위가 제한되어 이 항목은 후보이며 시나리오 절감량은 보고하지 않습니다.",
   "finding.CD002.title": "워크플로 {workflow}이(가) push와 pull_request 모두에서 실행됩니다",
   "finding.CD002.text": "워크플로 {workflow}은(는) push와 pull_request 모두에서 트리거됩니다. 그 자체로 낭비는 아닙니다. 이벤트, 검증된 트리, 권한, 입력, 작업 정의, 체크아웃 ref가 모두 같을 때만 실행이 동등합니다. CI Diet는 두 트리거 묶음을 시간축에 표시하며 v0.1에서는 트리거 제거나 통합 절감 시나리오를 제공하지 않습니다.",
   "finding.CD003.title": "문서만 바꾼 풀 리퀘스트 #{pullRequest}이(가) 무거운 검사를 실행했습니다",

@@ -181,6 +181,7 @@ export const es: Record<MessageKey, string> = {
   "metric.actualBilledUsd": "Factura real (USD)",
   "finding.CD001.title": "La solicitud de extracción #{pullRequest} dejó una ejecución reemplazada en {workflow}",
   "finding.CD001.text": "La ejecución {runId} de la solicitud de extracción #{pullRequest} comenzó antes que una ejecución más nueva con otro commit head. Cancelarla al crear el reemplazo habría ahorrado unos {removedZero} segundos de runner con 0 s de retraso, o {removedThirty} segundos de runner con 30 s de retraso. El retraso es un escenario, no un tiempo de cancelación medido.",
+  "finding.CD001.degradedText": "La ejecución {runId} de la solicitud de extracción #{pullRequest} comenzó antes que una ejecución más nueva con otro commit head. La cobertura está degradada, así que es un candidato y sus ahorros de escenario no se informan.",
   "finding.CD002.title": "El flujo de trabajo {workflow} se ejecuta tanto en push como en pull_request",
   "finding.CD002.text": "El flujo de trabajo {workflow} se dispara tanto por push como por pull_request. Eso no es desperdicio por sí mismo: las ejecuciones solo son equivalentes cuando coinciden el evento, el árbol verificado, los permisos, las entradas, las definiciones de trabajo y la ref de checkout. CI Diet muestra los dos grupos de disparadores en un eje temporal y en v0.1 no ofrece eliminar disparadores ni un escenario de ahorro combinado.",
   "finding.CD003.title": "La solicitud de extracción #{pullRequest}, solo de documentación, ejecutó comprobaciones pesadas",

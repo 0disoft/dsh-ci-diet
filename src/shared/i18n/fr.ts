@@ -181,6 +181,7 @@ export const fr: Record<MessageKey, string> = {
   "metric.actualBilledUsd": "Facture réelle (USD)",
   "finding.CD001.title": "La pull request #{pullRequest} a laissé une exécution remplacée sur {workflow}",
   "finding.CD001.text": "L’exécution {runId} de la pull request #{pullRequest} a commencé avant une exécution plus récente sur un autre commit head. L’annuler à la création du remplacement aurait économisé environ {removedZero} secondes de runner avec 0 s de délai, ou {removedThirty} secondes de runner avec 30 s de délai. Le délai est un scénario, pas un temps d’annulation mesuré.",
+  "finding.CD001.degradedText": "L’exécution {runId} de la pull request #{pullRequest} a commencé avant une exécution plus récente sur un autre commit head. La couverture est dégradée : c’est un candidat et ses économies de scénario ne sont pas rapportées.",
   "finding.CD002.title": "Le workflow {workflow} s’exécute à la fois sur push et pull_request",
   "finding.CD002.text": "Le workflow {workflow} est déclenché à la fois par push et pull_request. Ce n’est pas du gaspillage en soi : les exécutions ne sont équivalentes que si l’événement, l’arbre vérifié, les permissions, les entrées, les définitions de jobs et la ref de checkout correspondent. CI Diet affiche les deux groupes de déclencheurs sur un axe temporel et ne propose pas, en v0.1, de supprimer un déclencheur ni de scénario d’économie combiné.",
   "finding.CD003.title": "La pull request #{pullRequest}, uniquement documentaire, a exécuté des vérifications lourdes",
