@@ -136,7 +136,8 @@ describe("gh transport", () => {
     ];
     for (const [stdout, expected] of cases) {
       const { runner } = runnerFrom(stdout);
-      const transport = new GhTransport({ budget: budget(), runner });
+      // Rate-limited responses are transient now, so pin retries to isolate classification.
+      const transport = new GhTransport({ budget: budget(), runner, retries: 0 });
       await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"), (error: unknown) => error instanceof GitHubError && error.code === expected);
     }
   });
@@ -203,7 +204,8 @@ describe("gh transport", () => {
       },
     });
     await dateTransport.get({ path: "/repos/owner/repo" }, "discovery");
-    assert.deepEqual(dateWaits, [30_000]);
+    assert.equal(dateWaits.length, 1);
+    assert.ok((dateWaits[0] ?? 0) > 3_500_000, "the server-requested pause must not be capped at 30s");
 
     const invalidWaits: number[] = [];
     const invalidRunner = runnerFrom(httpResponse(429, null, { "retry-after": "not-a-date" }), httpResponse(200, { ok: true }));
@@ -216,6 +218,58 @@ describe("gh transport", () => {
     });
     await invalidTransport.get({ path: "/repos/owner/repo" }, "discovery");
     assert.deepEqual(invalidWaits, [500]);
+  });
+
+  it("preserves a Retry-After longer than 30 seconds", async () => {
+    const { runner } = runnerFrom(httpResponse(429, null, { "retry-after": "120" }), httpResponse(200, { ok: true }));
+    const waits: number[] = [];
+    const transport = new GhTransport({
+      budget: budget(),
+      runner,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.equal(response.status, 200);
+    assert.deepEqual(waits, [120_000]);
+  });
+
+  it("retries a secondary-limit 403 signaled by Retry-After", async () => {
+    const { runner, calls } = runnerFrom(
+      httpResponse(403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "2", "x-ratelimit-remaining": "100" }),
+      httpResponse(200, { ok: true }),
+    );
+    const waits: number[] = [];
+    const transport = new GhTransport({
+      budget: budget(),
+      runner,
+      sleep: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+    });
+    const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 2);
+    assert.deepEqual(waits, [2_000]);
+  });
+
+  it("does not dispatch when the signal is already aborted", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(200, { ok: true }));
+    const controller = new AbortController();
+    controller.abort(new Error("stop"));
+    const transport = new GhTransport({ budget: budget(), runner, signal: controller.signal });
+    await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"), /stop/);
+    assert.equal(calls.length, 0);
+  });
+
+  it("stops a retry pause when the signal aborts", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(429, null, { "retry-after": "600" }), httpResponse(200, { ok: true }));
+    const controller = new AbortController();
+    const transport = new GhTransport({ budget: budget(), runner, signal: controller.signal });
+    setTimeout(() => controller.abort(new Error("cancelled")), 20);
+    await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"), /cancelled/);
+    assert.equal(calls.length, 1);
   });
 
   it("retries a status-0 network failure", async () => {

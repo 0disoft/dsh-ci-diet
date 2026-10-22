@@ -30,5 +30,6 @@ export class GitHubError extends Error {
 export function isTransient(error: unknown): boolean {
   if (!(error instanceof GitHubError)) return false;
   if (error.code === "NETWORK_ERROR") return true;
-  return error.status === 429 || error.status === 502 || error.status === 503 || error.status === 504;
+  if (error.code === "RATE_LIMITED") return true;
+  return error.status === 502 || error.status === 503 || error.status === 504;
 }
