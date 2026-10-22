@@ -16,7 +16,7 @@ import type { PatchRule } from "../../core/patch/eligibility.ts";
 import { buildRequestedPlan } from "../../core/patch/request-plan.ts";
 import { findFindingForRequest, targetReasons } from "../../core/patch/target.ts";
 import type { PlanRequest } from "../../core/patch/target.ts";
-import { createLocalBinding, readGithubRemote } from "../../core/scan/binding.ts";
+import { createLocalBinding, lookupGithubRemote } from "../../core/scan/binding.ts";
 import { discoverWorkflows } from "../../core/scan/discover.ts";
 import { runStaticScan } from "../../core/scan/scan.ts";
 import { defaultStateDir } from "../../core/state/paths.ts";
@@ -221,9 +221,13 @@ export function apply(ctx: Context, config: Config) {
         owner = match[1]!;
         repo = match[2]!;
       } else {
-        const remote = readGithubRemote(root);
-        if (remote === null) throw new Error("no GitHub origin remote found; pass repo explicitly");
-        [owner, repo] = [remote.owner, remote.repository];
+        const lookup = lookupGithubRemote(root);
+        if (lookup.kind === "error") {
+          const detail = lookup.error instanceof Error ? lookup.error.message : String(lookup.error);
+          throw new Error("could not read the GitHub origin remote: " + detail);
+        }
+        if (lookup.kind === "none") throw new Error("no GitHub origin remote found; pass repo explicitly");
+        [owner, repo] = [lookup.remote.owner, lookup.remote.repository];
       }
       const days = args.days ?? DEFAULT_CONFIG.history.lookbackDays;
       if (!Number.isSafeInteger(days) || days < HISTORY_LOOKBACK_DAYS_MIN || days > HISTORY_LOOKBACK_DAYS_MAX) throw new Error("days must be an integer between " + HISTORY_LOOKBACK_DAYS_MIN + " and " + HISTORY_LOOKBACK_DAYS_MAX);
@@ -234,10 +238,8 @@ export function apply(ctx: Context, config: Config) {
       const built = buildHistoryReport({ binding, workflows, history: synced.history, config: settings, generatedAt: new Date().toISOString() });
       exec.signal.throwIfAborted();
       const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
-      store.saveBinding(binding);
-      // An older overlapping sync must not publish its history or its report.
-      const historyStored = store.saveHistory(binding.bindingId, synced.history);
-      if (historyStored) store.saveReport(built.report);
+      // An older overlapping sync must not publish its binding, history, or report.
+      store.saveHistorySnapshot(binding, synced.history, built.report);
       const truncated = isHistoryTruncated(synced.history.coverage.history);
       return {
         repository: synced.history.repositoryFullName,

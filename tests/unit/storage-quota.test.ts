@@ -9,6 +9,9 @@ import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../sr
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
 import type { HistoryBundle } from "../../src/core/history/model.ts";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
+import { buildHistoryReport } from "../../src/core/analysis/report.ts";
+import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
+import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { isolatedEnv } from "../helpers/test-env.ts";
 
 const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
@@ -63,6 +66,25 @@ function withRoot<T>(run: (root: string) => T): T {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test("an older overlapping sync cannot publish a partial snapshot", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const binding = createLocalBinding(root, "2026-10-20T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const newer = history("2026-10-20T02:00:00Z");
+    const older = history("2026-10-20T01:00:00Z");
+    const reportFor = (snapshot: HistoryBundle) => buildHistoryReport({
+      binding,
+      workflows: [],
+      history: snapshot,
+      config: DEFAULT_CONFIG,
+      generatedAt: snapshot.requestedTo,
+    }).report;
+    assert.equal(store.saveHistorySnapshot(binding, newer, reportFor(newer)), true);
+    assert.equal(store.saveHistorySnapshot(binding, older, reportFor(older)), false);
+    assert.equal(store.readLatestHistory(binding.bindingId)?.requestedTo, newer.requestedTo);
+  });
+});
 
 test("refuses a backup write that would cross the store quota and leaves no directory behind", () => {
   withRoot((root) => {

@@ -6,7 +6,7 @@ import type { Clock } from "../core/support/clock.ts";
 import { RULE_IDS } from "../core/model/domain.ts";
 import type { RuleId } from "../core/model/domain.ts";
 import { runStaticScan } from "../core/scan/scan.ts";
-import { createLocalBinding, readGithubRemote } from "../core/scan/binding.ts";
+import { createLocalBinding, lookupGithubRemote } from "../core/scan/binding.ts";
 import { discoverWorkflows } from "../core/scan/discover.ts";
 import { parseWorkflow } from "../core/workflow/parse.ts";
 import { syncRepositoryHistory } from "../core/history/sync.ts";
@@ -22,6 +22,7 @@ import type { Config } from "../core/contracts/schema.ts";
 import type { Coverage } from "../core/contracts/schema.ts";
 import type { HistoryBundle } from "../core/history/model.ts";
 import { GitHubError } from "../adapters/github/errors.ts";
+import { DeadlineExceededError } from "../core/support/deadline.ts";
 import { ContractViolationError } from "../core/contracts/validate.ts";
 import { ENGINE_VERSION } from "../core/version.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreCorruptionError, StoreQuotaError } from "../core/patch/store.ts";
@@ -440,13 +441,18 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     owner = parsed.owner;
     repository = parsed.repository;
   } else {
-    const remote = readGithubRemote(discovery.root);
-    if (remote === null) {
+    const lookup = lookupGithubRemote(discovery.root);
+    if (lookup.kind === "error") {
+      const detail = lookup.error instanceof Error ? lookup.error.message : String(lookup.error);
+      writeErr(t("cli.sync.remoteUnavailable", { detail }) + "\n");
+      return EXIT_USAGE;
+    }
+    if (lookup.kind === "none") {
       writeErr(t("cli.sync.repoRequired") + "\n");
       return EXIT_USAGE;
     }
-    owner = remote.owner;
-    repository = remote.repository;
+    owner = lookup.remote.owner;
+    repository = lookup.remote.repository;
   }
 
   if ((options.accountMinutesUsed === null) !== (options.includedMinutes === null)) {
@@ -495,12 +501,13 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   });
   const report = built.report;
 
+  // A cancelled sync must not leave a partial snapshot behind.
+  context.signal?.throwIfAborted();
   const store = openStore(stateDirOf(options), locale, options.config.storage);
-  store.saveBinding(upgraded.binding);
-  // Keep the report and its history snapshot together: when an older sync
-  // finishes last, its history is refused and so is its report.
-  const historyStored = store.saveHistory(upgraded.binding.bindingId, history);
-  if (historyStored) store.saveReport(report);
+  // Binding, history, and report are one logical snapshot: when an older sync
+  // finishes last, none of the three replaces the newer state.
+  const historyStored = store.saveHistorySnapshot(upgraded.binding, history, report);
+  if (!historyStored) writeErr(t("cli.sync.snapshotSkipped") + "\n");
 
   const lines: string[] = [];
   lines.push(t("cli.sync.root", { name: history.repositoryFullName, root: upgraded.binding.workspaceRoot }));
@@ -1049,6 +1056,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
     writeErr(t("error.SCHEMA_INVALID") + " " + error.message + "\n");
     return EXIT_SCHEMA;
   }
+  if (error instanceof DeadlineExceededError) {
+    writeErr(t("cli.sync.deadline", { minutes: Math.max(1, Math.round(error.timeoutMs / 60000)) }) + "\n");
+    return EXIT_INCOMPLETE;
+  }
   if (error instanceof GitHubError) {
     if (error.code === "AUTH_REQUIRED") {
       writeErr(t("error.AUTH_REQUIRED") + "\n");
@@ -1059,6 +1070,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
       return EXIT_INCOMPLETE;
     }
     writeErr(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
+    if (error.detail !== null) {
+      // gh echoes multi-line diagnostics; keep the explanation on one bounded line.
+      writeErr("  " + error.detail.replace(/\s+/g, " ").slice(0, 400) + "\n");
+    }
     return EXIT_USAGE;
   }
   if (error instanceof Error && error.name === "AbortError") {

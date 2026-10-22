@@ -503,6 +503,24 @@ export class PatchStore {
     });
   }
 
+  /**
+   * Persist a binding, its history window, and the report as one snapshot.
+   * Returns false without writing anything when the stored window is newer.
+   */
+  saveHistorySnapshot(binding: RepositoryBinding, history: HistoryBundle, report: AnalysisReport): boolean {
+    assertValidDocument("RepositoryBinding", binding);
+    assertValidDocument("AnalysisReport", report);
+    return withStoreWriteLock(this, () => {
+      const bindingId = requireId(binding.bindingId, "bindingId");
+      const current = this.readLatestHistory(bindingId);
+      if (current !== null && Date.parse(current.requestedTo) > Date.parse(history.requestedTo)) return false;
+      this.writeJsonUnlocked(this.path("bindings", bindingId + ".json"), binding);
+      this.writeJsonUnlocked(this.path("snapshots", "history", bindingId + ".json"), history);
+      this.writeJsonUnlocked(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
+      return true;
+    });
+  }
+
   readLatestHistory(bindingId: string): HistoryBundle | null {
     return this.readJson<HistoryBundle>(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"));
   }

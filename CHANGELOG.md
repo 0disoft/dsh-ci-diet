@@ -90,9 +90,21 @@ Keep a Changelog, and the project uses semantic versioning.
 - The patch layer accepts optional clock and id seams, and workflow binding
   accepts an optional command runner, so lease aging, expiry, and git discovery
   are testable without real time or a spawned process.
+- A history sync has one overall deadline (five minutes by default) in addition
+  to the per-request timeout. A server-requested Retry-After is honored up to one
+  hour; a longer pause fails fast and reports the rate limit instead of leaving
+  the process asleep. The configured request timeout now also bounds the gh
+  version probe.
 
 ### Fixed
 
+- A failing git origin lookup is no longer reported as a missing remote: the
+  CLI and the DSH tool show the git explanation, and coverage reasons keep the
+  GitHub error code alongside its message. A gh response with no HTTP block but
+  auth guidance is classified as a credential problem rather than HTTP 0.
+- Binding, history, and report are written as one snapshot under the store write
+  lock. When an older overlapping sync finishes last, it writes nothing and says
+  so, instead of leaving a newer history beside an older report.
 - Coverage documents, merged configs, and attestations copy the arrays and
   objects they receive, so mutating a result or an input can no longer change
   the other object. Job parsing returns its unsupported-feature list instead of
