@@ -247,6 +247,38 @@ test("marks a local action as unresolved when the file limit hides files", () =>
   );
 });
 
+test("marks a local action as unresolved when the total byte budget is exceeded", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-deps-"));
+  const dir = join(root, ".github", "workflows");
+  mkdirSync(dir, { recursive: true });
+  const action = join(root, ".github", "actions", "heavy");
+  mkdirSync(action, { recursive: true });
+  writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: f00.js\n", "utf8");
+  const payload = Buffer.alloc(1_700_000, 0x61);
+  for (let index = 0; index < 6; index += 1) {
+    writeFileSync(join(action, "f" + String(index).padStart(2, "0") + ".js"), payload);
+  }
+  const text = [
+    "on: push",
+    "jobs:",
+    "  build:",
+    "    runs-on: ubuntu-latest",
+    "    steps:",
+    "      - uses: ./.github/actions/heavy",
+  ].join("\n");
+  writeFileSync(join(dir, "ci.yml"), text, "utf8");
+  const workflow = parseWorkflow(".github/workflows/ci.yml", text);
+  const collection = collectDependencies(root, workflow);
+  assert.ok(
+    collection.unresolved.some((entry) => entry.includes("(byte limit reached)")),
+    collection.unresolved.join(","),
+  );
+  assert.ok(
+    collection.dependencies.length < 7,
+    "expected the byte budget to stop collection before every file",
+  );
+});
+
 test("apply refuses a changed script even when the command starts with a boolean node flag", async () => {
   const root = mkdtempSync(join(tmpdir(), "ci-diet-deps-"));
   const dir = join(root, ".github", "workflows");
