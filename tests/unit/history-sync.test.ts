@@ -505,3 +505,146 @@ test("propagates authentication failures instead of recording them", async () =>
     /AUTH_REQUIRED|gh auth login/,
   );
 });
+
+function workflowRuns(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: 300 + index,
+    name: "CI",
+    path: ".github/workflows/ci.yml",
+    workflow_id: 7,
+    head_sha: "sha" + String(300 + index),
+    head_branch: "main",
+    event: "push",
+    created_at: "2026-10-19T10:00:00Z",
+    run_attempt: 1,
+    conclusion: "success",
+    pull_requests: [],
+  }));
+}
+
+function jobResponse(runId: number, page = 1): GhResponse {
+  return response({
+    total_count: 1,
+    jobs: [{
+      id: runId * 10 + page,
+      name: "build",
+      conclusion: "success",
+      started_at: "2026-10-19T10:00:10Z",
+      completed_at: "2026-10-19T10:01:10Z",
+      labels: ["ubuntu-latest"],
+      runner_name: "GitHub Actions 1",
+    }],
+  });
+}
+
+test("collects jobs with bounded concurrency while keeping repository order", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const runs = workflowRuns(4);
+  let active = 0;
+  let maxActive = 0;
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+    if (request.path.endsWith("/attempts/1/jobs")) {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      active -= 1;
+      const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+      return jobResponse(runId);
+    }
+    return original(request, family);
+  };
+  const base = config();
+  const concurrent = { ...base, history: { ...base.history, concurrentRequests: 2 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: concurrent, now: NOW, transport });
+  assert.equal(maxActive, 2, "no more than concurrentRequests job reads may be in flight");
+  assert.deepEqual(result.history.runs.map((run) => run.runId), ["300", "301", "302", "303"]);
+  assert.ok(result.history.runs.every((run) => run.jobs.length === 1));
+});
+
+test("records a jobs failure for only the affected run and completes the sync", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const runs = workflowRuns(2);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+    if (request.path.includes("/actions/runs/301/")) {
+      throw new GitHubError("PERMISSION_DENIED", "Resource not accessible by integration", 403);
+    }
+    if (request.path.endsWith("/attempts/1/jobs")) {
+      const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+      return jobResponse(runId);
+    }
+    return original(request, family);
+  };
+  const base = config();
+  const concurrent = { ...base, history: { ...base.history, concurrentRequests: 2 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: concurrent, now: NOW, transport });
+  assert.deepEqual(result.history.runs.map((run) => run.runId), ["300", "301"]);
+  assert.equal(result.history.runs[0]?.jobs.length, 1);
+  assert.equal(result.history.runs[1]?.jobs.length, 0);
+  const jobScopes = result.history.missingScopes.filter((scope) => scope.family === "jobs");
+  assert.equal(jobScopes.length, 1);
+  assert.equal(jobScopes[0]?.runId, "301");
+  assert.equal(result.history.coverage.history.status, "partial");
+});
+
+test("aborts the whole sync when one concurrent job read needs authentication", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const runs = workflowRuns(2);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+    if (request.path.includes("/actions/runs/301/")) {
+      throw new GitHubError("AUTH_REQUIRED", "gh auth login is required", 401);
+    }
+    return original(request, family);
+  };
+  const base = config();
+  const concurrent = { ...base, history: { ...base.history, concurrentRequests: 2 } };
+  await assert.rejects(
+    syncRepositoryHistory({ owner: "o", repo: "r", config: concurrent, now: NOW, transport }),
+    /gh auth login/,
+  );
+});
+
+test("records a jobs page cap once while collecting runs concurrently", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const runs = workflowRuns(2);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+    if (/\/attempts\/\d+\/jobs$/.test(request.path)) {
+      const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+      return response(
+        { total_count: 999, jobs: [{
+          id: runId * 10,
+          name: "build",
+          conclusion: "success",
+          started_at: "2026-10-19T10:00:10Z",
+          completed_at: "2026-10-19T10:01:10Z",
+          labels: ["ubuntu-latest"],
+          runner_name: "GitHub Actions 1",
+        }] },
+        { link: '<https://api.github.com/repositories/1/actions/runs/' + String(runId) + '/attempts/1/jobs?page=2>; rel="next"' },
+      );
+    }
+    return original(request, family);
+  };
+  const base = config();
+  const concurrent = { ...base, history: { ...base.history, concurrentRequests: 2 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: concurrent, now: NOW, transport });
+  assert.equal(result.history.runs[0]?.jobs.length, 10);
+  assert.equal(result.history.runs[1]?.jobs.length, 10);
+  assert.deepEqual(result.history.coverage.history.reasons, ["JOB_PAGE_LIMIT_REACHED"]);
+  assert.equal(result.history.missingScopes.filter((scope) => scope.family === "jobs").length, 2);
+});
+
+test("caps the total request budget with maxRequests", async () => {
+  const base = config();
+  const capped = { ...base, history: { ...base.history, maxRequests: 250 } };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: capped, now: NOW, transport: fakeTransport() });
+  assert.equal(result.budget.limit, 250);
+  assert.equal(result.budget.remaining, 250);
+});

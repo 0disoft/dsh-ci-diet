@@ -22,8 +22,10 @@ export class RequestBudget {
   private dispatchAttempts = 0;
   private inFlight = 0;
 
-  constructor(limits: FamilyLimits) {
-    this.limit = FAMILIES.reduce((total, family) => total + limits[family], 0);
+  constructor(limits: FamilyLimits, limitOverride?: number) {
+    const quotaTotal = FAMILIES.reduce((total, family) => total + limits[family], 0);
+    // A positive override may only tighten the global cap, never raise it above the quotas.
+    this.limit = limitOverride !== undefined && limitOverride > 0 ? Math.min(quotaTotal, limitOverride) : quotaTotal;
     for (const family of FAMILIES) {
       this.families.set(family, {
         initialQuota: limits[family],

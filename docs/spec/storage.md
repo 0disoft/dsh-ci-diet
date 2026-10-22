@@ -95,6 +95,15 @@ Default history is `lookbackDays=7`, `maxRuns=100`, `maxRequests=400`, and
 `concurrentRequests=4`. Extending to 14 days and 200 runs keeps the request
 budget independent; it is not silently increased.
 
+`concurrentRequests` is the maximum number of GitHub requests in flight at once;
+it bounds the parallel jobs, workflow-definition, and pull-request reads without
+changing the sequential discovery and policy stages. `maxRequests` caps the total
+dispatches for one sync even when the per-family quota sum is larger: once the cap
+is reached, remaining reads are recorded as missing scopes instead of being
+attempted. Concurrency never affects output order; runs, jobs, definitions, and
+pull files are merged in repository order, so the report is deterministic no
+matter which response arrived first. Requests are not batched through GraphQL.
+
 ## Error and exit codes
 
 | Error | User meaning | CLI exit |

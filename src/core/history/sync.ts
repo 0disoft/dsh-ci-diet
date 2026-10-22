@@ -10,6 +10,7 @@ import type { GitHubRun } from "../../adapters/github/client.ts";
 import { durationMillisBetween, skuForLabels } from "./model.ts";
 import { DEFAULT_SYNC_DEADLINE_MS } from "../policy/constants.ts";
 import { withDeadline } from "../support/deadline.ts";
+import { mapWithConcurrency } from "../support/concurrency.ts";
 import type { ArtifactRecord, HistoryBundle, HistoryJob, HistoryPull, HistoryRun, ProtectionSnapshot, RetentionSnapshot } from "./model.ts";
 
 const PAGE_SIZE = 100;
@@ -99,7 +100,8 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   signal.throwIfAborted();
   assertValidDocument("Config", config);
   const historyConfig = config.history;
-  const budget = new RequestBudget(historyConfig.quotas);
+  const budget = new RequestBudget(historyConfig.quotas, historyConfig.maxRequests);
+  const concurrency = Math.max(1, Math.min(4, Math.floor(historyConfig.concurrentRequests)));
   const ghVersion = options.transport === undefined ? await readGhVersion(options.runner, signal, historyConfig.requestTimeoutMs) : null;
   const versionLabel = ghVersion ?? "unknown";
   const transport = options.transport ?? new GhTransport({
@@ -178,22 +180,26 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
     readonly attempts: number;
     readonly jobs: HistoryJob[];
     readonly pullRequestNumbers: readonly number[];
+    readonly jobsFetched: number;
+    readonly jobsPageTruncated: boolean;
+    readonly runMissingScopes: readonly MissingScope[];
   }
 
-  const collectedRuns: CollectedRun[] = [];
-  for (const run of runs) {
+  const collectedRuns = await mapWithConcurrency(runs, concurrency, async (run): Promise<CollectedRun> => {
     signal?.throwIfAborted();
     const workflowPath = workflowFilePath(run, workflowPaths);
     const pullRequestNumbers = (run.pull_requests ?? []).map((pull) => pull.number);
-    for (const number of pullRequestNumbers) pullNumbers.add(number);
     const jobs: HistoryJob[] = [];
+    const runMissingScopes: MissingScope[] = [];
+    let fetched = 0;
+    let pageTruncated = false;
     const attempts = Math.max(1, run.run_attempt);
     for (let attempt = attempts; attempt >= 1; attempt -= 1) {
       signal?.throwIfAborted();
       try {
         for (let page = 1; page <= 10; page += 1) {
           const result = await effectiveClient.attemptJobs(run.id, attempt, page, JOB_PAGE_SIZE);
-          jobsFetched += result.items.length;
+          fetched += result.items.length;
           for (const job of result.items) {
             const durationMillis = job.started_at === null ? null : durationMillisBetween(job.started_at, job.completed_at);
             jobs.push({
@@ -213,39 +219,69 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
           }
           if (!result.hasNext) break;
           if (page === 10) {
-            jobsPageTruncated = true;
-            missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_PAGE_LIMIT_REACHED", resumable: true }));
+            pageTruncated = true;
+            runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_PAGE_LIMIT_REACHED", resumable: true }));
           }
         }
       } catch (error) {
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        missingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: failureReason(error, "JOBS_UNAVAILABLE"), resumable: true }));
+        runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: failureReason(error, "JOBS_UNAVAILABLE"), resumable: true }));
       }
     }
-    collectedRuns.push({ run, workflowPath, attempts, jobs, pullRequestNumbers });
+    return { run, workflowPath, attempts, jobs, pullRequestNumbers, jobsFetched: fetched, jobsPageTruncated: pageTruncated, runMissingScopes };
+  }, { signal });
+
+  // Merge per-run results in the repository order the listing returned.
+  for (const entry of collectedRuns) {
+    for (const number of entry.pullRequestNumbers) pullNumbers.add(number);
+    jobsFetched += entry.jobsFetched;
+    if (entry.jobsPageTruncated) jobsPageTruncated = true;
+    for (const scope of entry.runMissingScopes) missingScopes.push(scope);
   }
   // Jobs are finished; quota this stage never used can fund the definitions stage.
   budget.finish("jobs");
 
+  interface PendingDefinition {
+    readonly key: string;
+    readonly path: string;
+    readonly sha: string;
+    readonly firstRun: GitHubRun;
+  }
+
+  // Deduplicate identical path@sha reads in run order before launching them.
+  const pendingDefinitions = new Map<string, PendingDefinition>();
+  for (const entry of collectedRuns) {
+    const key = entry.workflowPath + "@" + entry.run.head_sha;
+    if (!pendingDefinitions.has(key)) {
+      pendingDefinitions.set(key, { key, path: entry.workflowPath, sha: entry.run.head_sha, firstRun: entry.run });
+    }
+  }
+  const resolvedDefinitions = await mapWithConcurrency([...pendingDefinitions.values()], concurrency, async (work) => {
+    signal?.throwIfAborted();
+    try {
+      const content = await effectiveClient.contents(work.path, work.sha);
+      return { key: work.key, definition: content === null ? null : parseWorkflow(work.path, content.text), scope: null };
+    } catch (error) {
+      signal?.throwIfAborted();
+      if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
+      return {
+        key: work.key,
+        definition: null,
+        scope: missingScope({ family: "definitions", resource: "contents", runId: String(work.firstRun.id), path: work.path, reason: failureReason(error, "DEFINITION_UNAVAILABLE"), resumable: true }),
+      };
+    }
+  }, { signal });
+  for (const item of resolvedDefinitions) {
+    definitions.set(item.key, item.definition);
+    if (item.scope !== null) missingScopes.push(item.scope);
+  }
+
+  // Build the report in repository order even though reads finished out of order.
   for (const entry of collectedRuns) {
     signal?.throwIfAborted();
     const { run, workflowPath } = entry;
-    const definitionKey = workflowPath + "@" + run.head_sha;
-    let definition = definitions.get(definitionKey);
-    if (definition === undefined) {
-      try {
-        const content = await effectiveClient.contents(workflowPath, run.head_sha);
-        definition = content === null ? null : parseWorkflow(workflowPath, content.text);
-      } catch (error) {
-        signal?.throwIfAborted();
-        if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        definition = null;
-        missingScopes.push(missingScope({ family: "definitions", resource: "contents", runId: String(run.id), path: workflowPath, reason: failureReason(error, "DEFINITION_UNAVAILABLE"), resumable: true }));
-      }
-      definitions.set(definitionKey, definition);
-    }
-
+    const definition = definitions.get(workflowPath + "@" + run.head_sha) ?? null;
     historyRuns.push({
       runId: String(run.id),
       workflowPath,
@@ -266,8 +302,15 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   // Definitions are finished; the policy/files stage inherits the remainder.
   budget.finish("definitions");
 
-  for (const number of pullNumbers) {
+  interface CollectedPull {
+    readonly number: number;
+    readonly pull: HistoryPull | null;
+    readonly scopes: readonly MissingScope[];
+  }
+
+  const collectedPulls = await mapWithConcurrency([...pullNumbers], concurrency, async (number): Promise<CollectedPull> => {
     signal?.throwIfAborted();
+    const scopes: MissingScope[] = [];
     try {
       const pull = await effectiveClient.pull(number);
       let files: string[] | null = null;
@@ -283,21 +326,28 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
           if (!result.hasNext) break;
           if (page === 30) {
             pullFilesTruncated = true;
-            missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: "PULL_FILES_LIMIT_REACHED", resumable: true }));
+            scopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: "PULL_FILES_LIMIT_REACHED", resumable: true }));
           }
         }
         files = collected;
       } catch (error) {
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-        missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: failureReason(error, "PULL_FILES_UNAVAILABLE"), resumable: true }));
+        scopes.push(missingScope({ family: "policyAndFiles", resource: "pulls.files", pullRequest: number, reason: failureReason(error, "PULL_FILES_UNAVAILABLE"), resumable: true }));
       }
-      pulls.set(number, { number, baseBranch: pull.baseBranch, headBranch: pull.headBranch, files });
+      return { number, pull: { number, baseBranch: pull.baseBranch, headBranch: pull.headBranch, files }, scopes };
     } catch (error) {
       signal?.throwIfAborted();
       if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
-      missingScopes.push(missingScope({ family: "policyAndFiles", resource: "pulls", pullRequest: number, reason: failureReason(error, "PULL_UNAVAILABLE"), resumable: true }));
+      scopes.push(missingScope({ family: "policyAndFiles", resource: "pulls", pullRequest: number, reason: failureReason(error, "PULL_UNAVAILABLE"), resumable: true }));
+      return { number, pull: null, scopes };
     }
+  }, { signal });
+
+  // Insert in pull-number order so the Map iterates deterministically.
+  for (const item of collectedPulls) {
+    if (item.pull !== null) pulls.set(item.number, item.pull);
+    for (const scope of item.scopes) missingScopes.push(scope);
   }
 
   let retention: RetentionSnapshot | null = null;

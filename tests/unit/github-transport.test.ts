@@ -111,6 +111,21 @@ describe("request budget", () => {
     assert.equal(snapshot.families.policyAndFiles.borrowed, 0);
     assert.equal(snapshot.families.policyAndFiles.remaining, 1);
   });
+
+  it("caps the global budget with maxRequests and never raises it above the quotas", () => {
+    const limits = { discovery: 10, jobs: 10, definitions: 10, policyAndFiles: 10 };
+    const capped = new RequestBudget(limits, 5);
+    assert.equal(capped.limit, 5);
+    assert.equal(capped.remaining, 5);
+    for (let index = 0; index < 5; index += 1) {
+      capped.consume("discovery");
+      capped.settle();
+    }
+    assert.equal(capped.remaining, 0);
+    assert.throws(() => capped.consume("jobs"), (error: unknown) => error instanceof GitHubError && error.code === "BUDGET_EXHAUSTED");
+    assert.equal(new RequestBudget(limits, 500).limit, 40);
+    assert.equal(new RequestBudget(limits).limit, 40);
+  });
 });
 
 describe("gh transport", () => {
