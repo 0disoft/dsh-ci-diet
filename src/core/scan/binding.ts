@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
 import { basename } from "node:path";
+import { nodeFileSystem } from "../support/filesystem.ts";
+import type { FileSystem } from "../support/filesystem.ts";
 import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
 import type { RepositoryBinding } from "../contracts/schema.ts";
 
@@ -82,8 +83,8 @@ export function readGithubRemote(workspaceRoot: string, options: ReadGithubRemot
   }
 }
 
-export function rootIdentityHash(workspaceRoot: string): string {
-  return digestOf({ workspaceRoot: realpathSync.native(workspaceRoot) });
+export function rootIdentityHash(workspaceRoot: string, fs: FileSystem = nodeFileSystem): string {
+  return digestOf({ workspaceRoot: fs.realpath(workspaceRoot) });
 }
 
 export interface LocalBindingResult {
@@ -103,13 +104,18 @@ export interface LocalBindingResult {
 export function createLocalBinding(
   workspaceRoot: string,
   generatedAt: string,
-  options: { readonly repositoryFullName?: string } = {},
+  options: {
+    readonly repositoryFullName?: string;
+    readonly fs?: FileSystem;
+    readonly commandRunner?: CommandRunner;
+  } = {},
 ): LocalBindingResult {
-  const root = realpathSync.native(workspaceRoot);
+  const fs = options.fs ?? nodeFileSystem;
+  const root = fs.realpath(workspaceRoot);
   const override = options.repositoryFullName === undefined ? null : parseGithubRemote("https://github.com/" + options.repositoryFullName);
-  const remote = override ?? readGithubRemote(root);
+  const remote = override ?? readGithubRemote(root, options.commandRunner === undefined ? {} : { commandRunner: options.commandRunner });
   const warnings: string[] = [];
-  const identity = rootIdentityHash(root);
+  const identity = rootIdentityHash(root, fs);
 
   let repositoryId: string;
   let repositoryFullName: string;

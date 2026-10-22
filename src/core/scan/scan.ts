@@ -11,8 +11,10 @@ import { computeReportMetrics } from "../savings/report-metrics.ts";
 import { ENGINE_VERSION } from "../version.ts";
 import { parseWorkflow } from "../workflow/index.ts";
 import type { WorkflowDefinition } from "../workflow/index.ts";
+import type { CommandRunner } from "./binding.ts";
 import { createLocalBinding } from "./binding.ts";
 import { discoverWorkflows } from "./discover.ts";
+import type { FileSystem } from "../support/filesystem.ts";
 import type { SkippedWorkflow } from "./discover.ts";
 
 export interface StaticScanOptions {
@@ -20,6 +22,8 @@ export interface StaticScanOptions {
   readonly generatedAt?: string;
   readonly enabledRules?: readonly RuleId[];
   readonly maxWorkflowBytes?: number;
+  readonly fs?: FileSystem;
+  readonly commandRunner?: CommandRunner;
 }
 
 export interface StaticScanResult {
@@ -85,8 +89,14 @@ function coverageFor(
 /** Run the offline scan: workflow text only, no network, no writes. */
 export function runStaticScan(options: StaticScanOptions): StaticScanResult {
   const generatedAt = options.generatedAt ?? new Date().toISOString();
-  const discovery = discoverWorkflows(options.workspaceRoot, { maxBytes: options.maxWorkflowBytes });
-  const bindingResult = createLocalBinding(discovery.root, generatedAt);
+  const discovery = discoverWorkflows(options.workspaceRoot, {
+    ...(options.maxWorkflowBytes === undefined ? {} : { maxBytes: options.maxWorkflowBytes }),
+    ...(options.fs === undefined ? {} : { fs: options.fs }),
+  });
+  const bindingResult = createLocalBinding(discovery.root, generatedAt, {
+    ...(options.fs === undefined ? {} : { fs: options.fs }),
+    ...(options.commandRunner === undefined ? {} : { commandRunner: options.commandRunner }),
+  });
 
   const workflows: WorkflowDefinition[] = [];
   const failures: SkippedWorkflow[] = [...discovery.skipped];

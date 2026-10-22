@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { nodeFileSystem } from "../support/filesystem.ts";
+import type { FileSystem } from "../support/filesystem.ts";
 
 /** Product cap for one workflow source file (see docs/spec/storage.md). */
 export const WORKFLOW_MAX_BYTES = 512 * 1024;
@@ -50,17 +51,18 @@ function insideRoot(root: string, candidate: string): boolean {
  */
 export function discoverWorkflows(
   workspaceRoot: string,
-  options: { maxBytes?: number } = {},
+  options: { maxBytes?: number; fs?: FileSystem } = {},
 ): DiscoveryResult {
   const maxBytes = options.maxBytes ?? WORKFLOW_MAX_BYTES;
-  const root = realpathSync.native(workspaceRoot);
+  const fs = options.fs ?? nodeFileSystem;
+  const root = fs.realpath(workspaceRoot);
   const directory = join(root, ...WORKFLOW_DIR);
   const workflows: DiscoveredWorkflow[] = [];
   const skipped: SkippedWorkflow[] = [];
 
   let entries;
   try {
-    entries = readdirSync(directory, { withFileTypes: true });
+    entries = [...fs.readdir(directory)];
   } catch (error) {
     // A missing workflows directory is normal; other failures mean coverage is incomplete.
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
@@ -81,17 +83,17 @@ export function discoverWorkflows(
 
     let bytes: number;
     try {
-      const resolved = realpathSync.native(absolute);
+      const resolved = fs.realpath(absolute);
       if (!insideRoot(root, resolved)) {
         skipped.push({ path, reason: "WORKFLOW_OUTSIDE_ROOT" });
         continue;
       }
-      bytes = statSync(resolved).size;
+      bytes = fs.stat(resolved).size;
       if (bytes > maxBytes) {
         skipped.push({ path, reason: "WORKFLOW_TOO_LARGE" });
         continue;
       }
-      const text = readFileSync(resolved, "utf8");
+      const text = fs.readFile(resolved, "utf8");
       workflows.push({ path, text, bytes });
     } catch {
       skipped.push({ path, reason: "WORKFLOW_UNREADABLE" });

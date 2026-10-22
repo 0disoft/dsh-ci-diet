@@ -28,6 +28,10 @@ Keep a Changelog, and the project uses semantic versioning.
   built-in defaults, and validates the result against the frozen contract before
   any command runs. Storage, history, and analysis limits now come from that
   effective configuration instead of hardcoded defaults.
+- Workflow discovery and the static scan accept a `FileSystem` port and a command
+  runner, so an in-memory tree can exercise the size cap, symlink rejection, and
+  binding creation without touching the disk. Production defaults to `node:fs`
+  and `git`.
 - `apply` and `revert` honor an abort signal. Cancellation before the transaction
   commits leaves the target, journal, and approval untouched and releases the
   writer lease; once a replacement starts the journal still reaches a consistent
