@@ -16,6 +16,9 @@ Keep a Changelog, and the project uses semantic versioning.
   display languages ship complete dictionaries.
 - The package exports `./client` and declares `dsh.client`; the lazy-CJS bundle is
   built at pack time into `client/` and requires only `react` from the loader.
+- `ci-diet report` without `--report` now shows the latest report for the
+  repository at the effective `--cwd`, matching `plan`, instead of the newest
+  report anywhere in the store.
 - `ci-diet plan` prints the proposed lines as a small diff, and
   `ci-diet plans --plan <planId>` re-shows a saved plan from its byte edits. This
   makes the reviewed change visible before the approval step.

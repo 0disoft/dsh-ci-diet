@@ -104,7 +104,7 @@ exits `2`. Relative paths resolve against the effective `--cwd`.
 ## Read a report
 
 ```
-ci-diet report                 # text summary of the latest stored report
+ci-diet report                 # text summary for this repository
 ci-diet report --format html --out report.html
 ci-diet diagnose               # explain job-name attribution and collection coverage
 ci-diet prune                  # drop expired reports, plans, and cache entries

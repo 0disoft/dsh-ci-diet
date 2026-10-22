@@ -178,8 +178,9 @@ expire after 7 days.
 
 ## Reports
 
-`ci-diet report` prints the latest stored report, or the one named by
-`--report`. Three formats share the same stored record:
+`ci-diet report` prints the latest stored report for the repository at the
+effective `--cwd` (the current directory by default), or the one named by
+`--report` regardless of root. Three formats share the same stored record:
 
 | Format | Use |
 | --- | --- |

@@ -859,7 +859,11 @@ function reportCommand(options: Options, locale: Locale): number {
     return EXIT_USAGE;
   }
   const store = openStore(stateDir, locale, options.config.storage);
-  const report = options.report === null ? store.latestReport() : store.readReport(options.report);
+  const root = realpathSync(options.cwd);
+  const currentBinding = store.findBindingByRoot(root);
+  const report = options.report === null
+    ? (currentBinding === null ? null : store.latestReportForBinding(currentBinding.bindingId))
+    : store.readReport(options.report);
   if (report === null) {
     writeErr(t("cli.report.none") + "\n");
     return EXIT_USAGE;
