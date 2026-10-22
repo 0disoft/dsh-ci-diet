@@ -25,16 +25,25 @@ export function mergeConfig(base: Config, override: unknown): Config {
   const merged = structuredClone(base) as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(override)) {
     const current = merged[key];
-    merged[key] = isRecord(current) && isRecord(value) ? mergeRecord(current, value) : value;
+    merged[key] = isRecord(current) && isRecord(value) ? mergeRecord(current, value) : cloneConfigValue(value);
   }
   return merged as unknown as Config;
+}
+
+/** Copy a JSON value so a merged Config never aliases the caller's arrays or objects. */
+function cloneConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cloneConfigValue);
+  if (isRecord(value)) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, cloneConfigValue(item)]));
+  }
+  return value;
 }
 
 function mergeRecord(base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...base };
   for (const [key, value] of Object.entries(override)) {
     const current = merged[key];
-    merged[key] = isRecord(current) && isRecord(value) ? mergeRecord(current, value) : value;
+    merged[key] = isRecord(current) && isRecord(value) ? mergeRecord(current, value) : cloneConfigValue(value);
   }
   return merged;
 }

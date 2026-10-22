@@ -84,8 +84,8 @@ export function buildCoverage(
       scope: override.scope ?? "not requested",
       fetched: override.fetched ?? 0,
       expected: override.expected ?? null,
-      reasons: override.reasons ?? [],
-      missingScopes: override.missingScopes ?? [],
+      reasons: [...(override.reasons ?? [])],
+      missingScopes: [...(override.missingScopes ?? [])],
     };
   }
   return {

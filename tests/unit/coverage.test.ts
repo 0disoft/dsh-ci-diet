@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCoverage, composeCoverage } from "../../src/core/analysis/coverage.ts";
+import type { MissingScope } from "../../src/core/contracts/schema.ts";
 import { COVERAGE_POLICY, loadCoveragePolicy } from "../../src/core/data/index.ts";
 import type { CoveragePolicy } from "../../src/core/data/index.ts";
 
@@ -46,4 +47,14 @@ test("loadCoveragePolicy rejects a rule without axis cells", () => {
   const policy = clonedPolicy();
   delete policy.rules.CD005;
   assert.throws(() => loadCoveragePolicy(JSON.stringify(policy)), /rules\.CD005/);
+});
+
+test("buildCoverage copies override arrays instead of aliasing them", () => {
+  const reasons = ["PARTIAL_COLLECTION"];
+  const missingScopes: MissingScope[] = [];
+  const coverage = buildCoverage(META, { history: { status: "partial", reasons, missingScopes } });
+  assert.notEqual(coverage.history.reasons, reasons);
+  assert.notEqual(coverage.history.missingScopes, missingScopes);
+  coverage.history.reasons.push("EXTRA");
+  assert.deepEqual(reasons, ["PARTIAL_COLLECTION"]);
 });

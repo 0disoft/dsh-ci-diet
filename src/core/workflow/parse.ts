@@ -273,15 +273,22 @@ function readEnvironment(text: string, node: Node | null | undefined): { name: s
   return { name: null, range: byteRangeOf(text, node) };
 }
 
-function readJobs(text: string, jobsNode: Node | null | undefined, unsupported: UnsupportedFeature[]): WorkflowJob[] {
-  if (jobsNode === null || jobsNode === undefined) return [];
+interface JobsReadResult {
+  readonly jobs: WorkflowJob[];
+  readonly unsupported: UnsupportedFeature[];
+}
+
+function readJobs(text: string, jobsNode: Node | null | undefined): JobsReadResult {
+  if (jobsNode === null || jobsNode === undefined) return { jobs: [], unsupported: [] };
   if (!isMap(jobsNode)) {
-    unsupported.push({
-      code: "jobs-not-a-mapping",
-      detail: "jobs must be a mapping of job keys",
-      range: null,
-    });
-    return [];
+    return {
+      jobs: [],
+      unsupported: [{
+        code: "jobs-not-a-mapping",
+        detail: "jobs must be a mapping of job keys",
+        range: null,
+      }],
+    };
   }
   const jobs: WorkflowJob[] = [];
   for (const pair of jobsNode.items) {
@@ -289,7 +296,7 @@ function readJobs(text: string, jobsNode: Node | null | undefined, unsupported: 
     if (key === null) continue;
     jobs.push(readJob(text, key, pair.key as Node, pair.value as Node | null));
   }
-  return jobs;
+  return { jobs, unsupported: [] };
 }
 
 function readRunWorkingDirectory(node: Node | null | undefined): string | null {
@@ -446,6 +453,7 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
   }
   const rootMap = root as YAMLMap;
   const onNode = rootMap.get("on", true) as Node | null;
+  const jobsRead = readJobs(text, rootMap.get("jobs", true) as Node | null);
   return {
     path,
     sha256,
@@ -455,8 +463,8 @@ export function parseWorkflow(path: string, text: string): WorkflowDefinition {
     pullRequestTypes: readPullRequestTypes(onNode),
     defaultWorkingDirectory: readRunWorkingDirectory(rootMap.get("defaults", true) as Node | null),
     concurrency: readConcurrency(text, rootMap.get("concurrency", true) as Node | null),
-    jobs: readJobs(text, rootMap.get("jobs", true) as Node | null, unsupported),
-    unsupported,
+    jobs: jobsRead.jobs,
+    unsupported: [...unsupported, ...jobsRead.unsupported],
     parseError,
   };
 }

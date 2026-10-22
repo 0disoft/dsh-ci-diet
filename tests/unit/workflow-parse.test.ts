@@ -117,3 +117,9 @@ test("finds a top-level concurrency block", async () => {
   assert.equal(workflow.concurrency.cancelInProgress, true);
   assert.equal(workflow.unsupported.length, 0);
 });
+
+test("reports a non-mapping jobs block without mutating caller state", () => {
+  const workflow = parseWorkflow("workflow.yml", "on: push\njobs: [one]\n");
+  assert.deepEqual(workflow.unsupported.map((item) => item.code), ["jobs-not-a-mapping"]);
+  assert.equal(workflow.jobs.length, 0);
+});

@@ -77,6 +77,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Coverage documents, merged configs, and attestations copy the arrays and
+  objects they receive, so mutating a result or an input can no longer change
+  the other object. Job parsing returns its unsupported-feature list instead of
+  appending to a caller-owned array.
 - A crash between replacing a workflow and journaling APPLIED converges on the
   next apply instead of leaving a PREPARED record that cannot be reverted. A
   failed replacement classifies by the target hash and keeps the approval

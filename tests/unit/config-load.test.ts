@@ -62,3 +62,10 @@ test("mergeConfig rejects a non-object document", () => {
   assert.throws(() => mergeConfig(DEFAULT_CONFIG, []), /CONFIG_INVALID/);
   assert.throws(() => mergeConfig(DEFAULT_CONFIG, null), /CONFIG_INVALID/);
 });
+
+test("mergeConfig copies override arrays instead of aliasing them", () => {
+  const override = { ui: { languages: ["en"] } };
+  const merged = mergeConfig(DEFAULT_CONFIG, override);
+  merged.ui.languages.push("ko");
+  assert.deepEqual(override.ui.languages, ["en"]);
+});
