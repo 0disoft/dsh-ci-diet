@@ -544,3 +544,18 @@ test("CLI diagnose asks for a sync when history is missing", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Run ci-diet sync --network first/);
 });
+test("CLI plan explains a requested workflow skipped by the configured size limit", () => {
+  const { root } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  writeFileSync(join(root, ".github", "workflows", "large.yml"), "#".repeat(300), "utf8");
+  writeFileSync(join(root, "config.json"), JSON.stringify({ storage: { workflowMaxBytes: 256 } }), "utf8");
+  const result = cli(
+    ["plan", "--rule", "CD005", "--workflow", ".github/workflows/large.yml", "--config", "config.json",
+      "--cwd", root, "--state-dir", stateDir, "--lang", "en"],
+    root,
+  );
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /configured analysis limit/);
+});
+

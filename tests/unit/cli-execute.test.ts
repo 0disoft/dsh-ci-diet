@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -56,6 +56,49 @@ test("executeCli stamps reports with the injected clock", async () => {
     assert.equal(code, 0);
     const report = JSON.parse(stdout.text()) as { generatedAt?: string };
     assert.equal(report.generatedAt, "2026-01-02T03:04:05.000Z");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("executeCli applies the storage cap from --config", async () => {
+  const root = makeRoot();
+  try {
+    writeFileSync(join(root, ".github", "workflows", "valid.yml"), "on: push\njobs: {}\n", "utf8");
+    writeFileSync(join(root, ".github", "workflows", "large.yml"), "#".repeat(300), "utf8");
+    writeFileSync(join(root, "config.json"), JSON.stringify({ storage: { workflowMaxBytes: 256 } }), "utf8");
+    const stdout = capture();
+    const code = await executeCli(["scan", "--json", "--cwd", root, "--config", "config.json"], {
+      cwd: tmpdir(),
+      stdout,
+      stderr: capture(),
+    });
+    assert.equal(code, 0);
+    const report = JSON.parse(stdout.text()) as {
+      coverage: { workflowDefinitions: { status: string; fetched: number; expected: number; missingScopes: { reason: string }[] } };
+    };
+    const coverage = report.coverage.workflowDefinitions;
+    assert.equal(coverage.status, "partial");
+    assert.equal(coverage.fetched, 1);
+    assert.equal(coverage.expected, 2);
+    assert.equal(coverage.missingScopes[0]?.reason, "WORKFLOW_TOO_LARGE");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("executeCli rejects an invalid --config before running the command", async () => {
+  const root = makeRoot();
+  try {
+    writeFileSync(join(root, "broken.json"), "{not json", "utf8");
+    const stderr = capture();
+    const code = await executeCli(["scan", "--config", "broken.json"], {
+      cwd: root,
+      stdout: capture(),
+      stderr,
+    });
+    assert.equal(code, 2);
+    assert.match(stderr.text(), /CONFIG_INVALID/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

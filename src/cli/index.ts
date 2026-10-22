@@ -16,6 +16,7 @@ import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagno
 import { PROPOSED_RETENTION_DAYS } from "../core/rules/cd008.ts";
 import { claimsFromTokens, evaluatePatchEligibility } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
+import { ConfigFileError, loadConfigFile } from "../core/config/load.ts";
 import type { Config } from "../core/contracts/schema.ts";
 import type { Coverage } from "../core/contracts/schema.ts";
 import type { HistoryBundle } from "../core/history/model.ts";
@@ -114,6 +115,7 @@ interface Options {
   readonly report: string | null;
   readonly format: "text" | "json" | "html";
   readonly appliedBackups: boolean;
+  readonly config: Config;
 }
 
 class UsageError extends Error {}
@@ -142,6 +144,7 @@ function parseArgs(argv: readonly string[]): Options {
   let accountMinutesUsed: number | null = null;
   let includedMinutes: number | null = null;
   let stateDir: string | null = null;
+  let configPath: string | null = null;
   let workflow: string | null = null;
   let rule: RuleId | null = null;
   let job: string | null = null;
@@ -219,6 +222,9 @@ function parseArgs(argv: readonly string[]): Options {
     } else if (arg === "--state-dir") {
       stateDir = resolve(context.cwd, takeValue(index, "--state-dir"));
       index += 1;
+    } else if (arg === "--config") {
+      configPath = takeValue(index, "--config");
+      index += 1;
     } else if (arg === "--workflow") {
       workflow = takeValue(index, "--workflow");
       index += 1;
@@ -274,9 +280,11 @@ function parseArgs(argv: readonly string[]): Options {
     }
   }
 
+  const effectiveCwd = resolve(context.cwd, cwd);
   return {
     command,
-    cwd: resolve(context.cwd, cwd),
+    cwd: effectiveCwd,
+    config: configPath === null ? DEFAULT_CONFIG : loadConfigFile(resolve(effectiveCwd, configPath)),
     json,
     out,
     rules,
@@ -311,8 +319,8 @@ function stateDirOf(options: Options): string {
 }
 
 /** Open the store with the product quota and warn once when it crosses the threshold. */
-function openStore(stateDir: string, locale: Locale): PatchStore {
-  const store = PatchStore.open(stateDir, DEFAULT_CONFIG.storage);
+function openStore(stateDir: string, locale: Locale, storage: Config["storage"] = DEFAULT_CONFIG.storage): PatchStore {
+  const store = PatchStore.open(stateDir, storage);
   const status = store.storageStatus();
   if (status.warning) {
     writeErr(
@@ -361,6 +369,7 @@ function scan(options: Options, locale: Locale): number {
   const result = runStaticScan({
     workspaceRoot: options.cwd,
     enabledRules: options.rules ?? undefined,
+    maxWorkflowBytes: options.config.storage.workflowMaxBytes,
     generatedAt: now().toISOString(),
   });
   const { report, binding, workflows, skipped, warnings } = result;
@@ -414,7 +423,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   }
 
   const generatedAt = now().toISOString();
-  const discovery = discoverWorkflows(options.cwd, {});
+  const discovery = discoverWorkflows(options.cwd, { maxBytes: options.config.storage.workflowMaxBytes });
   const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
 
   let owner: string;
@@ -441,8 +450,8 @@ async function sync(options: Options, locale: Locale): Promise<number> {
     ? null
     : { accountMinutesUsed: options.accountMinutesUsed, includedMinutes: options.includedMinutes };
   const baseConfig: Config = options.days === null
-    ? DEFAULT_CONFIG
-    : { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: options.days } };
+    ? options.config
+    : { ...options.config, history: { ...options.config.history, lookbackDays: options.days } };
   const config: Config = billing === null ? baseConfig : { ...baseConfig, billing };
 
   const showProgress = context.stderr.isTTY === true && !options.json;
@@ -479,7 +488,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   });
   const report = built.report;
 
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   store.saveBinding(upgraded.binding);
   store.saveReport(report);
   store.saveHistory(upgraded.binding.bindingId, history);
@@ -540,7 +549,7 @@ function pickWorkflowPath(options: Options, available: readonly string[]): strin
 async function planCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
-  const store = existsSync(stateDir) ? openStore(stateDir, locale) : null;
+  const store = existsSync(stateDir) ? openStore(stateDir, locale, options.config.storage) : null;
   if (store === null) {
     writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
@@ -560,15 +569,18 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     writeErr(t("cli.plan.ruleRequired") + "\n");
     return EXIT_USAGE;
   }
-  const discovery = discoverWorkflows(binding.workspaceRoot, {});
+  const discovery = discoverWorkflows(binding.workspaceRoot, { maxBytes: options.config.storage.workflowMaxBytes });
+  const requestedPath = options.workflow === null ? null : options.workflow.replace(/\\/g, "/");
+  const oversized = discovery.skipped.find((entry) => entry.reason === "WORKFLOW_TOO_LARGE"
+    && (requestedPath === null || entry.path === requestedPath));
+  if (oversized !== undefined && (requestedPath !== null || discovery.workflows.length === 0)) {
+    writeErr(t("cli.plan.workflowTooLarge") + "\n");
+    return EXIT_USAGE;
+  }
   const workflowPath = pickWorkflowPath(options, discovery.workflows.map((file) => file.path));
   const file = discovery.workflows.find((entry) => entry.path === workflowPath);
   if (file === undefined) {
     writeErr(t("cli.plan.syncRequired") + "\n");
-    return EXIT_USAGE;
-  }
-  if (file.text.length > 512 * 1024) {
-    writeErr(t("cli.plan.workflowTooLarge") + "\n");
     return EXIT_USAGE;
   }
   const workflow = parseWorkflow(file.path, file.text);
@@ -726,7 +738,7 @@ function approveCommand(options: Options, locale: Locale): number {
     writeErr(t("cli.approve.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   const result = approvePlan({
     store,
     planId: options.plan,
@@ -749,7 +761,7 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
     writeErr(t("cli.apply.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   const result = await applyPlan({ store, planId: options.plan, now: now(), subjectId: options.subject });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
@@ -771,7 +783,7 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
     writeErr(t("cli.revert.usage") + "\n");
     return EXIT_USAGE;
   }
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   const result = await revertChange({ store, changeId: options.change, now: now() });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
@@ -785,7 +797,7 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
 
 function showChanged(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   const changes = store.listChanges();
   const lines: string[] = [];
   if (changes.length === 0) {
@@ -806,7 +818,7 @@ function showChanged(options: Options, locale: Locale): number {
 
 function plansList(options: Options, locale: Locale): number {
   const t = createTranslator(locale);
-  const store = openStore(stateDirOf(options), locale);
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
   const plans = store.listPlans().map((entry) => ({
     planId: entry.plan.planId,
     state: entry.plan.status.state,
@@ -833,7 +845,7 @@ function reportCommand(options: Options, locale: Locale): number {
     writeErr(t("cli.report.none") + "\n");
     return EXIT_USAGE;
   }
-  const store = openStore(stateDir, locale);
+  const store = openStore(stateDir, locale, options.config.storage);
   const report = options.report === null ? store.latestReport() : store.readReport(options.report);
   if (report === null) {
     writeErr(t("cli.report.none") + "\n");
@@ -900,7 +912,7 @@ function diagnoseCommand(options: Options, locale: Locale): number {
     writeErr(t("cli.diagnose.syncRequired") + "\n");
     return EXIT_USAGE;
   }
-  const store = openStore(stateDir, locale);
+  const store = openStore(stateDir, locale, options.config.storage);
   const root = realpathSync(options.cwd);
   const binding = store.findBindingByRoot(root) ?? createLocalBinding(root, now().toISOString()).binding;
   const history = store.readLatestHistory(binding.bindingId);
@@ -1017,13 +1029,13 @@ function pruneCommand(options: Options, locale: Locale): number {
     else writeOut(t("cli.prune.done", { reports: 0, plans: 0, cache: 0 }) + "\n");
     return EXIT_OK;
   }
-  const store = openStore(stateDir, locale);
+  const store = openStore(stateDir, locale, options.config.storage);
   if (options.appliedBackups) return pruneAppliedBackups(store, options, locale);
   const result = store.prune(now(), {
-    reportDays: DEFAULT_CONFIG.storage.reportDays,
-    planDays: DEFAULT_CONFIG.storage.planDays,
-    cacheDays: DEFAULT_CONFIG.storage.cacheDays,
-    cacheMaxBytes: DEFAULT_CONFIG.storage.cacheMaxBytes,
+    reportDays: options.config.storage.reportDays,
+    planDays: options.config.storage.planDays,
+    cacheDays: options.config.storage.cacheDays,
+    cacheMaxBytes: options.config.storage.cacheMaxBytes,
   });
   if (options.json) writeOut(JSON.stringify(result, null, 2) + "\n");
   else {
@@ -1126,6 +1138,10 @@ export async function main(argv: readonly string[]): Promise<number> {
     if (error instanceof UsageError) {
       writeErr("error: " + usageMessage(error, argv) + "\n");
       return EXIT_USAGE;
+    }
+    if (error instanceof ConfigFileError) {
+      writeErr("error: " + error.message + "\n");
+      return EXIT_SCHEMA;
     }
     throw error;
   }

@@ -24,6 +24,10 @@ Keep a Changelog, and the project uses semantic versioning.
   and `--state-dir` paths now resolve against the effective working directory,
   and `scan` stamps the report with the injected clock. Production behavior is
   unchanged because the defaults are the real process.
+- `--config <file>` loads a partial JSON configuration, merges it over the
+  built-in defaults, and validates the result against the frozen contract before
+  any command runs. Storage, history, and analysis limits now come from that
+  effective configuration instead of hardcoded defaults.
 - Writer serialization uses a claim directory plus a lease. A stale claim left
   by a dead process is recovered; a live owner's lease path is never moved, and
   a takeover re-checks ownership under the claim.

@@ -88,6 +88,12 @@ CD005 needs `--job` and `--minutes`; CD008 needs `--job` and `--step`, plus
 `--claims artifact-purpose:temporary,consumer-min-days:7`. Nothing is committed,
 pushed, or applied without the explicit `approve` step.
 
+`--config <file>` merges a partial JSON configuration over the built-in defaults
+for any command, so a repository can lower the workflow size limit or the
+storage quota without code changes. The merged document is validated against
+the frozen contract before the command runs; an unreadable or invalid file
+exits `2`. Relative paths resolve against the effective `--cwd`.
+
 ## Read a report
 
 ```
