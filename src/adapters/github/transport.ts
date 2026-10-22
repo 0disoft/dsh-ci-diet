@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { GitHubError, isTransient } from "./errors.ts";
+import { GitHubError } from "./errors.ts";
 import { renderPath } from "./endpoints.ts";
 import type { EndpointRequest } from "./endpoints.ts";
 import type { Family, RequestBudget } from "./budget.ts";
@@ -191,6 +191,19 @@ function classify(status: number, headers: Readonly<Record<string, string>>, tex
 
 const MAX_BACKOFF_MS = 30_000;
 
+/**
+ * Retry only failures a second attempt can plausibly fix: rate limits and
+ * secondary limits, transient gateway errors, and network-level failures
+ * (status 0 or no HTTP status at all). Deterministic client errors such as
+ * 400 and 422 are surfaced on the first attempt instead of burning quota.
+ */
+function isRetryable(failure: GitHubError): boolean {
+  if (failure.code === "RATE_LIMITED") return true;
+  const status = failure.status;
+  if (status === 429 || status === 502 || status === 503 || status === 504) return true;
+  return failure.code === "NETWORK_ERROR" && (status === 0 || status === null);
+}
+
 function retryDelay(failure: GitHubError, attempt: number): number {
   // A server-supplied Retry-After wins over our own backoff schedule.
   if (failure.retryAfterMs !== null) return failure.retryAfterMs;
@@ -235,7 +248,7 @@ export class GhTransport {
         if (this.signal?.aborted === true) throw abortError(this.signal);
         const failure = error instanceof GitHubError ? error : new GitHubError("NETWORK_ERROR", String(error));
         lastError = failure;
-        if (!isTransient(failure) || attempt === this.retries) break;
+        if (!isRetryable(failure) || attempt === this.retries) break;
         const wait = retryDelay(failure, attempt);
         await this.sleep(wait, this.signal);
         throwIfAborted(this.signal);

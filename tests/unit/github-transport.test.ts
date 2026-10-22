@@ -316,4 +316,34 @@ describe("gh transport", () => {
     assert.equal(calls.length, 1);
     assert.equal(waits.length, 0);
   });
+
+  it("does not retry deterministic 4xx responses such as 400 and 422", async () => {
+    for (const status of [400, 422] as const) {
+      const { runner, calls } = runnerFrom(httpResponse(status, { message: "request rejected" }), httpResponse(200, { ok: true }));
+      const waits: number[] = [];
+      const transport = new GhTransport({
+        budget: budget(),
+        runner,
+        sleep: async (milliseconds) => {
+          waits.push(milliseconds);
+        },
+      });
+      await assert.rejects(
+        transport.get({ path: "/repos/owner/repo" }, "discovery"),
+        (error: unknown) => error instanceof GitHubError && error.code === "NETWORK_ERROR" && error.status === status,
+      );
+      assert.equal(calls.length, 1, "HTTP " + String(status) + " must be attempted once");
+      assert.equal(waits.length, 0);
+    }
+  });
+
+  it("still retries 502 and 503 gateway failures", async () => {
+    for (const status of [502, 503] as const) {
+      const { runner, calls } = runnerFrom(httpResponse(status, null), httpResponse(200, { ok: true }));
+      const transport = new GhTransport({ budget: budget(), runner, sleep: async () => {} });
+      const response = await transport.get({ path: "/repos/owner/repo" }, "discovery");
+      assert.equal(response.status, 200);
+      assert.equal(calls.length, 2);
+    }
+  });
 });
