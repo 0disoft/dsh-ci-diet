@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import { test } from "node:test";
 import { discoverWorkflows } from "../../src/core/scan/discover.ts";
 import { runStaticScan } from "../../src/core/scan/scan.ts";
 import type { FileSystem, FileSystemEntry } from "../../src/core/support/filesystem.ts";
 
-const ROOT = "C:\\repo";
-const DIRECTORY = "C:\\repo\\.github\\workflows";
+const ROOT = process.platform === "win32" ? "C:\\repo" : "/repo";
+const DIRECTORY = join(ROOT, ".github", "workflows");
 
 function entry(name: string, kind: "file" | "link" | "directory"): FileSystemEntry {
   return {
@@ -63,10 +64,10 @@ test("discovery applies the size cap before reading the file", () => {
 });
 
 test("discovery rejects symlinks and files that resolve outside the root", () => {
-  const absolute = DIRECTORY + "\\ci.yml";
+  const absolute = join(DIRECTORY, "ci.yml");
   const fs = memoryFs({ "ci.yml": "on: push\n" }, {
     entries: [entry("ci.yml", "file"), entry("linked.yml", "link")],
-    realpaths: { [absolute]: "C:\\outside\\ci.yml" },
+    realpaths: { [absolute]: join(ROOT, "..", "outside", "ci.yml") },
   });
   const result = discoverWorkflows(ROOT, { fs });
   assert.equal(result.workflows.length, 0);
