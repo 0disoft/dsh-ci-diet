@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
@@ -506,9 +506,37 @@ test("a failed replacement leaves the change not applied and keeps the approval 
   assert.equal(fixture.store.listChanges().at(-1)?.state, "NOT_APPLIED");
   assert.deepEqual(fixture.store.readNonce(fixture.plan.planId), nonce);
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.deepEqual(readdirSync(join(fixture.root, ".github", "workflows")), ["ci.yml"], "a failed replacement leaves no temporary file");
+  const changeId = fixture.store.changeIdFor(fixture.plan.planId, fixture.now);
+  assert.equal(fixture.store.readBackup(changeId), null, "a replacement that never landed keeps no backup");
+  assert.equal(existsSync(join(fixture.store.root, "backups", changeId)), false);
   const retried = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
   assert.equal(retried.state, "applied");
   assert.notEqual(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
+test("a journal write failure removes the backup it prepared", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const changeId = fixture.store.changeIdFor(fixture.plan.planId, fixture.now);
+  const blockedRecord = join(fixture.store.root, "changes", changeId + ".json");
+  mkdirSync(blockedRecord, { recursive: true });
+  await assert.rejects(
+    applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" }),
+  );
+  assert.equal(existsSync(join(fixture.store.root, "backups", changeId)), false, "an unreferenced backup is removed");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  rmSync(blockedRecord, { recursive: true, force: true });
+  const retried = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(retried.state, "applied");
 });
 
 test("a crash between the replacement and the APPLIED journal converges on the next apply", async (t) => {

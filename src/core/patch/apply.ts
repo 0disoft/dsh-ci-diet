@@ -392,36 +392,48 @@ function releaseWriterLease(lease: string, token: string): void {
 async function replaceAtomically(path: string, text: string, mode: number, signal?: AbortSignal): Promise<string> {
   throwIfAborted(signal);
   const temporary = path + ".ci-diet-" + process.pid + "-" + Date.now().toString(36) + ".tmp";
-  try {
-    writeFileSync(temporary, text, { encoding: "utf8", mode });
-  } catch (error) {
-    // Keep one error contract for every failed replacement attempt.
-    throw new Error("WRITE_CONFLICT: replacement failed: " + String(error));
-  }
-  const handle = openSync(temporary, "r");
+  let renamed = false;
   try {
     try {
-      fsyncSync(handle);
-    } catch (syncError) {
-      const code = (syncError as { code?: string }).code;
-      if (code !== "EPERM" && code !== "EINVAL" && code !== "EBADF") throw syncError;
-    }
-  } finally {
-    closeSync(handle);
-  }
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      renameSync(temporary, path);
-      return textHash(readFileSync(path, "utf8"));
+      writeFileSync(temporary, text, { encoding: "utf8", mode });
     } catch (error) {
-      lastError = error;
-      if (signal?.aborted === true) break;
-      await sleep(150 * (attempt + 1));
+      // Keep one error contract for every failed replacement attempt.
+      throw new Error("WRITE_CONFLICT: replacement failed: " + String(error));
+    }
+    const handle = openSync(temporary, "r");
+    try {
+      try {
+        fsyncSync(handle);
+      } catch (syncError) {
+        const code = (syncError as { code?: string }).code;
+        if (code !== "EPERM" && code !== "EINVAL" && code !== "EBADF") throw syncError;
+      }
+    } finally {
+      closeSync(handle);
+    }
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        renameSync(temporary, path);
+        renamed = true;
+        return textHash(readFileSync(path, "utf8"));
+      } catch (error) {
+        lastError = error;
+        if (signal?.aborted === true) break;
+        await sleep(150 * (attempt + 1), undefined, signal === undefined ? undefined : { signal });
+      }
+    }
+    throw new Error("WRITE_CONFLICT: replacement failed: " + String(lastError));
+  } finally {
+    // Never leave a sidecar behind, whether the write, fsync, sleep, or rename failed.
+    if (!renamed) {
+      try {
+        rmSync(temporary, { force: true });
+      } catch {
+        // Cleanup is best-effort; the original failure is more useful.
+      }
     }
   }
-  rmSync(temporary, { force: true });
-  throw new Error("WRITE_CONFLICT: replacement failed: " + String(lastError));
 }
 
 function changeRecord(
@@ -539,6 +551,15 @@ function convergeInterruptedApply(
   return { state: "applied", reasons: [], change, resultText: targetText, ...(warnings.length > 0 ? { warnings } : {}) };
 }
 
+/** Cleanup must not replace the error that explains why the transaction stopped. */
+function discardBackup(store: PatchStore, changeId: string): void {
+  try {
+    store.removeBackup(changeId);
+  } catch {
+    // Best effort: a later prune can remove an unreachable backup.
+  }
+}
+
 function handleReplaceFailure(
   options: ApplyOptions,
   plan: PatchPlan,
@@ -562,6 +583,7 @@ function handleReplaceFailure(
   if (landed === beforeHash) {
     // The target is untouched: keep the nonce so the user can retry the apply.
     options.store.saveChange({ ...applying, state: "NOT_APPLIED", updatedAt: iso(options.now) });
+    discardBackup(options.store, applying.changeId);
     throw failure;
   }
   options.store.saveChange({ ...applying, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
@@ -656,22 +678,32 @@ async function commitApply(
   const changeId = options.store.changeIdFor(plan.planId, options.now);
   const manifest = options.store.writeBackup(changeId, inspection.beforeText, inspection.text, plan.payload.workflowPath, options.now);
   if (manifest.beforeHash !== textHash(inspection.beforeText) || manifest.afterHash !== inspection.hash) {
+    discardBackup(options.store, changeId);
     return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
   }
   const backup = options.store.readBackup(changeId);
   if (backup === null || backup.manifest.beforeHash !== manifest.beforeHash) {
+    discardBackup(options.store, changeId);
     return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
   }
 
   const reference = plan.status.approvalNonceId ?? "";
   const prepared = changeRecord(plan, changeId, "PREPARED", binding, inspection.beforeText, inspection.text, reference, options.now);
-  options.store.saveChange(prepared);
+  try {
+    options.store.saveChange(prepared);
+  } catch (error) {
+    // No journal record exists, so the file was never touched and nothing can
+    // reference the backup.
+    discardBackup(options.store, changeId);
+    throw error;
+  }
 
   // The bytes may have changed while the backup was written. Read again and
   // refuse rather than overwrite a concurrent user edit.
   const recheck = readFileSync(target, "utf8");
   if (textHash(recheck) !== inspection.beforeHash) {
     options.store.saveChange({ ...prepared, state: "NOT_APPLIED", updatedAt: iso(options.now) });
+    discardBackup(options.store, changeId);
     const warnings = options.store.appendSummaryEvent({ type: "source_changed_before_replace", planId: plan.planId, changeId }, options.now);
     return { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
   }
@@ -679,7 +711,12 @@ async function commitApply(
   // Journal the in-doubt state before touching the file, so a crash after the
   // rename is recoverable from the journal instead of looking untouched.
   const applying: AppliedChange = { ...prepared, state: "APPLYING", updatedAt: iso(options.now) };
-  options.store.saveChange(applying);
+  try {
+    options.store.saveChange(applying);
+  } catch (error) {
+    discardBackup(options.store, changeId);
+    throw error;
+  }
 
   const mode = statSync(target).mode;
   let afterHash: string;
@@ -756,6 +793,7 @@ export async function revertChange(options: {
         if (inDoubt) {
           // The replacement never happened; only the journal needs correcting.
           options.store.saveChange({ ...change, state: "NOT_APPLIED", updatedAt: iso(options.now) });
+          discardBackup(options.store, change.changeId);
           return { state: "NOT_APPLIED", reason: "TARGET_UNCHANGED" };
         }
         // A previous revert restored the bytes but crashed before finalizing the

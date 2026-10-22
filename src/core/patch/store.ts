@@ -409,20 +409,33 @@ export class PatchStore {
       Buffer.byteLength(beforeText, "utf8") + Buffer.byteLength(afterText, "utf8") + 2048,
     );
     const directory = this.path("backups", requireId(changeId, "changeId"));
-    this.ensureDirectory(directory);
-    this.writeText(join(directory, "before.yml"), beforeText);
-    this.writeText(join(directory, "after.yml"), afterText);
-    const manifest: BackupManifest = {
-      changeId,
-      workflowPath,
-      beforeHash: sha256Text(beforeText),
-      afterHash: sha256Text(afterText),
-      beforeBytes: Buffer.byteLength(beforeText, "utf8"),
-      afterBytes: Buffer.byteLength(afterText, "utf8"),
-      createdAt: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
-    };
-    this.writeJson(join(directory, "manifest.json"), manifest);
-    return manifest;
+    const existed = existsSync(directory);
+    try {
+      this.ensureDirectory(directory);
+      this.writeText(join(directory, "before.yml"), beforeText);
+      this.writeText(join(directory, "after.yml"), afterText);
+      const manifest: BackupManifest = {
+        changeId,
+        workflowPath,
+        beforeHash: sha256Text(beforeText),
+        afterHash: sha256Text(afterText),
+        beforeBytes: Buffer.byteLength(beforeText, "utf8"),
+        afterBytes: Buffer.byteLength(afterText, "utf8"),
+        createdAt: now.toISOString().replace(/\.\d{3}Z$/, "Z"),
+      };
+      this.writeJson(join(directory, "manifest.json"), manifest);
+      return manifest;
+    } catch (error) {
+      // Only remove a directory this call created: a pre-existing backup may be
+      // the only copy of the user's bytes.
+      if (!existed) rmSync(directory, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /** Removes a backup that no journal record can reference. */
+  removeBackup(changeId: string): void {
+    rmSync(this.path("backups", requireId(changeId, "changeId")), { recursive: true, force: true });
   }
 
   readBackup(changeId: string): StoredBackup | null {

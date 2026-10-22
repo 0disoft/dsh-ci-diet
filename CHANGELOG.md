@@ -107,6 +107,9 @@ Keep a Changelog, and the project uses semantic versioning.
   marginal estimate instead of an unknown SKU.
 - A file-permission test skips when the process can bypass directory permissions
   instead of failing the suite under root.
+- A failed replacement or journal write leaves no temporary workflow file and no
+  backup that no journal record can reference. The store removes a partly written
+  backup only when it created that backup directory.
 
 ## 0.2.0 (2026-10-21)
 
