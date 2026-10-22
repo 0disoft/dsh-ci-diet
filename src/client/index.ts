@@ -1,6 +1,5 @@
 import * as React from "react";
 import { SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } from "./fields.ts";
-import type { SettingField } from "./fields.ts";
 import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 
 const FORM_NAMESPACE = "ciDiet.bootstrap";
