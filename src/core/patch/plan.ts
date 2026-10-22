@@ -5,9 +5,9 @@ import type { WorkflowDefinition } from "../workflow/model.ts";
 import { ENGINE_VERSION } from "../version.ts";
 import { applyEdits, semanticCheck } from "./edits.ts";
 import { semanticProblems } from "./semantic.ts";
+import { PLAN_TTL_SECONDS } from "../policy/constants.ts";
 
-export const PLAN_TTL_SECONDS = 7 * 24 * 60 * 60;
-export const POLICY_MAX_AGE_SECONDS = 600;
+export { PLAN_TTL_SECONDS, POLICY_MAX_AGE_SECONDS } from "../policy/constants.ts";
 
 export interface PlanInput {
   readonly binding: RepositoryBinding;

@@ -14,6 +14,7 @@ import { parseWorkflow } from "../workflow/parse.ts";
 import { collectDependencies } from "./dependencies.ts";
 import { clockOf, idsOf, isExpired } from "../support/clock.ts";
 import type { Clock, IdSource, RuntimeSeams } from "../support/clock.ts";
+import { CLAIM_POLL_MS, DEFAULT_APPROVAL_TTL_SECONDS, LEASE_CLAIM_STALE_MS, WRITER_LEASE_STALE_MS } from "../policy/constants.ts";
 
 export interface ApplyOptions {
   readonly store: PatchStore;
@@ -23,6 +24,8 @@ export interface ApplyOptions {
   readonly subjectId?: string;
   /** Maximum age of the approval nonce in seconds. Defaults to the plan-level 600 s. */
   readonly approvalTtlSeconds?: number;
+  /** Maximum age of a coverage policy snapshot in seconds; defaults to the shared policy bound. */
+  readonly policyMaxAgeSeconds?: number;
   /** Optional time source for lease and claim bookkeeping; defaults to the system clock. */
   readonly clock?: Clock;
   /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
@@ -39,8 +42,6 @@ export interface ApplyResult {
   readonly warnings?: readonly string[];
 }
 
-const WRITER_LEASE_STALE_MS = 10 * 60_000;
-const DEFAULT_APPROVAL_TTL_SECONDS = 600;
 const LEASE_TOKEN_FILE = "owner";
 
 function throwIfAborted(signal: AbortSignal | undefined): void {
@@ -123,8 +124,6 @@ export interface StoreLock {
   release(): void;
 }
 
-const LEASE_CLAIM_STALE_MS = 60_000;
-const CLAIM_POLL_MS = 20;
 /**
  * A claim is held for microseconds. Breaking a claim whose owner process is
  * gone is safe even when its mtime is fresh: a dead process cannot release it.
@@ -609,6 +608,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
       coverageWriteAllowed: stored.meta.coverageWriteAllowed,
       nonceValid,
       backupAvailable: true,
+      ...(options.policyMaxAgeSeconds !== undefined ? { policyMaxAgeMs: options.policyMaxAgeSeconds * 1000 } : {}),
       attestations: currentAttestations(options.store, plan),
       currentPolicies: currentPolicies(options.store, binding, options.now),
     });

@@ -813,6 +813,37 @@ test("an aborted apply leaves the target, journal, and approval untouched", asyn
   assert.equal(applied.state, "applied");
 });
 
+test("apply honors a shorter configured approval lifetime", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({ store: fixture.store, planId: fixture.plan.planId, confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester", channel: "human-cli", now: fixture.now });
+  const later = new Date(fixture.now.getTime() + 300_000);
+  const rejected = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: later,
+    subjectId: "tester", approvalTtlSeconds: 100 });
+  assert.equal(rejected.state, "not_applied");
+  assert.ok(rejected.reasons.includes("NONCE_INVALID"), "reasons: " + rejected.reasons.join(","));
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: later,
+    subjectId: "tester", approvalTtlSeconds: 600 });
+  assert.equal(applied.state, "applied");
+});
+
+test("apply honors a configured policy freshness bound", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({ store: fixture.store, planId: fixture.plan.planId, confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester", channel: "human-cli", now: fixture.now });
+  const later = new Date(fixture.now.getTime() + 601_000);
+  const rejected = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: later,
+    subjectId: "tester", approvalTtlSeconds: 1200 });
+  assert.equal(rejected.state, "not_applied");
+  assert.ok(rejected.reasons.includes("POLICY_STALE"), "reasons: " + rejected.reasons.join(","));
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: later,
+    subjectId: "tester", approvalTtlSeconds: 1200, policyMaxAgeSeconds: 1200 });
+  assert.equal(applied.state, "applied");
+});
+
 test("an aborted revert keeps the applied change until a retry finishes it", async (t) => {
   const fixture = setup();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));

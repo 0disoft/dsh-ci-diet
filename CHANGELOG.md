@@ -28,6 +28,9 @@ Keep a Changelog, and the project uses semantic versioning.
   built-in defaults, and validates the result against the frozen contract before
   any command runs. Storage, history, and analysis limits now come from that
   effective configuration instead of hardcoded defaults.
+- Patch and analysis limits live in one shared policy module. Plan lifetime, policy
+  freshness, approval lifetime, and attestation lifetime accept the configured
+  values; CLI lookback and timeout bounds use the same constants as the contract.
 - Workflow discovery and the static scan accept a `FileSystem` port and a command
   runner, so an in-memory tree can exercise the size cap, symlink rejection, and
   binding creation without touching the disk. Production defaults to `node:fs`

@@ -13,7 +13,7 @@ import { syncRepositoryHistory } from "../core/history/sync.ts";
 import { defaultStateDir } from "../core/state/paths.ts";
 import { buildHistoryReport } from "../core/analysis/report.ts";
 import { buildDiagnostics, diagnosticsIncomplete } from "../core/analysis/diagnostics.ts";
-import { PROPOSED_RETENTION_DAYS } from "../core/rules/cd008.ts";
+import { PROPOSED_RETENTION_DAYS, HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../core/policy/constants.ts";
 import { claimsFromTokens, evaluatePatchEligibility } from "../core/patch/eligibility.ts";
 import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import { ConfigFileError, loadConfigFile } from "../core/config/load.ts";
@@ -197,7 +197,7 @@ function parseArgs(argv: readonly string[]): Options {
       const value = takeValue(index, "--days");
       index += 1;
       const parsed = Number(value);
-      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 30) throw new UsageError("INVALID_VALUE:--days");
+      if (!Number.isSafeInteger(parsed) || parsed < HISTORY_LOOKBACK_DAYS_MIN || parsed > HISTORY_LOOKBACK_DAYS_MAX) throw new UsageError("INVALID_VALUE:--days");
       days = parsed;
     } else if (arg === "--account-minutes-used") {
       const value = takeValue(index, "--account-minutes-used");
@@ -246,7 +246,7 @@ function parseArgs(argv: readonly string[]): Options {
       const value = takeValue(index, "--minutes");
       index += 1;
       const parsed = Number(value);
-      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 360) throw new UsageError("INVALID_VALUE:--minutes");
+      if (!Number.isSafeInteger(parsed) || parsed < TIMEOUT_MINUTES_MIN || parsed > TIMEOUT_MINUTES_MAX) throw new UsageError("INVALID_VALUE:--minutes");
       minutes = parsed;
     } else if (arg === "--plan") {
       plan = takeValue(index, "--plan");
@@ -673,6 +673,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     claims: claimsFromTokens(options.claims),
     evidenceRefs: ["cli:plan:" + rule],
     issuedBy: { channel: "human-cli", subjectId: options.subject },
+    ttlSeconds: options.config.apply.attestationMaxAgeDays * 24 * 60 * 60,
     now: plannedAt,
   });
 
@@ -684,6 +685,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     history: historyJson,
     currentDefinitionParsed: true,
     editedJobEvidenceComplete: true,
+    policyMaxAgeSeconds: options.config.apply.policyMaxAgeSeconds,
     now: plannedAt,
   });
   if (!eligibility.allowed) {
@@ -767,6 +769,8 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
     planId: options.plan,
     now: now(),
     subjectId: options.subject,
+    approvalTtlSeconds: options.config.apply.approvalTtlSeconds,
+    policyMaxAgeSeconds: options.config.apply.policyMaxAgeSeconds,
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");

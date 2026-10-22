@@ -1,6 +1,7 @@
 import { digestOf } from "../../shared/cdj1.ts";
 import type { Attestation } from "../contracts/schema.ts";
 import { assertValidDocument } from "../contracts/validate.ts";
+import { DEFAULT_ATTESTATION_TTL_SECONDS } from "../policy/constants.ts";
 
 export interface AttestationInput {
   readonly bindingId: string;
@@ -28,7 +29,7 @@ export function createAttestation(input: AttestationInput): Attestation {
     throw new Error("ATTESTATION_SCOPE_INSUFFICIENT: step scope needs a job key and a step key");
   }
   const attestedAt = input.now.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const expiresAt = new Date(input.now.getTime() + (input.ttlSeconds ?? 30 * 24 * 60 * 60) * 1000)
+  const expiresAt = new Date(input.now.getTime() + (input.ttlSeconds ?? DEFAULT_ATTESTATION_TTL_SECONDS) * 1000)
     .toISOString()
     .replace(/\.\d{3}Z$/, "Z");
   const base = {

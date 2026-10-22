@@ -6,13 +6,13 @@ import { isAnalyzable } from "../workflow/index.ts";
 import { RULE_VERSION } from "../version.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
+import { PROPOSED_RETENTION_DAYS } from "../policy/constants.ts";
+
+export { PROPOSED_RETENTION_DAYS } from "../policy/constants.ts";
 
 const RULE_ID = "CD008";
 
 const UPLOAD_ARTIFACT = /^actions\/upload-artifact@/i;
-
-/** Proposal only; never applied without a confirmed effective maximum. */
-export const PROPOSED_RETENTION_DAYS = 7;
 
 type RetentionState =
   | { readonly kind: "absent" }

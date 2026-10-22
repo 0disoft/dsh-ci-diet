@@ -3,8 +3,7 @@ import type { ApprovalNonce, PatchStore } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 import { acquireStoreLock } from "./apply.ts";
 import type { Clock, IdSource } from "../support/clock.ts";
-
-const APPROVE_LOCK_WAIT_MS = 250;
+import { APPROVE_LOCK_WAIT_MS } from "../policy/constants.ts";
 
 export interface ApproveInput {
   readonly store: PatchStore;

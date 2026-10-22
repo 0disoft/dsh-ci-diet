@@ -2,14 +2,14 @@ import type { Attestation, Coverage, Finding } from "../contracts/schema.ts";
 import type { CoverageLevel } from "../model/domain.ts";
 import type { HistoryBundle } from "../history/model.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
-import { PROPOSED_RETENTION_DAYS } from "./edits.ts";
+import { CONSUMER_MIN_DAYS_MAX, CONSUMER_MIN_DAYS_MIN, POLICY_MAX_AGE_SECONDS, PROPOSED_RETENTION_DAYS } from "../policy/constants.ts";
 import { isStale } from "../support/clock.ts";
+
+export { POLICY_MAX_AGE_SECONDS } from "../policy/constants.ts";
 
 /** Rules whose findings can ever produce a patch plan in v0.1. */
 export const PATCH_RULES = ["CD001", "CD005", "CD008"] as const;
 export type PatchRule = (typeof PATCH_RULES)[number];
-
-export const POLICY_MAX_AGE_SECONDS = 600;
 
 export function isPatchRule(value: string): value is PatchRule {
   return (PATCH_RULES as readonly string[]).includes(value);
@@ -26,6 +26,8 @@ export interface PatchEligibilityInput {
   readonly currentDefinitionParsed: boolean;
   readonly editedJobEvidenceComplete: boolean;
   readonly now: Date;
+  /** Overrides the shared policy freshness bound; defaults to 600 s. */
+  readonly policyMaxAgeSeconds?: number;
 }
 
 export interface PatchEligibility {
@@ -51,12 +53,12 @@ function retentionMaxDays(history: HistoryBundle | null): number | null {
   return history.retention === null ? null : history.retention.maximumAllowedDays;
 }
 
-function policyFresh(fetchedAt: string | null, now: Date): boolean {
+function policyFresh(fetchedAt: string | null, now: Date, maxAgeSeconds = POLICY_MAX_AGE_SECONDS): boolean {
   if (fetchedAt === null) return false;
   const at = Date.parse(fetchedAt);
   if (!Number.isFinite(at)) return false;
   // Same absolute-age boundary as verify.ts: exactly the max age is fresh.
-  return !isStale(now.getTime(), at, POLICY_MAX_AGE_SECONDS * 1000);
+  return !isStale(now.getTime(), at, maxAgeSeconds * 1000);
 }
 
 /**
@@ -103,15 +105,15 @@ export function evaluatePatchEligibility(input: PatchEligibilityInput): PatchEli
   if (input.rule === "CD001") {
     if (!input.claims.ciOnly) reasons.push("CLAIM_CI_ONLY_MISSING");
     if (!input.claims.replaceSafe) reasons.push("CLAIM_REPLACE_SAFE_MISSING");
-    if (!policyFresh(input.history?.protection?.fetchedAt ?? null, input.now)) reasons.push("POLICY_STALE");
+    if (!policyFresh(input.history?.protection?.fetchedAt ?? null, input.now, input.policyMaxAgeSeconds)) reasons.push("POLICY_STALE");
   } else if (input.rule === "CD008") {
     if (input.claims.artifactPurpose === "unknown") reasons.push("CLAIM_ARTIFACT_PURPOSE_UNKNOWN");
     else if (input.claims.artifactPurpose !== "temporary") reasons.push("CLAIM_ARTIFACT_PURPOSE_NOT_TEMPORARY");
     const consumerDays = input.claims.consumerMinDays;
-    if (consumerDays === null || !Number.isSafeInteger(consumerDays) || consumerDays < 1 || consumerDays > PROPOSED_RETENTION_DAYS) {
+    if (consumerDays === null || !Number.isSafeInteger(consumerDays) || consumerDays < CONSUMER_MIN_DAYS_MIN || consumerDays > CONSUMER_MIN_DAYS_MAX) {
       reasons.push("CLAIM_CONSUMER_DAYS_INVALID");
     }
-    if (!policyFresh(input.history?.retention?.fetchedAt ?? null, input.now)) reasons.push("POLICY_STALE");
+    if (!policyFresh(input.history?.retention?.fetchedAt ?? null, input.now, input.policyMaxAgeSeconds)) reasons.push("POLICY_STALE");
     if (retentionMaxDays(input.history) === null) reasons.push("RETENTION_MAX_UNKNOWN");
     else if ((retentionMaxDays(input.history) ?? 0) < PROPOSED_RETENTION_DAYS) reasons.push("RETENTION_MAX_BELOW_PROPOSAL");
   }
@@ -155,8 +157,8 @@ export function attestationSatisfiesRule(rule: PatchRule, claims: Claims): boole
     return claims.artifactPurpose === "temporary"
       && days !== null
       && Number.isSafeInteger(days)
-      && days >= 1
-      && days <= PROPOSED_RETENTION_DAYS;
+      && days >= CONSUMER_MIN_DAYS_MIN
+      && days <= CONSUMER_MIN_DAYS_MAX;
   }
   return true;
 }

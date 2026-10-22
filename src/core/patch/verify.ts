@@ -3,6 +3,9 @@ import type { Attestation, PatchPlan, PolicySnapshot } from "../contracts/schema
 import { attestationSatisfiesRule, isPatchRule } from "./eligibility.ts";
 import { isExpired, isStale } from "../support/clock.ts";
 import type { PatchRule } from "./eligibility.ts";
+import { POLICY_MAX_AGE_MS } from "../policy/constants.ts";
+
+export { POLICY_MAX_AGE_MS } from "../policy/constants.ts";
 
 export type ApplyReasonCode =
   | "PLAN_DIGEST_MISMATCH"
@@ -23,8 +26,6 @@ export type ApplyReasonCode =
   | "POLICY_STALE"
   | "BACKUP_UNAVAILABLE";
 
-export const POLICY_MAX_AGE_MS = 600_000;
-
 export interface ApplyCheckInput {
   readonly plan: PatchPlan;
   readonly now: Date;
@@ -37,6 +38,8 @@ export interface ApplyCheckInput {
   readonly attestations?: readonly Attestation[];
   /** Policy snapshots rebuilt from the current history cache. */
   readonly currentPolicies?: readonly PolicySnapshot[];
+  /** Overrides the shared policy freshness bound; defaults to 600 000 ms. */
+  readonly policyMaxAgeMs?: number;
 }
 
 type PolicyKind = PolicySnapshot["kind"];
@@ -144,7 +147,7 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
 
   for (const kind of requiredPolicyKinds(payload.ruleIds)) {
     const planPolicy = payload.policies.find((policy) => policy.kind === kind);
-    if (planPolicy === undefined || planPolicy.status !== "known" || isStale(now, isoMillis(planPolicy.observedAt), POLICY_MAX_AGE_MS)) {
+    if (planPolicy === undefined || planPolicy.status !== "known" || isStale(now, isoMillis(planPolicy.observedAt), input.policyMaxAgeMs ?? POLICY_MAX_AGE_MS)) {
       reasons.push("POLICY_STALE");
       continue;
     }

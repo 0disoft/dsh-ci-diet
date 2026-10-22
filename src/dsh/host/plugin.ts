@@ -3,6 +3,7 @@ import type { Context } from "@deepseek-ai/cordis";
 import Schema from "@deepseek-ai/schemastery";
 import { defineTool } from "@deepseek-ai/dsh-tools";
 import { DEFAULT_CONFIG } from "../../core/data/default-config.ts";
+import { HISTORY_LOOKBACK_DAYS_MAX, HISTORY_LOOKBACK_DAYS_MIN } from "../../core/policy/constants.ts";
 import { buildHistoryReport } from "../../core/analysis/report.ts";
 import { AXIS_NAMES, RULE_IDS } from "../../core/model/domain.ts";
 import type { RuleId } from "../../core/model/domain.ts";
@@ -228,7 +229,7 @@ export function apply(ctx: Context, config: Config) {
         [owner, repo] = [remote.owner, remote.repository];
       }
       const days = args.days ?? DEFAULT_CONFIG.history.lookbackDays;
-      if (!Number.isSafeInteger(days) || days < 1 || days > 30) throw new Error("days must be an integer between 1 and 30");
+      if (!Number.isSafeInteger(days) || days < HISTORY_LOOKBACK_DAYS_MIN || days > HISTORY_LOOKBACK_DAYS_MAX) throw new Error("days must be an integer between " + HISTORY_LOOKBACK_DAYS_MIN + " and " + HISTORY_LOOKBACK_DAYS_MAX);
       const settings = { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: days } };
       const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date(), signal: exec.signal });
       exec.signal.throwIfAborted();

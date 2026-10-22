@@ -3,8 +3,9 @@ import { sha256Hex } from "../../shared/cdj1.ts";
 import type { ByteEdit } from "../contracts/schema.ts";
 import type { WorkflowDefinition, WorkflowJob, WorkflowStep } from "../workflow/model.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
+import { PROPOSED_RETENTION_DAYS, TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../policy/constants.ts";
 
-export const PROPOSED_RETENTION_DAYS = 7;
+export { PROPOSED_RETENTION_DAYS } from "../policy/constants.ts";
 
 export interface EditError {
   readonly code:
@@ -117,8 +118,8 @@ export function planConcurrencyEdit(
 }
 
 export function planTimeoutEdit(text: string, workflow: WorkflowDefinition, job: WorkflowJob, minutes: number): EditResult {
-  if (!Number.isSafeInteger(minutes) || minutes < 1 || minutes > 360) {
-    return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "timeout minutes must be an integer between 1 and 360" } };
+  if (!Number.isSafeInteger(minutes) || minutes < TIMEOUT_MINUTES_MIN || minutes > TIMEOUT_MINUTES_MAX) {
+    return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "timeout minutes must be an integer between " + TIMEOUT_MINUTES_MIN + " and " + TIMEOUT_MINUTES_MAX } };
   }
   const buffer = bufferOf(text);
   const newline = newlineStyle(text);
