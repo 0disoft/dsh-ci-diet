@@ -640,6 +640,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     workflow,
     text: file.text,
     rule,
+    allowedRules: options.config.apply.allowedRules,
     jobKey: options.job,
     stepIndex: rule === "CD008" ? options.step : null,
     minutes: options.minutes,
@@ -663,6 +664,9 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
         return EXIT_USAGE;
       case "STEP_REQUIRED":
         writeErr(t("cli.plan.stepRequired") + "\n");
+        return EXIT_USAGE;
+      case "RULE_NOT_ALLOWED":
+        writeErr(t("cli.plan.ruleNotAllowed", { rule }) + "\n");
         return EXIT_USAGE;
       case "NOT_ELIGIBLE":
         writeErr(t("cli.plan.notEligible", { rule }) + "\n");
@@ -726,6 +730,7 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
     subjectId: options.subject,
     approvalTtlSeconds: options.config.apply.approvalTtlSeconds,
     policyMaxAgeSeconds: options.config.apply.policyMaxAgeSeconds,
+    allowedRules: options.config.apply.allowedRules,
     ...(context.signal !== undefined ? { signal: context.signal } : {}),
   });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");

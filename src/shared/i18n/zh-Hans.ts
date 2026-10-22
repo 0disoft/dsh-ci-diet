@@ -66,6 +66,7 @@ export const zhHans: Record<MessageKey, string> = {
   "cli.plan.workflowTooLarge": "工作流文件超过配置的分析上限。",
   "cli.plan.writeBlocked": "{rule} 在覆盖级别 {level} 下无法写入。",
   "cli.plan.notEligible": "最新报告中没有此工作流的 {rule} 合格发现。",
+  "cli.plan.ruleNotAllowed": "apply.allowedRules 不允许规则 {rule}。",
   "cli.plan.notTarget": "最新报告中没有测量 {target} 的 {rule} 发现。",
   "cli.plan.staleEvidence": "工作流文件在报告生成后已变化。请再次运行 ci-diet sync，然后新建计划。",
   "cli.plan.created": "已为 {workflow} 创建计划 {plan}（{rule}）。",

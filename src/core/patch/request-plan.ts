@@ -18,6 +18,7 @@ export type RequestPlanBlocker =
   | "STEP_REQUIRED"
   | "EDIT_NOT_APPLICABLE"
   | "NOT_ELIGIBLE"
+  | "RULE_NOT_ALLOWED"
   | "HISTORY_REQUIRED"
   | "PLAN_REJECTED";
 
@@ -26,6 +27,8 @@ export interface RequestedPlanInput {
   readonly workflow: WorkflowDefinition;
   readonly text: string;
   readonly rule: PatchRule;
+  /** Rules the caller's configuration permits writing. The plan is refused otherwise. */
+  readonly allowedRules: readonly PatchRule[];
   readonly jobKey: string | null;
   readonly stepIndex: number | null;
   readonly minutes: number | null;
@@ -97,6 +100,9 @@ function requestedEdit(input: RequestedPlanInput): { edits: readonly ByteEdit[];
  * anything; each caller decides whether to save the attestation and plan.
  */
 export function buildRequestedPlan(input: RequestedPlanInput): RequestedPlanResult {
+  if (!input.allowedRules.includes(input.rule)) {
+    return failed("RULE_NOT_ALLOWED", ["RULE_NOT_ALLOWED: " + input.rule]);
+  }
   const edit = requestedEdit(input);
   if ("ok" in edit) return edit;
   if (input.history === null) {

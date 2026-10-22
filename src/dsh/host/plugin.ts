@@ -501,6 +501,7 @@ export function apply(ctx: Context, config: Config) {
           workflow,
           text: file.text,
           rule,
+          allowedRules: settings.config.apply.allowedRules,
           jobKey: request.jobKey,
           stepIndex: request.stepIndex,
           minutes: request.minutes,

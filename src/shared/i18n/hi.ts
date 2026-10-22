@@ -66,6 +66,7 @@ export const hi: Record<MessageKey, string> = {
   "cli.plan.workflowTooLarge": "वर्कफ़्लो फ़ाइल कॉन्फ़िगर की गई विश्लेषण सीमा से बड़ी है।",
   "cli.plan.writeBlocked": "{rule} कवरेज स्तर {level} पर नहीं लिख सकता।",
   "cli.plan.notEligible": "नवीनतम रिपोर्ट में इस वर्कफ़्लो के लिए {rule} का कोई योग्य निष्कर्ष नहीं है।",
+  "cli.plan.ruleNotAllowed": "apply.allowedRules में नियम {rule} की अनुमति नहीं है।",
   "cli.plan.notTarget": "नवीनतम रिपोर्ट में {target} मापने वाला {rule} निष्कर्ष नहीं है।",
   "cli.plan.staleEvidence": "रिपोर्ट बनने के बाद वर्कफ़्लो फ़ाइल बदल गई। फिर ci-diet sync चलाएँ, फिर नई योजना बनाएँ।",
   "cli.plan.created": "{workflow} के लिए योजना {plan} बनाई गई ({rule})।",

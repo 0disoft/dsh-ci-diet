@@ -85,6 +85,7 @@ describe("requested plan builder", () => {
       workflow,
       text: WORKFLOW,
       rule: "CD001",
+      allowedRules: ["CD001", "CD005", "CD008"],
       jobKey: null,
       stepIndex: null,
       minutes: null,
@@ -104,6 +105,32 @@ describe("requested plan builder", () => {
     assert.equal(result.coverageLevel, "full");
   });
 
+  it("refuses a rule the configuration does not allow", () => {
+    const { binding } = workspace();
+    const workflow = parseWorkflow(PATH, WORKFLOW);
+    const result = buildRequestedPlan({
+      binding,
+      workflow,
+      text: WORKFLOW,
+      rule: "CD001",
+      allowedRules: ["CD005"],
+      jobKey: null,
+      stepIndex: null,
+      minutes: null,
+      finding: finding("CD001", workflow.sha256),
+      coverage: coverage(),
+      claims: claimsFromTokens(["ci-only", "replace-safe"]),
+      history: history(),
+      evidenceRef: "test:request",
+      issuedBy: { channel: "human-cli", subjectId: "tester" },
+      now: NOW,
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.equal(result.blocker, "RULE_NOT_ALLOWED");
+    assert.deepEqual(result.reasons, ["RULE_NOT_ALLOWED: CD001"]);
+  });
+
   it("refuses a CD005 request without a job and minutes", () => {
     const { binding } = workspace();
     const workflow = parseWorkflow(PATH, WORKFLOW);
@@ -112,6 +139,7 @@ describe("requested plan builder", () => {
       workflow,
       text: WORKFLOW,
       rule: "CD005",
+      allowedRules: ["CD001", "CD005", "CD008"],
       jobKey: "build",
       stepIndex: null,
       minutes: null,
@@ -136,6 +164,7 @@ describe("requested plan builder", () => {
       workflow,
       text: WORKFLOW,
       rule: "CD008",
+      allowedRules: ["CD001", "CD005", "CD008"],
       jobKey: "build",
       stepIndex: 99,
       minutes: null,
@@ -160,6 +189,7 @@ describe("requested plan builder", () => {
       workflow,
       text: WORKFLOW,
       rule: "CD001",
+      allowedRules: ["CD001", "CD005", "CD008"],
       jobKey: null,
       stepIndex: null,
       minutes: null,

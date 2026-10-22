@@ -66,6 +66,7 @@ export const en = {
   "cli.plan.workflowTooLarge": "The workflow file is larger than the configured analysis limit.",
   "cli.plan.writeBlocked": "{rule} cannot write at coverage level {level}.",
   "cli.plan.notEligible": "{rule} has no eligible finding for this workflow in the latest report.",
+  "cli.plan.ruleNotAllowed": "Rule {rule} is not allowed by apply.allowedRules.",
   "cli.plan.notTarget": "No {rule} finding in the latest report measured {target}.",
   "cli.plan.staleEvidence": "The workflow file changed since the report was created. Run ci-diet sync again, then make a new plan.",
   "cli.plan.created": "Plan {plan} created for {workflow} ({rule}).",

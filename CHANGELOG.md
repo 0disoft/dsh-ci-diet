@@ -143,6 +143,10 @@ Keep a Changelog, and the project uses semantic versioning.
   clears the revision guard, so the reset cannot overwrite a change another
   screen saved first. Duplicate rule ids are canonicalized to one entry in
   contract order instead of failing the next tool call.
+- Planning and applying now enforce `apply.allowedRules`. `plan` refuses a
+  requested rule outside the configured list instead of producing a plan the
+  engine would never apply, and `apply` refuses a plan whose rules are no longer
+  allowed before it writes a backup or the workflow.
 - The retention and cache settings edited on the Settings page now have an
   execution path: the `ci_diet_prune` model tool applies them to the same store
   the other DSH tools use, instead of cleanup existing only in the CLI whose

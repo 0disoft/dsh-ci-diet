@@ -10,6 +10,7 @@ import { digestOf } from "../../shared/cdj1.ts";
 import type { ApprovalNonce, StoredPlan } from "./store.ts";
 import { buildPolicySnapshots } from "./plan.ts";
 import { semanticProblems } from "./semantic.ts";
+import type { PatchRule } from "./eligibility.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
 import { collectDependencies } from "./dependencies.ts";
 import { clockOf, idsOf, isExpired } from "../support/clock.ts";
@@ -43,6 +44,8 @@ export interface ApplyOptions {
   readonly approvalTtlSeconds?: number;
   /** Maximum age of a coverage policy snapshot in seconds; defaults to the shared policy bound. */
   readonly policyMaxAgeSeconds?: number;
+  /** Rules the caller's configuration permits writing; a plan outside it is refused. */
+  readonly allowedRules?: readonly PatchRule[];
   /** Optional time source for lease and claim bookkeeping; defaults to the system clock. */
   readonly clock?: Clock;
   /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
@@ -459,6 +462,15 @@ async function inspectApply(
   // the nonce file survived a failed cleanup.
   if (journalBlocksApply(options.store, plan.planId)) {
     const reasons: readonly ApplyReasonCode[] = ["NONCE_INVALID"];
+    const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
+    return { kind: "refused", result: { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
+  }
+
+  const denied = options.allowedRules === undefined
+    ? []
+    : plan.payload.ruleIds.filter((ruleId) => !options.allowedRules?.includes(ruleId as PatchRule));
+  if (denied.length > 0) {
+    const reasons: readonly ApplyReasonCode[] = ["RULE_NOT_ALLOWED"];
     const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
     return { kind: "refused", result: { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
   }

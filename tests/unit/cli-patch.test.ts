@@ -185,6 +185,39 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   assert.match(changes.stdout, /REVERTED/);
 });
 
+test("CLI enforces apply.allowedRules for plan and apply", () => {
+  const { root, file } = makeRepo();
+  const stateDir = join(root, ".state");
+  seed(root, stateDir);
+  writeFileSync(join(root, "ci.json"), JSON.stringify({ apply: { allowedRules: ["CD005"] } }), "utf8");
+
+  const refusedPlan = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--config", "ci.json", "--state-dir", stateDir, "--claims", "ci-only,replace-safe"],
+    root,
+  );
+  assert.equal(refusedPlan.status, 1);
+  assert.match(refusedPlan.stderr, /not allowed by apply\.allowedRules/);
+
+  const planned = cli(
+    ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
+    root,
+  );
+  assert.equal(planned.status, 0, planned.stderr);
+  const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
+  const approved = cli(
+    ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir],
+    root,
+  );
+  assert.equal(approved.status, 0, approved.stderr);
+
+  const applied = cli(
+    ["apply", "--plan", plan.planId, "--cwd", root, "--config", "ci.json", "--state-dir", stateDir],
+    root,
+  );
+  assert.equal(applied.status, 3);
+  assert.match(applied.stdout + applied.stderr, /RULE_NOT_ALLOWED/);
+  assert.equal(readFileSync(file, "utf8"), WORKFLOW);
+});
 test("CLI plan refuses without observed coverage", () => {
   const { root } = makeRepo();
   const result = cli(

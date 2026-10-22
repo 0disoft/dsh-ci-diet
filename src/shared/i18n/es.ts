@@ -66,6 +66,7 @@ export const es: Record<MessageKey, string> = {
   "cli.plan.workflowTooLarge": "El archivo de flujo de trabajo supera el límite de análisis configurado.",
   "cli.plan.writeBlocked": "{rule} no puede escribir con el nivel de cobertura {level}.",
   "cli.plan.notEligible": "El último informe no tiene ningún hallazgo elegible de {rule} para este flujo de trabajo.",
+  "cli.plan.ruleNotAllowed": "La regla {rule} no está permitida por apply.allowedRules.",
   "cli.plan.notTarget": "El último informe no tiene ningún hallazgo de {rule} que midiera {target}.",
   "cli.plan.staleEvidence": "El archivo de flujo de trabajo cambió desde que se creó el informe. Ejecuta ci-diet sync de nuevo y crea otro plan.",
   "cli.plan.created": "Plan {plan} creado para {workflow} ({rule}).",
