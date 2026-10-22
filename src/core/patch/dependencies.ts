@@ -18,6 +18,8 @@ export interface DependencyCollection {
 
 const MAX_DEPENDENCY_BYTES = 2 * 1024 * 1024;
 const MAX_ACTION_FILES = 500;
+/** A local action directory is a dependency like any file: cap its total bytes. */
+const MAX_ACTION_TOTAL_BYTES = 8 * 1024 * 1024;
 const ACTION_SKIP_DIRS = new Set([".git", "node_modules"]);
 
 /** Commands whose first non-flag argument is a script path. */
@@ -218,8 +220,10 @@ export function collectDependencies(
     const stack: string[] = [dir];
     let collected = 0;
     let visited = 0;
+    let totalBytes = 0;
     let truncated = false;
-    while (stack.length > 0) {
+    let byteLimit = false;
+    walk: while (stack.length > 0) {
       if (visited >= MAX_ACTION_FILES) {
         truncated = true;
         break;
@@ -235,7 +239,7 @@ export function collectDependencies(
       for (const entry of entries) {
         if (visited >= MAX_ACTION_FILES) {
           truncated = true;
-          break;
+          break walk;
         }
         visited += 1;
         if (entry.isDirectory()) {
@@ -246,16 +250,35 @@ export function collectDependencies(
         const real = join(current, entry.name);
         const relativePath = toPosix(relative(realRoot, real));
         if (found.has(relativePath)) continue;
+        let size: number;
+        try {
+          size = statSync(real).size;
+        } catch {
+          unresolved.add(relativePath + " (unreadable file)");
+          continue;
+        }
+        // The same per-file cap as a script: an action must not smuggle in a
+        // blob the user never reviewed.
+        if (size > MAX_DEPENDENCY_BYTES) {
+          unresolved.add(relativePath + " (file too large)");
+          continue;
+        }
+        if (totalBytes + size > MAX_ACTION_TOTAL_BYTES) {
+          byteLimit = true;
+          break walk;
+        }
         const hash = hashFile(real);
         if (hash === null) {
           unresolved.add(relativePath + " (unreadable file)");
           continue;
         }
         found.set(relativePath, hash);
+        totalBytes += size;
         collected += 1;
       }
     }
-    if (truncated || stack.length > 0) unresolved.add(dirDisplay + " (file limit reached)");
+    if (truncated) unresolved.add(dirDisplay + " (file limit reached)");
+    if (byteLimit) unresolved.add(dirDisplay + " (byte limit reached)");
     if (collected === 0) unresolved.add(dirDisplay);
   };
 

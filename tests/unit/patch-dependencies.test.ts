@@ -56,6 +56,28 @@ test("pins dependency bytes, so binary files that share a decoded text do not co
   );
 });
 
+test("a file that exceeds the dependency cap inside a local action is unresolved", (t) => {
+  const space = workspace(BINARY_WORKFLOW);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  const action = join(space.root, ".github", "actions", "binary");
+  mkdirSync(action, { recursive: true });
+  writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: run.bin\n", "utf8");
+  writeFileSync(join(action, "run.bin"), "console.log('run')\n", "utf8");
+  writeFileSync(join(action, "blob.bin"), Buffer.alloc(2 * 1024 * 1024 + 1));
+
+  const collection = collectDependencies(space.root, parseWorkflow(space.path, space.text));
+  assert.ok(
+    collection.unresolved.includes(".github/actions/binary/blob.bin (file too large)"),
+    collection.unresolved.join(","),
+  );
+  assert.equal(
+    collection.dependencies.some((entry) => entry.ref.endsWith("blob.bin")),
+    false,
+    "an oversized blob must not be pinned as if it were reviewed",
+  );
+  assert.ok(collection.dependencies.some((entry) => entry.ref.endsWith("action.yml")));
+});
+
 const SCRIPT_WORKFLOW = [
   "on: pull_request",
   "jobs:",

@@ -144,8 +144,13 @@ The scope level matters: workflow, job, or step. A job is never automatically
 included because its workflow is attested, and a step is never carried over
 because an index happens to match. Even when the workflow file hash is
 unchanged, a changed local action or script changes the dependency fingerprint
-and voids the plan. Mutable action refs stay opaque until a resolved revision is
-approved.
+and voids the plan. Apply re-collects the workflow's dependencies instead of
+trusting the refs recorded in the plan, so repointing a symlink at different
+bytes is a mismatch even when the recorded target is untouched. Fingerprints
+hash the bytes on disk, not their UTF-8 decoding, and a file inside a local
+action is capped like a script: an oversized or unreadable file becomes
+unresolved instead of being pinned. Mutable action refs stay opaque until a
+resolved revision is approved.
 
 Immediately before the final approval, recheck plan expiry, premise expiry and
 revocation, Binding identity, current bytes, and policy freshness. A policy
@@ -199,19 +204,29 @@ reuse it rather than reimplement the transaction.
 | replace | Write the result to a temp file on the same volume, replace atomically, preserve mode | Re-hash the target: unchanged marks NOT_APPLIED with the nonce intact; the planned bytes converge to APPLIED; anything else is `RECOVERY_REQUIRED` |
 | confirm | Verify target after-hash, journal APPLIED, then consume the nonce | `RECOVERY_REQUIRED`; never a normal success response |
 
+One approval authorizes one apply transaction. A change journaled APPLIED,
+APPLYING, REVERTING, or REVERTED refuses a new apply with `NONCE_INVALID`, even
+when its nonce file survived a failed cleanup; a crash inside the transaction is
+handled by convergence before that guard runs. Approvals and lease takeovers are
+serialized per plan and per repository by a short-lived claim directory that is
+only broken when its owner process is gone, so two approvers cannot leave a plan
+and its nonce disagreeing.
+
 There is no mode that warns and continues when the backup cannot be written: the
 user must choose a new durable location and create a new plan. CI Diet uses a
 single-writer lease per repository and path to serialize its own CLI and Web
 applies. The owner token records the writer process id, and a stale lease is
 taken over only after that process is confirmed gone; an owner that is still
 running is never moved out of the lease path, even when its mtime exceeds the
-staleness threshold, so a third writer cannot start beside it. The takeover then
-renames the lease aside and compares the moved token with the inspected token;
-when a live writer replaced the lease in between, the moved lease is restored and
-the takeover is refused. A token without a recognizable process id fails closed
-and must be removed by hand after confirming that no writer is running. Release
-uses the same move-and-verify order, so neither path deletes a token it does not
-own. External editors are not part of that lease; POSIX rename
+staleness threshold, so a third writer cannot start beside it. A takeover first
+claims the writer claim directory; only the claim holder inspects and clears the
+lease, and it swaps in a fully written candidate directory instead of moving a
+live one, so a writer that filled the path in the meantime loses with
+`WRITE_CONFLICT` rather than sharing the file. A token without a recognizable
+process id fails closed and must be removed by hand after confirming that no
+writer is running. Release verifies the token and moves only its own lease, so
+neither path deletes a token it does not own. External editors are not part of
+that lease; POSIX rename
 and Node filesystem calls do not provide atomic compare-and-swap against other
 writers, so the product promises detection through pre/post rechecks, not
 lossless concurrent editing.
@@ -232,15 +247,17 @@ equivalent power-loss durability is claimed.
 | REVERTING and target equals before | The restore landed before the journal was finalized; mark REVERTED without writing |
 | APPLIED/RECOVERY_REQUIRED and target equals before | The revert objective already holds; mark REVERTED without writing |
 | APPLIED and target equals after | Revert is available |
-| Any state, target differs from both before and after | `CONFLICT`; never overwrite the current file |
+| Any state, target differs from both before and after | `CONFLICT`; never overwrite the current file. Once the user restores the original bytes by hand, a revert retry converges to REVERTED |
+| CONFLICT and target equals before | Mark REVERTED without writing; the conflict was only local bytes |
+| APPLIED and the nonce file survived | Do not re-apply; converge on the recorded receipt and report the cleanup gap |
 | Required backup missing or hash mismatch | `RECOVERY_REQUIRED`; never restore corrupted bytes |
 
 Revert also needs a separate approval and quota/target recheck, and changes the
 file only when `current == after`. It journals REVERTING before replacing the
 target, so a crash or a journal write failure after the restore leaves a state
 that a retry can finish rather than a CONFLICT the user cannot resolve. If the
-user edited the file afterwards, offer the conflict and the preserved original
-comparison only. `git reset --hard`,
+user edited the file afterwards, record CONFLICT and offer the preserved
+original for comparison; restoring the before bytes makes the retry converge. `git reset --hard`,
 `git checkout --`, and forced overwrite are never recovery mechanisms.
 
 Backups are stored verbatim for exact revert; masking happens only in exports,
