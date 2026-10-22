@@ -3,6 +3,7 @@ import type { CoverageLevel } from "../model/domain.ts";
 import type { HistoryBundle } from "../history/model.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
 import { PROPOSED_RETENTION_DAYS } from "./edits.ts";
+import { isStale } from "../support/clock.ts";
 
 /** Rules whose findings can ever produce a patch plan in v0.1. */
 export const PATCH_RULES = ["CD001", "CD005", "CD008"] as const;
@@ -50,16 +51,12 @@ function retentionMaxDays(history: HistoryBundle | null): number | null {
   return history.retention === null ? null : history.retention.maximumAllowedDays;
 }
 
-function policyAgeSeconds(value: string, now: Date): number {
-  const at = Date.parse(value);
-  if (!Number.isFinite(at)) return Number.POSITIVE_INFINITY;
-  return (now.getTime() - at) / 1000;
-}
-
 function policyFresh(fetchedAt: string | null, now: Date): boolean {
   if (fetchedAt === null) return false;
-  const age = policyAgeSeconds(fetchedAt, now);
-  return Math.abs(age) <= POLICY_MAX_AGE_SECONDS;
+  const at = Date.parse(fetchedAt);
+  if (!Number.isFinite(at)) return false;
+  // Same absolute-age boundary as verify.ts: exactly the max age is fresh.
+  return !isStale(now.getTime(), at, POLICY_MAX_AGE_SECONDS * 1000);
 }
 
 /**

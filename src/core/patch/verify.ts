@@ -1,6 +1,7 @@
 import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
 import type { Attestation, PatchPlan, PolicySnapshot } from "../contracts/schema.ts";
 import { attestationSatisfiesRule, isPatchRule } from "./eligibility.ts";
+import { isExpired, isStale } from "../support/clock.ts";
 import type { PatchRule } from "./eligibility.ts";
 
 export type ApplyReasonCode =
@@ -90,7 +91,7 @@ function validAttestations(input: ApplyCheckInput): { readonly valid: Attestatio
       sawRevoked = true;
       continue;
     }
-    if (now > isoMillis(attestation.expiresAt)) {
+    if (isExpired(now, isoMillis(attestation.expiresAt))) {
       sawExpired = true;
       continue;
     }
@@ -119,7 +120,7 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
 
   if (digestOf(payload) !== input.plan.planDigest) reasons.push("PLAN_DIGEST_MISMATCH");
   if (input.plan.provenance !== "observed") reasons.push("SYNTHETIC_PLAN");
-  if (now > isoMillis(payload.expiresAt)) reasons.push("PLAN_EXPIRED");
+  if (isExpired(now, isoMillis(payload.expiresAt))) reasons.push("PLAN_EXPIRED");
 
   const attestationCheck = validAttestations(input);
   reasons.push(...attestationCheck.reasons);
@@ -143,7 +144,7 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
 
   for (const kind of requiredPolicyKinds(payload.ruleIds)) {
     const planPolicy = payload.policies.find((policy) => policy.kind === kind);
-    if (planPolicy === undefined || planPolicy.status !== "known" || now > isoMillis(planPolicy.observedAt) + POLICY_MAX_AGE_MS) {
+    if (planPolicy === undefined || planPolicy.status !== "known" || isStale(now, isoMillis(planPolicy.observedAt), POLICY_MAX_AGE_MS)) {
       reasons.push("POLICY_STALE");
       continue;
     }

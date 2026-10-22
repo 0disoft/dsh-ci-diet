@@ -399,6 +399,29 @@ test("checks policy freshness per rule instead of the newest policy", () => {
   assert.ok(reasons.includes("POLICY_STALE"), reasons.join(","));
 });
 
+test("accepts a policy snapshot exactly 600 seconds old and rejects either direction past it", () => {
+  const f = fixture("CD008");
+  const base = {
+    plan: f.plan,
+    currentText: WORKFLOW,
+    currentDependencyHash: dependencyHashOf([]),
+    coverageWriteAllowed: true,
+    nonceValid: true,
+    backupAvailable: true,
+  };
+  assert.deepEqual(checkApply({ ...base, now: new Date(NOW.getTime() + 600_000) }), []);
+  assert.deepEqual(checkApply({ ...base, now: new Date(NOW.getTime() + 600_001) }), ["POLICY_STALE"]);
+  assert.deepEqual(checkApply({ ...base, now: new Date(NOW.getTime() - 600_001) }), ["POLICY_STALE"]);
+  // A future-dated snapshot 601 s ahead is stale exactly like a back-dated one.
+  const ahead = new Date(NOW.getTime() + 601_000);
+  const payload = {
+    ...f.plan.payload,
+    policies: f.plan.payload.policies.map((policy) => ({ ...policy, observedAt: ahead.toISOString().replace(/\.\d{3}Z$/, "Z") })),
+  };
+  const plan = { ...f.plan, payload, planDigest: digestOf(payload) };
+  assert.deepEqual(checkApply({ ...base, plan, now: NOW }), ["POLICY_STALE"]);
+});
+
 test("classifies runner labels conservatively", () => {
   assert.equal(skuForLabels(["ubuntu-latest"]), "actions_linux");
   assert.equal(skuForLabels(["windows-2025"]), "actions_windows");
@@ -441,6 +464,29 @@ test("CD001 eligibility needs human claims and lifts only attestable blockers", 
   });
   assert.equal(withClaims.allowed, true, withClaims.reasons.join(","));
   assert.deepEqual(withClaims.remainingBlockers, []);
+});
+
+test("eligibility uses the same absolute 600 second policy freshness boundary", () => {
+  const cd001 = finding({
+    ruleId: "CD001",
+    blockers: ["PROTECTION_RULES_UNAVAILABLE", "REQUIRED_CHECK_OWNERSHIP_UNKNOWN"],
+    patchability: "eligible",
+  });
+  const base = {
+    rule: "CD001" as const,
+    finding: cd001,
+    coverage: coverage(),
+    claims: claimsFromTokens(["ci-only", "replace-safe"]),
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+  };
+  assert.deepEqual(evaluatePatchEligibility({ ...base, history: history(), now: new Date(NOW.getTime() + 600_000) }).reasons, []);
+  assert.deepEqual(evaluatePatchEligibility({ ...base, history: history(), now: new Date(NOW.getTime() + 600_001) }).reasons, ["POLICY_STALE"]);
+  // A future-dated snapshot 601 s ahead is stale in eligibility too.
+  const ahead = new Date(NOW.getTime() + 601_000).toISOString();
+  const h = history();
+  const futureHistory = { ...h, protection: { ...h.protection!, fetchedAt: ahead } };
+  assert.deepEqual(evaluatePatchEligibility({ ...base, history: futureHistory, now: NOW }).reasons, ["POLICY_STALE"]);
 });
 
 test("CD001 eligibility never lifts a non-pull_request trigger", () => {
@@ -509,6 +555,21 @@ test("a stale writer lease is taken over when its owner process is gone", async 
   assert.equal(result.state, "applied");
   assert.equal(existsSync(lease), false);
   assert.deepEqual(readdirSync(join(f.store.root, "locks")), []);
+});
+
+test("a pinned clock ages a writer lease through the clock seam", async (t) => {
+  const f = fixture();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  approve(f.store, f.plan);
+  const lease = join(f.store.root, "locks", "writer");
+  mkdirSync(lease, { recursive: true });
+  writeFileSync(join(lease, "owner"), leaseToken(await deadPid()), "utf8");
+  // The lease mtime is fresh in real time; only the injected clock says it is stale.
+  const staleNow = Date.now() + 11 * 60_000;
+  const clock = { now: () => new Date(staleNow) };
+  const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester", clock });
+  assert.equal(result.state, "applied");
+  assert.equal(existsSync(lease), false);
 });
 
 test("a live owner is never moved, so a third writer cannot start beside it", async (t) => {
