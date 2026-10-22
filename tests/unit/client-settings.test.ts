@@ -36,7 +36,9 @@ function fakeReact(): { react: Record<string, unknown>; values: unknown[] } {
   let index = 0;
   const react = {
     createElement(type: unknown, props: Record<string, unknown> | null, ...children: unknown[]): FakeElement {
-      return { type, props: { ...(props ?? {}), ...(children.length === 0 ? {} : { children: children.length === 1 ? children[0] : children }) } };
+      const merged: Record<string, unknown> = { ...props };
+      if (children.length > 0) merged.children = children.length === 1 ? children[0] : children;
+      return { type, props: merged };
     },
     useState<T>(initial: T): [T, (next: T | ((current: T) => T)) => void] {
       const slot = index++;
@@ -151,11 +153,18 @@ test("the page saves against the revision it started editing", async () => {
   const loaded = loadBundle(fake.react);
   let revision = 1;
   const calls: { ops: readonly unknown[]; revision: number | undefined }[] = [];
+  let unsetCalls = 0;
   const form = {
-    getSnapshot: () => ({ status: "ready", writable: true, revision, value: { rules: ["CD001", "CD002", "CD004"] } }),
+    getSnapshot: () => ({
+      status: "ready",
+      writable: true,
+      revision,
+      value: { rules: ["CD001", "CD002", "CD004"], stateDir: "" },
+      user: { stateDir: "D:/legacy" },
+    }),
     subscribe: () => () => {},
     mutate: async (ops: readonly unknown[], expected?: number) => { calls.push({ ops, revision: expected }); return true; },
-    unset: async () => true,
+    unset: async () => { unsetCalls += 1; return true; },
   };
   const component = loaded.sections[0]!.component;
   const props = { form, t: (key: string) => key };
@@ -165,14 +174,67 @@ test("the page saves against the revision it started editing", async () => {
   (rule.props.onChange as () => void)();
   tree = renderPage(fake.react, component, props);
   revision = 2;
+  tree = renderPage(fake.react, component, props);
+  const reset = findElement(tree, (element) => element.type === "button" && element.props.children === "page.reset");
+  assert.ok(reset !== undefined, "the reset button is missing");
+  (reset.props.onClick as () => void)();
+  tree = renderPage(fake.react, component, props);
   const save = findElement(tree, (element) => element.type === "button" && element.props.children === "page.save");
   assert.ok(save !== undefined, "the save button is missing");
   (save.props.onClick as () => void)();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(calls.length, 1);
   assert.equal(calls[0]!.revision, 1);
-  const set = (calls[0]!.ops as { op: string; path: readonly string[]; value: unknown }[]).find((op) => op.path[0] === "rules");
+  assert.equal(unsetCalls, 0);
+  const ops = calls[0]!.ops as { op: string; path: readonly string[]; value: unknown }[];
+  const set = ops.find((op) => op.path[0] === "rules");
   assert.deepEqual(Array.from(set?.value as readonly string[]), ["CD001", "CD002", "CD004", "CD005"]);
+  const unset = ops.find((op) => op.op === "unset");
+  assert.equal(unset?.op, "unset");
+  assert.deepEqual(Array.from(unset?.path as string[]), ["stateDir"]);
+});
+
+test("editing a field replaces its staged reset", async () => {
+  buildBundle();
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  const calls: { ops: readonly unknown[] }[] = [];
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision: 1, value: { stateDir: "" }, user: { stateDir: "D:/legacy" } }),
+    subscribe: () => () => {},
+    mutate: async (ops: readonly unknown[]) => { calls.push({ ops }); return true; },
+  };
+  const component = loaded.sections[0]!.component;
+  const props = { form, t: (key: string) => key };
+  let tree = renderPage(fake.react, component, props);
+  const reset = findElement(tree, (element) => element.type === "button" && element.props.children === "page.reset");
+  assert.ok(reset !== undefined, "the reset button is missing");
+  (reset.props.onClick as () => void)();
+  tree = renderPage(fake.react, component, props);
+  const input = findElement(tree, (element) => element.type === "input" && element.props["aria-label"] === "field.stateDir");
+  assert.ok(input !== undefined, "the state directory input is missing");
+  (input.props.onChange as (event: { target: { value: string } }) => void)({ target: { value: "D:/new" } });
+  tree = renderPage(fake.react, component, props);
+  const save = findElement(tree, (element) => element.type === "button" && element.props.children === "page.save");
+  assert.ok(save !== undefined, "the save button is missing");
+  (save.props.onClick as () => void)();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calls.length, 1);
+  const ops = calls[0]!.ops as { op: string; path: readonly string[]; value: unknown }[];
+  assert.equal(ops.some((op) => op.op === "unset"), false);
+  assert.deepEqual(Array.from(ops, (op) => [op.op, Array.from(op.path), op.value]), [["set", ["stateDir"], "D:/new"]]);
+});
+
+test("the draft batch stages resets as unset operations in field order", () => {
+  const message = (key: string) => key;
+  assert.deepEqual(collectSettingsEdits({}, message, ["historyMaxRuns", "stateDir"]).ops, [
+    { op: "unset", path: ["stateDir"] },
+    { op: "unset", path: ["historyMaxRuns"] },
+  ]);
+  assert.deepEqual(collectSettingsEdits({ rules: ["CD001"] }, message, ["stateDir"]).ops, [
+    { op: "unset", path: ["stateDir"] },
+    { op: "set", path: ["rules"], value: ["CD001"] },
+  ]);
 });
 
 test("all six languages expose the same non-empty keys", () => {

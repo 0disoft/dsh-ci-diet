@@ -59,13 +59,14 @@ export function defaultPluginSettings(): PluginSettingsValues {
   };
 }
 
-/** Reject rule ids the contract does not know, duplicates, and an empty selection. */
+/** Reject unknown ids and an empty selection, and canonicalize duplicates away. */
 function enabledRulesOf(selected: readonly RuleId[]): readonly RuleId[] {
   if (!Array.isArray(selected)) throw new Error("analysis rules must be a list");
   const unique = new Set<string>();
   for (const ruleId of selected) {
     if (!(RULE_IDS as readonly string[]).includes(ruleId)) throw new Error("unknown analysis rule: " + String(ruleId));
-    if (unique.has(ruleId)) throw new Error("analysis rule listed twice: " + ruleId);
+    // The host array schema cannot express uniqueness; the engine drops the
+    // repeat and returns the contract order, so a duplicate save is harmless.
     unique.add(ruleId);
   }
   if (unique.size === 0) throw new Error("at least one analysis rule must stay enabled");

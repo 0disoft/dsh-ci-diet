@@ -119,7 +119,7 @@ test("rejects an out-of-contract lookback and zero rules", () => {
     /at least one analysis rule/,
   );
   assert.throws(() => engineSettingsOf({ ...defaultPluginSettings(), rules: ["CD999" as never] }), /unknown analysis rule: CD999/);
-  assert.throws(() => engineSettingsOf({ ...defaultPluginSettings(), rules: ["CD001", "CD001"] }), /listed twice: CD001/);
+  assert.deepEqual(engineSettingsOf({ ...defaultPluginSettings(), rules: ["CD001", "CD001"] }).enabledRules, ["CD001"]);
 });
 
 test("the host schema rejects an out-of-contract save before a tool call", () => {

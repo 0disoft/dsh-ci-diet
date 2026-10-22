@@ -39,11 +39,9 @@ export const SETTINGS_FIELDS: readonly SettingField[] = [
 ];
 
 export const SETTINGS_GROUPS: readonly SettingGroupId[] = ["general", "rules", "history", "storage", "billing"];
-export interface SettingsDraftEdit {
-  readonly op: "set";
-  readonly path: string[];
-  readonly value: unknown;
-}
+export type SettingsDraftEdit =
+  | { readonly op: "set"; readonly path: string[]; readonly value: unknown }
+  | { readonly op: "unset"; readonly path: string[] };
 
 export interface SettingsEditBatch {
   readonly ops: readonly SettingsDraftEdit[];
@@ -56,12 +54,19 @@ export type SettingsDraftValue = string | number | boolean | readonly string[];
 export function collectSettingsEdits(
   draft: Readonly<Record<string, SettingsDraftValue>>,
   message: (key: string, params?: Record<string, string | number>) => string,
+  resets: readonly string[] = [],
 ): SettingsEditBatch {
   const ops: SettingsDraftEdit[] = [];
   const errors: Record<string, string> = {};
   for (const field of SETTINGS_FIELDS) {
-    if (!Object.prototype.hasOwnProperty.call(draft, field.key)) continue;
     const key = field.key;
+    // A reset stays in the draft so it is saved with the same pinned revision
+    // as every other edit instead of writing to the host immediately.
+    if (resets.includes(key)) {
+      ops.push({ op: "unset", path: [key] });
+      continue;
+    }
+    if (!Object.prototype.hasOwnProperty.call(draft, key)) continue;
     const raw = draft[key]!;
     if (field.kind === "rules") {
       const selected = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];

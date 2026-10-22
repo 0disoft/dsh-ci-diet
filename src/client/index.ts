@@ -17,11 +17,14 @@ interface FormSnapshot {
   readonly writable: boolean;
 }
 
+type SettingsPathOp =
+  | { readonly op: "set"; readonly path: string[]; readonly value: unknown }
+  | { readonly op: "unset"; readonly path: string[] };
+
 interface ConfigForm {
   getSnapshot(): FormSnapshot;
   subscribe(listener: () => void): () => void;
-  mutate(ops: readonly { op: "set"; path: string[]; value: unknown }[], expectedRevision?: number): Promise<boolean>;
-  unset(field: string): Promise<boolean>;
+  mutate(ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<boolean>;
 }
 
 const EN = DICTIONARIES.en as Record<string, string>;
@@ -145,6 +148,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
       )
     : emptySnapshot;
   const [draft, setDraft] = React.useState<Draft>({});
+  const [resets, setResets] = React.useState<readonly string[]>([]);
   const [errors, setErrors] = React.useState<Errors>({});
   const [saving, setSaving] = React.useState(false);
   const [saved, setSaved] = React.useState(false);
@@ -156,6 +160,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
 
   const edit = (key: string, value: SettingsDraftValue) => {
     setPinnedRevision((current) => current ?? snapshot.revision ?? null);
+    setResets((current) => current.filter((item) => item !== key));
     setDraft((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
       const next = { ...current };
@@ -166,42 +171,35 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
     setFailed(false);
   };
 
-  const reset = async (key: string) => {
+  // Staging the reset instead of writing it now keeps the pinned revision
+  // meaningful: the reset and every staged field land in one mutation.
+  const reset = (key: string) => {
     if (form === undefined || disabled) return;
-    setSaving(true);
-    setFailed(false);
+    setPinnedRevision((current) => current ?? snapshot.revision ?? null);
+    setResets((current) => (current.includes(key) ? current : [...current, key]));
+    setDraft((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+    setErrors((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
     setSaved(false);
-    try {
-      const accepted = await form.unset(key);
-      if (!accepted) setFailed(true);
-      else {
-        setDraft((current) => {
-          const next = { ...current };
-          delete next[key];
-          return next;
-        });
-        setErrors((current) => {
-          const next = { ...current };
-          delete next[key];
-          return next;
-        });
-        setSaved(true);
-        setPinnedRevision(null);
-        setConflict(false);
-      }
-    } catch {
-      setFailed(true);
-    } finally {
-      setSaving(false);
-    }
+    setFailed(false);
+    setConflict(false);
   };
 
   const save = async () => {
     if (form === undefined || disabled) return;
-    const batch = collectSettingsEdits(draft, t);
+    const batch = collectSettingsEdits(draft, t, resets);
     setErrors({ ...batch.errors });
     if (Object.keys(batch.errors).length > 0) return;
-    const ops = batch.ops.map((op) => ({ op: "set" as const, path: op.path, value: op.value }));
+    const ops = batch.ops.map((op) => (op.op === "set"
+      ? { op: "set" as const, path: op.path, value: op.value }
+      : { op: "unset" as const, path: op.path }));
     if (ops.length === 0) return;
     setSaving(true);
     setFailed(false);
@@ -210,6 +208,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
       const accepted = await form.mutate(ops, pinnedRevision ?? snapshot.revision);
       if (accepted) {
         setDraft({});
+        setResets([]);
         setSaved(true);
         setPinnedRevision(null);
       } else {
@@ -269,7 +268,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
                   "button",
                   {
                     type: "button",
-                    onClick: () => { void reset(field.key); },
+                    onClick: () => { reset(field.key); },
                     disabled: disabled || readOnly,
                     style: { ...S.button, padding: "1px 6px", fontSize: "11px" },
                   },
@@ -315,8 +314,8 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
       React.createElement("button", {
         type: "button",
         style: S.button,
-        disabled: disabled || readOnly || Object.keys(draft).length === 0,
-        onClick: () => { setDraft({}); setErrors({}); setSaved(false); setFailed(false); setConflict(false); setPinnedRevision(null); },
+        disabled: disabled || readOnly || (Object.keys(draft).length === 0 && resets.length === 0),
+        onClick: () => { setDraft({}); setResets([]); setErrors({}); setSaved(false); setFailed(false); setConflict(false); setPinnedRevision(null); },
       }, t("page.discard")),
       failed ? React.createElement("span", { style: S.status, role: "alert" }, t(conflict ? "page.conflict" : "page.saveFailed")) : null,
       !failed && saved ? React.createElement("span", { style: S.status, role: "status" }, t("page.saved")) : null,

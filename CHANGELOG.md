@@ -132,12 +132,17 @@ Keep a Changelog, and the project uses semantic versioning.
 ### Fixed
 
 - Saving the DSH settings now validates the whole engine contract in the host
-  schema: the enabled rules are one field that rejects an empty list, an unknown
-  id, or a duplicate, and every numeric field carries its contract bounds. An
-  out-of-contract lookback or an all-off rule set is refused at save time instead
-  of failing on the next tool call. The page also pins the revision it started
-  editing, so a save made after another screen changed the configuration is
-  refused instead of overwriting the newer values.
+  schema: the enabled rules are one field that rejects an empty list or an unknown
+  id, and every numeric field carries its contract bounds. An out-of-contract
+  lookback or an all-off rule set is refused at save time instead of failing on
+  the next tool call. The page also pins the revision it started editing, so a
+  save made after another screen changed the configuration is refused instead of
+  overwriting the newer values.
+- A per-field reset on the Settings page now joins the staged batch and saves
+  with the pinned revision. Resetting a field while a draft is open no longer
+  clears the revision guard, so the reset cannot overwrite a change another
+  screen saved first. Duplicate rule ids are canonicalized to one entry in
+  contract order instead of failing the next tool call.
 - The retention and cache settings edited on the Settings page now have an
   execution path: the `ci_diet_prune` model tool applies them to the same store
   the other DSH tools use, instead of cleanup existing only in the CLI whose

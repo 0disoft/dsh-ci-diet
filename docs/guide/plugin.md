@@ -22,7 +22,9 @@ approval, or revert controls; those stay in the CLI.
 
 All engine fields are live: the next tool call reads the current value without
 reloading the plugin. The page validates numbers against the same contract the
-CLI uses, saves the batch atomically, and offers a per-field reset. A rejected
+CLI uses, saves the batch atomically, and stages a per-field reset into that same
+batch so it is saved under the pinned revision. Duplicate rule ids are
+normalized to one entry in contract order, never as a save error. A rejected
 write leaves the stored configuration unchanged. The CLI keeps its own
 `--config` file and flags; the page does not write them. The host schema itself
 enforces the contract bounds (lookback 1–30, concurrency 1–4, at least one
