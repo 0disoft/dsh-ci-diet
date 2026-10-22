@@ -121,6 +121,28 @@ test("executeCli localizes through the injected environment", async () => {
   }
 });
 
+test("executeCli reports a pre-aborted mutating command as cancelled", async () => {
+  const root = makeRoot();
+  try {
+    const stdout = capture();
+    const stderr = capture();
+    const controller = new AbortController();
+    controller.abort();
+    const code = await executeCli(["apply", "--plan", "p_missing"], {
+      cwd: root,
+      env: {},
+      stdout,
+      stderr,
+      signal: controller.signal,
+    });
+    assert.equal(code, 130);
+    assert.equal(stdout.text(), "");
+    assert.match(stderr.text(), /Cancelled/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("executeCli reports usage errors without touching the real streams", async () => {
   const stdout = capture();
   const stderr = capture();

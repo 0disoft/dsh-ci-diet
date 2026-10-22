@@ -28,6 +28,10 @@ Keep a Changelog, and the project uses semantic versioning.
   built-in defaults, and validates the result against the frozen contract before
   any command runs. Storage, history, and analysis limits now come from that
   effective configuration instead of hardcoded defaults.
+- `apply` and `revert` honor an abort signal. Cancellation before the transaction
+  commits leaves the target, journal, and approval untouched and releases the
+  writer lease; once a replacement starts the journal still reaches a consistent
+  state. A first Ctrl-C on those commands now requests that graceful stop.
 - Writer serialization uses a claim directory plus a lease. A stale claim left
   by a dead process is recovered; a live owner's lease path is never moved, and
   a takeover re-checks ownership under the claim.

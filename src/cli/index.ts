@@ -762,7 +762,13 @@ async function applyCommand(options: Options, locale: Locale): Promise<number> {
     return EXIT_USAGE;
   }
   const store = openStore(stateDirOf(options), locale, options.config.storage);
-  const result = await applyPlan({ store, planId: options.plan, now: now(), subjectId: options.subject });
+  const result = await applyPlan({
+    store,
+    planId: options.plan,
+    now: now(),
+    subjectId: options.subject,
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
   if (result.state === "applied") {
@@ -784,7 +790,12 @@ async function revertCommand(options: Options, locale: Locale): Promise<number> 
     return EXIT_USAGE;
   }
   const store = openStore(stateDirOf(options), locale, options.config.storage);
-  const result = await revertChange({ store, changeId: options.change, now: now() });
+  const result = await revertChange({
+    store,
+    changeId: options.change,
+    now: now(),
+    ...(context.signal !== undefined ? { signal: context.signal } : {}),
+  });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");
   const lines: string[] = [];
   if (result.state === "REVERTED") lines.push(t("cli.revert.done", { change: options.change }));
@@ -1098,6 +1109,10 @@ function mapError(error: unknown, t: ReturnType<typeof createTranslator>): numbe
     writeErr(t("cli.error.prefix") + " " + error.code + ": " + error.message + "\n");
     return EXIT_USAGE;
   }
+  if (error instanceof Error && error.name === "AbortError") {
+    writeErr(t("cli.cancelled") + "\n");
+    return EXIT_CANCELLED;
+  }
   if (error instanceof StoreQuotaError) {
     writeErr(t("error.STORAGE_QUOTA_EXCEEDED") + " " + error.message + "\n");
     return EXIT_STORAGE;
@@ -1185,15 +1200,19 @@ if (invokedDirectly) {
   // consistent state before the process leaves, matching the documented
   // "record the transaction state first" rule. Everything else stops at once.
   const deferred = argv.some((arg) => arg === "apply" || arg === "revert");
+  const controller = new AbortController();
   let interrupted = false;
   process.on("SIGINT", () => {
     if (!deferred || interrupted) process.exit(EXIT_CANCELLED);
     interrupted = true;
+    controller.abort();
   });
-  main(argv).then(
+  executeCli(argv, { signal: controller.signal }).then(
     (code) => {
       if (interrupted) {
-        writeErr(createTranslator(resolveUiLocale(resolveLang(argv)))("cli.cancelled") + "\n");
+        if (code !== EXIT_CANCELLED) {
+          writeErr(createTranslator(resolveUiLocale(resolveLang(argv)))("cli.cancelled") + "\n");
+        }
         process.exitCode = EXIT_CANCELLED;
         return;
       }

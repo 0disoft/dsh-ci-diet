@@ -27,6 +27,8 @@ export interface ApplyOptions {
   readonly clock?: Clock;
   /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
   readonly ids?: IdSource;
+  /** Cancels before a mutation commits; once a replace starts the journal finishes. */
+  readonly signal?: AbortSignal;
 }
 
 export interface ApplyResult {
@@ -40,6 +42,10 @@ export interface ApplyResult {
 const WRITER_LEASE_STALE_MS = 10 * 60_000;
 const DEFAULT_APPROVAL_TTL_SECONDS = 600;
 const LEASE_TOKEN_FILE = "owner";
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+  signal?.throwIfAborted();
+}
 
 /** Tokens are lease_<pid base36>_<created base36>_<random>. */
 function leaseOwnerPid(owner: string): number | null {
@@ -384,7 +390,8 @@ function releaseWriterLease(lease: string, token: string): void {
   releaseLock(lease, token);
 }
 
-async function replaceAtomically(path: string, text: string, mode: number): Promise<string> {
+async function replaceAtomically(path: string, text: string, mode: number, signal?: AbortSignal): Promise<string> {
+  throwIfAborted(signal);
   const temporary = path + ".ci-diet-" + process.pid + "-" + Date.now().toString(36) + ".tmp";
   try {
     writeFileSync(temporary, text, { encoding: "utf8", mode });
@@ -410,6 +417,7 @@ async function replaceAtomically(path: string, text: string, mode: number): Prom
       return textHash(readFileSync(path, "utf8"));
     } catch (error) {
       lastError = error;
+      if (signal?.aborted === true) break;
       await sleep(150 * (attempt + 1));
     }
   }
@@ -562,6 +570,7 @@ function handleReplaceFailure(
 }
 
 export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
+  throwIfAborted(options.signal);
   const stored: StoredPlan | null = options.store.readPlan(options.planId);
   if (stored === null) throw new Error("PLAN_NOT_FOUND: " + options.planId);
   const plan = stored.plan;
@@ -570,6 +579,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
   if (binding === null) throw new Error("BINDING_NOT_FOUND: " + plan.payload.bindingId);
 
   return withWriterLease(options.store, async () => {
+    throwIfAborted(options.signal);
     const target = targetPath(binding, plan);
     assertRegularFile(target);
     const beforeText = readFileSync(target, "utf8");
@@ -620,6 +630,9 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
       return { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
     }
 
+    // Past this point a replace is committed: do not abort between the journal
+    // entry and the rename, because the user asked for a recoverable transaction.
+    throwIfAborted(options.signal);
     const changeId = options.store.changeIdFor(plan.planId, options.now);
     const manifest = options.store.writeBackup(changeId, beforeText, applied.text, plan.payload.workflowPath, options.now);
     if (manifest.beforeHash !== textHash(beforeText) || manifest.afterHash !== applied.hash) {
@@ -651,7 +664,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
     const mode = statSync(target).mode;
     let afterHash: string;
     try {
-      afterHash = await replaceAtomically(target, applied.text, mode);
+      afterHash = await replaceAtomically(target, applied.text, mode, options.signal);
     } catch (error) {
       return handleReplaceFailure(options, plan, applying, target, beforeHash, applied.hash, reference, error);
     }
@@ -678,7 +691,10 @@ export async function revertChange(options: {
   readonly clock?: Clock;
   /** Optional id source for lease tokens; defaults to crypto.randomUUID. */
   readonly ids?: IdSource;
+  /** Cancels before the restore commits; once REVERTING is saved the journal finishes. */
+  readonly signal?: AbortSignal;
 }): Promise<{ readonly state: string; readonly reason: string | null; readonly warnings?: readonly string[] }> {
+  throwIfAborted(options.signal);
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
   // CONFLICT is kept retryable: the user may restore the original bytes by hand,
@@ -694,6 +710,7 @@ export async function revertChange(options: {
   if (binding === null) throw new Error("BINDING_NOT_FOUND: " + change.bindingId);
 
   return withWriterLease(options.store, async () => {
+    throwIfAborted(options.signal);
     const target = resolveInside(binding.workspaceRoot, change.workflowPath);
     assertRegularFile(target);
     const currentText = readFileSync(target, "utf8");
@@ -732,11 +749,12 @@ export async function revertChange(options: {
     // Record that the file may be restored before replacing it. A crash or a
     // journal write failure after this point leaves REVERTING with the bytes in
     // a known state, and a retry finishes the revert instead of conflicting.
+    throwIfAborted(options.signal);
     if (change.state !== "REVERTING") {
       options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
     }
     const mode = statSync(target).mode;
-    const restoredHash = await replaceAtomically(target, backup.beforeText, mode);
+    const restoredHash = await replaceAtomically(target, backup.beforeText, mode, options.signal);
     if (restoredHash !== change.before.hash) {
       options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
       return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };

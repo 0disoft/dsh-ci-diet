@@ -787,3 +787,55 @@ test("wrong confirmation never approves", () => {
     /NONCE_INVALID/,
   );
 });
+
+test("an aborted apply leaves the target, journal, and approval untouched", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    () => applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester", signal: controller.signal }),
+    (error: unknown) => error instanceof Error && error.name === "AbortError",
+  );
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.equal(fixture.store.listChanges().length, 0);
+  assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
+  // The writer lease was released, so the unchanged approval can still apply.
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(applied.state, "applied");
+});
+
+test("an aborted revert keeps the applied change until a retry finishes it", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  const patched = readFileSync(fixture.file, "utf8");
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    () => revertChange({ store: fixture.store, changeId, now: fixture.now, signal: controller.signal }),
+    (error: unknown) => error instanceof Error && error.name === "AbortError",
+  );
+  assert.equal(readFileSync(fixture.file, "utf8"), patched);
+  assert.equal(fixture.store.readChange(changeId)?.state, "APPLIED");
+  const reverted = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(reverted.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+});
