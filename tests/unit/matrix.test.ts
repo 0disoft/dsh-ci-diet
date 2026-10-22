@@ -121,3 +121,66 @@ test("a matrix with no axes keeps include rows", () => {
     [row({ os: "linux" }), row({ os: "windows" })],
   );
 });
+
+test("an exclude can shrink a 257-row product back under the cap", () => {
+  const values = Array.from(
+    { length: MAX_MATRIX_COMBINATIONS + 1 },
+    (_, index) => index,
+  );
+  const expanded = expandMatrix(
+    plan({ axes: [{ name: "shard", values }], exclude: [{ shard: 0 }] }),
+  );
+  assert.ok(expanded);
+  assert.equal(expanded.length, MAX_MATRIX_COMBINATIONS);
+  assert.equal(expanded.some((entry) => entry.shard === 0), false);
+});
+
+test("excludes resolved on a later axis can shrink a product under the cap", () => {
+  const nodes = Array.from({ length: 129 }, (_, index) => index);
+  const expanded = expandMatrix(
+    plan({
+      axes: [
+        { name: "os", values: ["linux", "windows"] },
+        { name: "node", values: nodes },
+      ],
+      exclude: [
+        { os: "linux", node: 0 },
+        { os: "windows", node: 0 },
+      ],
+    }),
+  );
+  assert.ok(expanded);
+  assert.equal(expanded.length, MAX_MATRIX_COMBINATIONS);
+});
+
+test("a 257-row product with no exclude still resolves to null", () => {
+  const values = Array.from(
+    { length: MAX_MATRIX_COMBINATIONS + 1 },
+    (_, index) => index,
+  );
+  assert.equal(
+    expandMatrix(plan({ axes: [{ name: "shard", values }] })),
+    null,
+  );
+});
+
+test("include-only matrices accept 256 rows and reject 257", () => {
+  const rows = (length: number) =>
+    Array.from({ length }, (_, index) => ({ shard: index }));
+  const accepted = expandMatrix(
+    plan({ axes: [], include: rows(MAX_MATRIX_COMBINATIONS) }),
+  );
+  assert.ok(accepted);
+  assert.equal(accepted.length, MAX_MATRIX_COMBINATIONS);
+  assert.equal(
+    expandMatrix(plan({ axes: [], include: rows(MAX_MATRIX_COMBINATIONS + 1) })),
+    null,
+  );
+});
+
+test("a dynamic include-only matrix resolves to null", () => {
+  assert.equal(
+    expandMatrix(plan({ axes: [], include: [{ os: "linux" }], dynamic: true })),
+    null,
+  );
+});

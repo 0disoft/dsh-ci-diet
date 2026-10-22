@@ -47,46 +47,87 @@ export function lookupMatrixValue(
   return current;
 }
 
+/** Hard stop on candidates examined while excluding rows from the axis product. */
+const MAX_MATRIX_CANDIDATES = MAX_MATRIX_COMBINATIONS * 256;
+
 /**
  * Expand a statically resolved matrix into rows.
  *
- * Returns null when the row count would exceed the cap; callers must then
- * treat the matrix as unresolved rather than truncating it.
+ * Returns null when the final row count would exceed the cap; callers must then
+ * treat the matrix as unresolved rather than truncating it. Exclude entries are
+ * applied to the axis product before the cap is enforced, because an exclude can
+ * shrink a product that is otherwise too large to materialize.
  */
 export function expandMatrix(
   matrix: MatrixPlan,
 ): Readonly<Record<string, CanonicalJsonValue>>[] | null {
   if (matrix.dynamic) return null;
+  const axisNames = new Set(matrix.axes.map((axis) => axis.name));
+  // Base rows carry axis keys only, so an exclude that names any other key can
+  // never match; dropping it here is the same as letting it match nothing.
+  const excludes = matrix.exclude.filter((exclude) =>
+    Object.keys(exclude).every((key) => axisNames.has(key)),
+  );
+  const isExcluded = (values: Readonly<Record<string, CanonicalJsonValue>>): boolean =>
+    excludes.some((exclude) =>
+      Object.entries(exclude).every(([key, value]) => {
+        const current = values[key];
+        return current !== undefined && canonicalEqual(current, value);
+      }),
+    );
   const includeOnly = matrix.axes.length === 0 && matrix.include.length > 0;
-  let base: Record<string, CanonicalJsonValue>[] = includeOnly ? [] : [{}];
-  for (const axis of matrix.axes) {
+  let combinations: Record<string, CanonicalJsonValue>[] = includeOnly ? [] : [{}];
+  if (!includeOnly && isExcluded(combinations[0] as Record<string, CanonicalJsonValue>)) {
+    combinations = [];
+  }
+
+  // Suffix products let a level that is already too large fail without
+  // materializing its rows when no pending exclude can shrink it.
+  const suffix = Array.from({ length: matrix.axes.length + 1 }, () => 1);
+  for (let index = matrix.axes.length - 1; index >= 0; index -= 1) {
+    const axis = matrix.axes[index];
+    if (axis === undefined) continue;
+    suffix[index] = (suffix[index + 1] ?? 1) * axis.values.length;
+  }
+  const processed = new Set<string>();
+  let candidates = 0;
+  for (let axisIndex = 0; axisIndex < matrix.axes.length; axisIndex += 1) {
+    const axis = matrix.axes[axisIndex];
+    if (axis === undefined) continue;
+    const pending = excludes.filter(
+      (exclude) => !Object.keys(exclude).every((key) => processed.has(key)),
+    );
+    if (
+      pending.length === 0 &&
+      combinations.length * (suffix[axisIndex] ?? 1) > MAX_MATRIX_COMBINATIONS
+    ) {
+      return null;
+    }
     const next: Record<string, CanonicalJsonValue>[] = [];
-    for (const prefix of base) {
+    for (const prefix of combinations) {
       for (const value of axis.values) {
-        next.push({ ...prefix, [axis.name]: value });
-        if (next.length > MAX_MATRIX_COMBINATIONS) return null;
+        candidates += 1;
+        // Overlapping excludes can force a huge walk even when their union is
+        // small; stop well before that becomes a denial of service.
+        if (candidates > MAX_MATRIX_CANDIDATES) return null;
+        const candidate = { ...prefix, [axis.name]: value };
+        if (!isExcluded(candidate)) next.push(candidate);
       }
     }
-    base = next;
+    combinations = next;
+    processed.add(axis.name);
+    if (combinations.length > MAX_MATRIX_COMBINATIONS) {
+      const stillPending = excludes.filter(
+        (exclude) => !Object.keys(exclude).every((key) => processed.has(key)),
+      );
+      if (stillPending.length === 0) return null;
+    }
   }
 
   // GitHub applies exclude to the axis product before include. Excluding after
   // include would delete rows that an include was meant to add back, and an
   // include must never be merged into a row that another include created: its
   // axis key compatibility is judged against the original combinations only.
-  const axisNames = new Set(matrix.axes.map((axis) => axis.name));
-  const combinations =
-    matrix.exclude.length === 0
-      ? base
-      : base.filter(
-          (combination) =>
-            !matrix.exclude.some((exclude) =>
-              Object.entries(exclude).every(([key, value]) => {
-                const current = combination[key];
-                return current !== undefined && canonicalEqual(current, value);
-              }),
-            ),
-        );
   const added: Record<string, CanonicalJsonValue>[] = [];
   for (const include of matrix.include) {
     // A matrix with no axes uses include as the row list, so entries stay
@@ -112,9 +153,9 @@ export function expandMatrix(
       }
       if (!merged) added.push({ ...include });
     }
-    // The axis product is capped while it is built; an include list that keeps
-    // adding new rows must hit the same cap instead of materializing unbounded
-    // rows for downstream consumers.
+    // Excluded combinations are capped above; an include list that keeps adding
+    // new rows must hit the same cap instead of materializing unbounded rows for
+    // downstream consumers.
     if (combinations.length + added.length > MAX_MATRIX_COMBINATIONS) return null;
   }
   return [...combinations, ...added];
