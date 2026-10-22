@@ -24,10 +24,15 @@
   },
   "exports": {
     ".": "./dist/dsh/bootstrap.js",
+    "./client": {
+      "types": "./client/index.d.ts",
+      "default": "./client/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "dist",
+    "client",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
@@ -45,7 +50,8 @@
     "gen:data": "node scripts/gen-data.mjs",
     "check:data": "node scripts/gen-data.mjs --check",
     "test:core": "node scripts/test-core.mjs",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/build-client.mjs",
+    "build:client": "node scripts/build-client.mjs",
     "prepack": "npm run build",
     "smoke:node": "node dist/cli/index.js --version",
     "check:contracts": "node scripts/sync-contracts.mjs --check",
@@ -83,6 +89,12 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings"
+      ]
     }
   }
 }

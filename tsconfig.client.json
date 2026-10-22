@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".client-build",
+    "rootDir": "src/client",
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "declaration": false,
+    "sourceMap": false,
+    "verbatimModuleSyntax": false,
+    "isolatedModules": false,
+    "rewriteRelativeImportExtensions": true,
+    "types": []
+  },
+  "include": [
+    "src/client/**/*.ts"
+  ]
+}
