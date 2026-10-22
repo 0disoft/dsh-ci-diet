@@ -34,10 +34,12 @@ for that binding only. If another repository has a report and this one does not,
 the command stops and asks for `sync` instead of planning against foreign
 evidence.
 
-Only one writer may hold a file transaction at a time. Apply takes a lease file
-next to the target; a second concurrent apply, or a foreign lock left by another
-process, fails with `WRITE_CONFLICT` before any byte is written. Plan and
-approval records never take the lease; only apply and revert do.
+Only one writer may hold a file transaction at a time. Apply and revert hold a
+directory lease under the store's `locks/` directory, and a short-lived claim
+serializes every mutation of that lease path. A second concurrent apply, or a
+foreign lock left by another process, fails with `WRITE_CONFLICT` before any byte
+is written. Plan and approval records use their own per-record claim instead of
+the writer lease.
 
 The store belongs to one user. On POSIX the store root and every managed
 directory are `0700`, and every file, including temp files and backups, is

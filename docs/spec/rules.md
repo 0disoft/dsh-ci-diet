@@ -143,8 +143,11 @@ Pending; that belongs to a later design.
 ## CD004: matrix review candidates
 
 Evaluate only matrices that can be resolved statically, including static
-include and exclude. When actual job names cannot be mapped to axis
-combinations, show the static combination count only. Do not expand dynamic
+include and exclude. Apply exclude to the axis product before include; an
+include merges only into rows whose original axis values it matches, a later
+include may overwrite a value an earlier include added, and a matrix without
+axes uses its include entries as the row list. When actual job names cannot be
+mapped to axis combinations, show the static combination count only. Do not expand dynamic
 matrices, `needs` chains, or reusable workflow internals. Lowering
 `max-parallel` does not reduce total runner time and is never counted as a
 saving. Do not remove an OS or architecture the user needs. Missing history or

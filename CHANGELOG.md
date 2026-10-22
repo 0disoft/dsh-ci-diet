@@ -3,6 +3,58 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
+## Unreleased
+
+### Security
+
+- The copied `nextCommand` shell-quotes every argument, so a workflow filename
+  with spaces, quotes, `$`, or `;` cannot execute when pasted into a shell.
+- Applying a plan re-collects the workflow's current dependencies and compares
+  the complete set; a symlink swapped after approval is refused. Hashing uses
+  raw bytes, so binary files that decode to the same replacement text no longer
+  share a hash. Local action directories are capped by file count and bytes.
+- One approval authorizes one transaction. The journal, not the nonce, blocks a
+  second apply after APPLIED, APPLYING, REVERTING, or REVERTED, including a
+  crash between a confirmed replacement and nonce cleanup.
+
+### Changed
+
+- Writer serialization uses a claim directory plus a lease. A stale claim left
+  by a dead process is recovered; a live owner's lease path is never moved, and
+  a takeover re-checks ownership under the claim.
+- `revert` keeps CONFLICT retryable and converges when the target already holds
+  the original bytes.
+- CD001 requires complete protection for the pull request's base branch: an
+  unknown or different base, classic protection (including rule count 0), or
+  unowned required checks block automatic planning. A claim can no longer lift
+  the exact-`pull_request` requirement.
+- CD005 aggregates every matrix and runner leg into one job-wide recommendation
+  and never proposes a timeout below the slowest measured leg; every leg needs
+  20 samples.
+- Matrix expansion applies `exclude` before `include`, lets a later include
+  overwrite a value an earlier include added, keeps include-only matrices as
+  separate rows, and caps include rows together with the axis product.
+- CD008 treats `retention-days: 0` as the repository default and requires a
+  temporary artifact purpose before a retention edit.
+- GitHub transport keeps the server's `Retry-After` without a 30 s cap, treats a
+  secondary-limit 403 as retryable, forwards the configured request timeout, and
+  carries abort signals. Run truncation is reported even when the last page has
+  no next page; workflow files resolve through `workflow_id`; unused request
+  budget is donated across stages.
+- POSIX stores create and repair `0700` directories and `0600` records
+  regardless of the umask.
+
+### Fixed
+
+- A crash between replacing a workflow and journaling APPLIED converges on the
+  next apply instead of leaving a PREPARED record that cannot be reverted. A
+  failed replacement classifies by the target hash and keeps the approval
+  usable when the target is untouched.
+- A revert crash after restoring bytes converges to REVERTED on retry, including
+  from a CONFLICT record.
+- A file-permission test skips when the process can bypass directory permissions
+  instead of failing the suite under root.
+
 ## 0.2.0 (2026-10-21)
 
 ### Added
