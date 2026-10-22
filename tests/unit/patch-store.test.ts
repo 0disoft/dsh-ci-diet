@@ -52,7 +52,7 @@ for (const contents of ['{"private":"sensitive-marker",BROKEN', "null", "{}"] as
       writeFileSync(file, contents);
       const result = spawnSync(process.execPath, [
         join(import.meta.dirname, "../../src/cli/index.ts"),
-        "report", "--state-dir", store.root, "--json",
+        "report", "--report", "r_broken", "--state-dir", store.root, "--json",
       ], { encoding: "utf8", env: isolatedEnv(), timeout: 10000 });
       assert.equal(result.status, 2, result.stderr);
       assert.equal(result.stdout, "");
