@@ -279,6 +279,13 @@ test("nextCommand forwards optional arguments and joins claims", () => {
     buildNextCommand({ rule: "CD008", workflowPath: ".github/workflows/ci.yml", job: "build", step: 2, minutes: 15, claims: ["A", "B"] }, "linux"),
     "ci-diet plan --rule CD008 --workflow .github/workflows/ci.yml --job build --step 2 --minutes 15 --claims A,B",
   );
+  assert.equal(
+    buildNextCommand(
+      { rule: "CD008", workflowPath: ".github/workflows/ci.yml", cwd: "C:/work space/repo", stateDir: "C:/state", job: "build" },
+      "win32",
+    ),
+    "ci-diet plan --rule CD008 --workflow .github/workflows/ci.yml --cwd 'C:/work space/repo' --state-dir C:/state --job build",
+  );
 });
 
 test("ci_diet_plan previews retention edits without writing", async () => {
@@ -288,9 +295,11 @@ test("ci_diet_plan previews retention edits without writing", async () => {
   const plan = (await tools.get("ci_diet_plan")!.execute(
     { rule: "CD008", job: "test", step: 0, cwd: root },
     { signal: new AbortController().signal },
-  )) as { edits: { kind: string }[]; writeAllowed: boolean; blockers: string[] };
+  )) as { edits: { kind: string }[]; writeAllowed: boolean; blockers: string[]; nextCommand: string };
   assert.equal(plan.edits.length, 1);
   assert.equal(plan.edits[0]!.kind, "insertScalar");
   assert.ok(plan.blockers.includes("COVERAGE_DEGRADE"));
   assert.equal(plan.writeAllowed, false);
+  assert.match(plan.nextCommand, /--cwd /);
+  assert.match(plan.nextCommand, /--state-dir /);
 });

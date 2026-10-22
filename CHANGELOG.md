@@ -43,6 +43,9 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
+- The `nextCommand` returned by the DSH plan preview now pins `--cwd` and
+  `--state-dir`, so a copied command targets the same workspace and state store
+  that produced the preview.
 - The DSH plugin marks every engine setting as live: network access, state
   directory, the enabled-rule list, history caps, storage limits, and the cost
   estimate. The Plugins page and the new Settings page can edit them without

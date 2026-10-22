@@ -135,6 +135,8 @@ export function shellQuoteArg(value: string, platform: NodeJS.Platform = process
 export interface NextCommandInput {
   rule: string;
   workflowPath: string;
+  cwd?: string | undefined;
+  stateDir?: string | undefined;
   job?: string | undefined;
   step?: number | undefined;
   minutes?: number | undefined;
@@ -144,6 +146,8 @@ export interface NextCommandInput {
 /** Build the argv-style command a human copies, with every value shell-quoted. */
 export function buildNextCommand(input: NextCommandInput, platform: NodeJS.Platform = process.platform): string {
   const argv: string[] = ["ci-diet", "plan", "--rule", input.rule, "--workflow", input.workflowPath];
+  if (input.cwd !== undefined) argv.push("--cwd", input.cwd);
+  if (input.stateDir !== undefined) argv.push("--state-dir", input.stateDir);
   if (input.job !== undefined) argv.push("--job", input.job);
   if (input.step !== undefined) argv.push("--step", String(input.step));
   if (input.minutes !== undefined) argv.push("--minutes", String(input.minutes));
@@ -453,7 +457,8 @@ export function apply(ctx: Context, config: Config) {
     async execute(args, exec) {
       exec.signal.throwIfAborted();
       const settings = engineSettingsOf(readPluginSettings(config));
-      const store = PatchStore.open(stateDirOf(config), settings.config.storage);
+      const stateDir = stateDirOf(config);
+      const store = PatchStore.open(stateDir, settings.config.storage);
       const now = new Date();
       const root = realpathSync(args.cwd ?? process.cwd());
       const existing = store.findBindingByRoot(root);
@@ -527,6 +532,8 @@ export function apply(ctx: Context, config: Config) {
       const nextCommand = buildNextCommand({
         rule,
         workflowPath,
+        cwd: binding.workspaceRoot,
+        stateDir,
         job: args.job as string | undefined,
         step: args.step as number | undefined,
         minutes: args.minutes as number | undefined,
