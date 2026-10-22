@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -74,6 +74,97 @@ test("rejects a structurally corrupt plan while keeping absent records distinct"
     assert.equal(store.readReport("r_missing"), null);
     writeFileSync(join(store.root, "plans", "p_broken.json"), "{}");
     assert.throws(() => store.readPlan("p_broken"), /STATE_INVALID.*p_broken\.json/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+function reportPointer(store: PatchStore, name: string): { reportId: string; generatedAt: string; bindingId: string } | null {
+  const file = join(store.root, "index", name);
+  if (!existsSync(file)) return null;
+  return JSON.parse(readFileSync(file, "utf8")) as { reportId: string; generatedAt: string; bindingId: string };
+}
+
+test("keeps the newest report when reports are saved out of order", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-store-"));
+  try {
+    const store = PatchStore.open(join(root, "state"));
+    const scan = runStaticScan({ workspaceRoot: root, generatedAt: "2026-10-20T00:00:00Z" });
+    store.saveBinding(scan.binding);
+    const older = { ...scan.report, reportId: "r_" + "1".repeat(24), generatedAt: "2026-10-20T00:00:00Z" };
+    const middle = { ...scan.report, reportId: "r_" + "2".repeat(24), generatedAt: "2026-10-20T01:00:00Z" };
+    const newest = { ...scan.report, reportId: "r_" + "4".repeat(24), generatedAt: "2026-10-20T02:00:00Z" };
+    store.saveReport(newest);
+    store.saveReport(older);
+    store.saveReport(middle);
+    assert.equal(store.latestReport()?.reportId, newest.reportId);
+    assert.equal(store.latestReportForBinding(scan.binding.bindingId)?.reportId, newest.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, newest.reportId);
+    assert.equal(reportPointer(store, "latest-report-" + scan.binding.bindingId + ".json")?.reportId, newest.reportId);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("index pointers keep per-binding reports isolated", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-store-"));
+  try {
+    const store = PatchStore.open(join(root, "state"));
+    const scan = runStaticScan({ workspaceRoot: root, generatedAt: "2026-10-20T00:00:00Z" });
+    store.saveBinding(scan.binding);
+    const otherBinding = "b_" + "2".repeat(24);
+    const mine = { ...scan.report, reportId: "r_" + "1".repeat(24), generatedAt: "2026-10-20T00:00:00Z" };
+    const theirs = { ...scan.report, reportId: "r_" + "2".repeat(24), bindingId: otherBinding, generatedAt: "2026-10-20T01:00:00Z" };
+    store.saveReport(mine);
+    store.saveReport(theirs);
+    assert.equal(store.latestReport()?.reportId, theirs.reportId);
+    assert.equal(store.latestReportForBinding(scan.binding.bindingId)?.reportId, mine.reportId);
+    assert.equal(store.latestReportForBinding(otherBinding)?.reportId, theirs.reportId);
+    assert.equal(reportPointer(store, "latest-report-" + scan.binding.bindingId + ".json")?.reportId, mine.reportId);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a missing, corrupt, or dangling index pointer falls back to a scan and is repaired", () => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-store-"));
+  try {
+    const store = PatchStore.open(join(root, "state"));
+    const scan = runStaticScan({ workspaceRoot: root, generatedAt: "2026-10-20T00:00:00Z" });
+    store.saveBinding(scan.binding);
+    const bindingId = scan.binding.bindingId;
+    const older = { ...scan.report, reportId: "r_" + "1".repeat(24), generatedAt: "2026-10-20T00:00:00Z" };
+    const newer = { ...scan.report, reportId: "r_" + "2".repeat(24), generatedAt: "2026-10-20T01:00:00Z" };
+    store.saveReport(older);
+    store.saveReport(newer);
+    assert.equal(store.latestReport()?.reportId, newer.reportId);
+
+    // Missing pointer: scan and rewrite.
+    rmSync(join(store.root, "index", "latest-report.json"));
+    assert.equal(store.latestReport()?.reportId, newer.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, newer.reportId);
+
+    // Corrupt pointer: treated as a cache miss, never as a report.
+    writeFileSync(join(store.root, "index", "latest-report.json"), "{not json");
+    assert.equal(store.latestReport()?.reportId, newer.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, newer.reportId);
+
+    // Pointer to a report that no longer exists: the pointer may move back.
+    writeFileSync(join(store.root, "index", "latest-report.json"), JSON.stringify({
+      reportId: "r_" + "9".repeat(24),
+      generatedAt: "2026-10-21T00:00:00Z",
+      bindingId,
+    }));
+    assert.equal(store.latestReport()?.reportId, newer.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, newer.reportId);
+
+    // Deleting the newest report prunes the pointer back to the next newest.
+    rmSync(join(store.root, "reports", newer.reportId + ".json"));
+    assert.equal(store.latestReport()?.reportId, older.reportId);
+    assert.equal(reportPointer(store, "latest-report.json")?.reportId, older.reportId);
+    rmSync(join(store.root, "index", "latest-report-" + bindingId + ".json"));
+    assert.equal(store.latestReportForBinding(bindingId)?.reportId, older.reportId);
+    assert.equal(reportPointer(store, "latest-report-" + bindingId + ".json")?.reportId, older.reportId);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

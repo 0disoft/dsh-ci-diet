@@ -43,6 +43,13 @@ export interface StoredPlan {
   readonly meta: PlanMeta;
 }
 
+/** Index pointer that lets latestReport read one record instead of every report. */
+interface ReportPointer {
+  readonly reportId: string;
+  readonly generatedAt: string;
+  readonly bindingId: string;
+}
+
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 function requireId(value: string, label: string): string {
@@ -189,7 +196,7 @@ export class PatchStore {
   static open(root: string, limits: StorageLimits | null = null): PatchStore {
     const store = new PatchStore(root, limits);
     store.ensureDirectory(root);
-    for (const directory of ["bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history", "locks"]) {
+    for (const directory of ["bindings", "reports", "index", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history", "locks"]) {
       store.ensureDirectory(join(root, directory));
     }
     return store;
@@ -304,6 +311,7 @@ export class PatchStore {
   saveReport(report: AnalysisReport): void {
     assertValidDocument("AnalysisReport", report);
     this.writeJson(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
+    this.saveReportPointers(report);
   }
 
   /** Find the most recently recorded binding for a root, including after a remote change. */
@@ -331,6 +339,44 @@ export class PatchStore {
   }
 
   latestReport(): AnalysisReport | null {
+    const pointer = this.readReportPointer(this.latestReportPointer());
+    if (pointer !== null) {
+      const report = this.readReportPointerReport(pointer.reportId, null);
+      if (report !== null) return report;
+    }
+    const latest = this.scanLatestReport(null);
+    // The pointer named a missing report, so it must be allowed to move back to
+    // the next newest; a normal save still keeps a newer pointer intact.
+    if (latest !== null) this.saveReportPointers(latest, this.latestReportPointer());
+    return latest;
+  }
+
+  /** Latest report produced for one binding, never another repository's report. */
+  latestReportForBinding(bindingId: string): AnalysisReport | null {
+    // A binding id is a file name here, so only pattern-safe ids get a pointer;
+    // other schema-valid ids still work through the scan below.
+    if (ID_PATTERN.test(bindingId)) {
+      const pointer = this.readReportPointer(this.latestReportPointerFor(bindingId));
+      if (pointer !== null && pointer.bindingId === bindingId) {
+        const report = this.readReportPointerReport(pointer.reportId, bindingId);
+        if (report !== null) return report;
+      }
+    }
+    const latest = this.scanLatestReport(bindingId);
+    if (latest !== null) {
+      this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
+    }
+    return latest;
+  }
+
+  private readReportPointerReport(reportId: string, bindingId: string | null): AnalysisReport | null {
+    const report = this.readReport(reportId);
+    if (report === null) return null;
+    if (bindingId !== null && report.bindingId !== bindingId) return null;
+    return report;
+  }
+
+  private scanLatestReport(bindingId: string | null): AnalysisReport | null {
     const directory = this.path("reports");
     const files = readdirSync(directory).filter((name) => name.endsWith(".json"));
     let latest: AnalysisReport | null = null;
@@ -338,6 +384,7 @@ export class PatchStore {
     for (const file of files) {
       const report = this.readJson<AnalysisReport>(join(directory, file), "AnalysisReport");
       if (report === null) continue;
+      if (bindingId !== null && report.bindingId !== bindingId) continue;
       const at = Date.parse(report.generatedAt);
       if (at > latestAt) {
         latestAt = at;
@@ -347,22 +394,80 @@ export class PatchStore {
     return latest;
   }
 
-  /** Latest report produced for one binding, never another repository's report. */
-  latestReportForBinding(bindingId: string): AnalysisReport | null {
-    const directory = this.path("reports");
-    const files = readdirSync(directory).filter((name) => name.endsWith(".json"));
-    let latest: AnalysisReport | null = null;
-    let latestAt = Number.NEGATIVE_INFINITY;
-    for (const file of files) {
-      const report = this.readJson<AnalysisReport>(join(directory, file), "AnalysisReport");
-      if (report === null || report.bindingId !== bindingId) continue;
-      const at = Date.parse(report.generatedAt);
-      if (at > latestAt) {
-        latestAt = at;
-        latest = report;
+  private latestReportPointer(): string {
+    return this.path("index", "latest-report.json");
+  }
+
+  private latestReportPointerFor(bindingId: string): string {
+    return this.path("index", "latest-report-" + requireId(bindingId, "bindingId") + ".json");
+  }
+
+  private reportPointerPaths(report: AnalysisReport): string[] {
+    const paths = [this.latestReportPointer()];
+    if (ID_PATTERN.test(report.bindingId)) paths.push(this.latestReportPointerFor(report.bindingId));
+    return paths;
+  }
+
+  /** A malformed or missing pointer is simply a cache miss; the scan is authoritative. */
+  private readReportPointer(path: string): ReportPointer | null {
+    let text: string;
+    try {
+      text = readFileSync(path, "utf8");
+    } catch {
+      return null;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    if (typeof record.reportId !== "string" || !ID_PATTERN.test(record.reportId)) return null;
+    if (typeof record.generatedAt !== "string" || !Number.isFinite(Date.parse(record.generatedAt))) return null;
+    if (typeof record.bindingId !== "string" || record.bindingId.length === 0) return null;
+    return { reportId: record.reportId, generatedAt: record.generatedAt, bindingId: record.bindingId };
+  }
+
+  private writeReportPointersUnlocked(report: AnalysisReport, repairPath?: string): void {
+    const record: ReportPointer = { reportId: report.reportId, generatedAt: report.generatedAt, bindingId: report.bindingId };
+    for (const path of this.reportPointerPaths(report)) {
+      if (path !== repairPath) {
+        const current = this.readReportPointer(path);
+        // Newest wins even when an older report is saved last (out-of-order sync).
+        if (current !== null && Date.parse(current.generatedAt) > Date.parse(record.generatedAt)) continue;
+      }
+      this.writeJsonUnlocked(path, record);
+    }
+  }
+
+  /** Best effort: a pointer write failure must not fail the report it describes. */
+  private saveReportPointers(report: AnalysisReport, repairPath?: string): void {
+    try {
+      withStoreWriteLock(this, () => this.writeReportPointersUnlocked(report, repairPath));
+    } catch {
+      this.discardReportPointers(report);
+    }
+  }
+
+  private saveReportPointersUnlocked(report: AnalysisReport, repairPath?: string): void {
+    try {
+      this.writeReportPointersUnlocked(report, repairPath);
+    } catch {
+      this.discardReportPointers(report);
+    }
+  }
+
+  private discardReportPointers(report: AnalysisReport): void {
+    for (const path of this.reportPointerPaths(report)) {
+      try {
+        rmSync(path, { force: true });
+      } catch {
+        // The index is a cache; a failed cleanup just leaves the scan fallback.
       }
     }
-    return latest;
+    this.invalidateUsage();
   }
 
   saveAttestation(attestation: Attestation): void {
@@ -530,6 +635,7 @@ export class PatchStore {
       this.writeJsonUnlocked(this.path("bindings", bindingId + ".json"), binding);
       this.writeJsonUnlocked(this.path("snapshots", "history", bindingId + ".json"), history);
       this.writeJsonUnlocked(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
+      this.saveReportPointersUnlocked(report);
       return true;
     });
   }
