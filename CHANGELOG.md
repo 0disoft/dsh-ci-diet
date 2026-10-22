@@ -119,6 +119,10 @@ Keep a Changelog, and the project uses semantic versioning.
   holds, and its token now binds each change's state, update time, size, and
   backup manifest. A concurrent revert or a backup changed after the listing is
   refused instead of deleted.
+- Plan status writes compare the revision they read, and approval removes its
+  nonce when that write loses, so a prune or a second writer cannot leave an
+  approved nonce pointing at a stale or missing plan. Plan pruning skips a plan
+  while its approval claim is held.
 
 ## 0.2.0 (2026-10-21)
 

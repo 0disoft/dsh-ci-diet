@@ -383,9 +383,18 @@ export class PatchStore {
     return { plan, meta: meta ?? { coverageWriteAllowed: false, reportId: null } };
   }
 
-  updatePlanStatus(planId: string, status: PlanStatus): void {
+  /**
+   * Compare-and-set a plan status. Approval is already serialized per plan, but
+   * a prune or a second writer can still replace the record between the read
+   * and this write; the expected revision turns that into a refusal instead of
+   * silently resurrecting a deleted plan or overwriting a newer status.
+   */
+  updatePlanStatus(planId: string, status: PlanStatus, expectedRevision?: number): void {
     const stored = this.readPlan(planId);
     if (stored === null) throw new Error("STORE_PLAN_NOT_FOUND: " + planId);
+    if (expectedRevision !== undefined && stored.plan.status.revision !== expectedRevision) {
+      throw new Error("PLAN_STATUS_CONFLICT: expected revision " + expectedRevision + ", found " + stored.plan.status.revision);
+    }
     const plan = { ...stored.plan, status };
     assertValidDocument("PatchPlan", plan);
     // A status transition must not republish unchanged metadata after the plan.
@@ -566,10 +575,24 @@ export class PatchStore {
       const createdAt = Date.parse(stored.plan.payload.createdAt);
       if (!Number.isFinite(createdAt) || createdAt >= planCutoff) continue;
       const planId = stored.plan.planId;
-      for (const suffix of [".json", ".meta.json", ".nonce.json"]) {
-        const full = this.path("plans", requireId(planId, "planId") + suffix);
-        bytesFreed += entryBytes(full);
-        rmSync(full, { force: true });
+      // An approval holds this claim from its first read through the status
+      // write. Skip rather than delete a plan out from under it; the next prune
+      // removes it once the approval has finished.
+      let lock;
+      try {
+        lock = acquireStoreLock(this, "approve-" + planId, 0);
+      } catch {
+        continue;
+      }
+      try {
+        if (this.readPlan(planId) === null) continue;
+        for (const suffix of [".json", ".meta.json", ".nonce.json"]) {
+          const full = this.path("plans", requireId(planId, "planId") + suffix);
+          bytesFreed += entryBytes(full);
+          rmSync(full, { force: true });
+        }
+      } finally {
+        lock.release();
       }
       removedPlans += 1;
     }

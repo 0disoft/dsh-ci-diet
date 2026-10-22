@@ -11,7 +11,7 @@ import { applyEdits, planConcurrencyEdit, planTimeoutEdit } from "../../src/core
 import { digestOf } from "../../src/shared/cdj1.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { approvePlan, approvalConfirmation } from "../../src/core/patch/approval.ts";
-import { applyPlan, revertChange } from "../../src/core/patch/apply.ts";
+import { acquireStoreLock, applyPlan, revertChange } from "../../src/core/patch/apply.ts";
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
 
 const WORKFLOW = [
@@ -124,6 +124,34 @@ test("status-only persistence rejects invalid status without changing stored rec
   assert.equal(readFileSync(planFile, "utf8"), planBytes);
   assert.equal(readFileSync(metaFile, "utf8"), metaBytes);
   assert.throws(() => f.store.updatePlanStatus("p_missing", f.plan.status), /STORE_PLAN_NOT_FOUND/);
+});
+
+test("a status write refuses a stale revision and leaves the plan unchanged", (t) => {
+  const f = setup();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const before = readFileSync(join(f.store.root, "plans", f.plan.planId + ".json"), "utf8");
+  assert.throws(
+    () => f.store.updatePlanStatus(f.plan.planId, { ...f.plan.status, state: "approved" }, f.plan.status.revision + 1),
+    /PLAN_STATUS_CONFLICT: expected revision/,
+  );
+  assert.equal(readFileSync(join(f.store.root, "plans", f.plan.planId + ".json"), "utf8"), before);
+});
+
+test("prune skips a plan whose approval claim is held", (t) => {
+  const f = setup();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const later = new Date(f.now.getTime() + 8 * 24 * 60 * 60 * 1000);
+  const lock = acquireStoreLock(f.store, "approve-" + f.plan.planId, 0);
+  try {
+    const skipped = f.store.prune(later, { reportDays: 90, planDays: 7, cacheDays: 30 });
+    assert.equal(skipped.removedPlans, 0);
+    assert.notEqual(f.store.readPlan(f.plan.planId), null);
+  } finally {
+    lock.release();
+  }
+  const pruned = f.store.prune(later, { reportDays: 90, planDays: 7, cacheDays: 30 });
+  assert.equal(pruned.removedPlans, 1);
+  assert.equal(f.store.readPlan(f.plan.planId), null);
 });
 
 test("approval does not rewrite unchanged read-only metadata", { skip: process.platform !== "win32" }, async (t) => {

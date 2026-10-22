@@ -71,7 +71,13 @@ function approveLocked(input: ApproveInput): ApproveResult {
   };
   // A failed nonce write must leave the plan available for an explicit approval retry.
   input.store.saveNonce(plan.planId, nonce);
-  input.store.updatePlanStatus(plan.planId, approved.status);
+  try {
+    input.store.updatePlanStatus(plan.planId, approved.status, plan.status.revision);
+  } catch (error) {
+    // Do not leave a nonce that names a status this approval never published.
+    input.store.consumeNonce(plan.planId, nonce.nonceId);
+    throw error;
+  }
   const warnings = input.store.appendSummaryEvent({ type: "approved", planId: plan.planId, nonceId: nonce.nonceId, channel: input.channel }, input.now);
   return { plan: approved, nonce, ...(warnings.length > 0 ? { warnings } : {}) };
 }
