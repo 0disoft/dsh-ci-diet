@@ -46,10 +46,12 @@ Keep a Changelog, and the project uses semantic versioning.
   runner, so an in-memory tree can exercise the size cap, symlink rejection, and
   binding creation without touching the disk. Production defaults to `node:fs`
   and `git`.
-- `apply` and `revert` honor an abort signal. Cancellation before the transaction
-  commits leaves the target, journal, and approval untouched and releases the
-  writer lease; once a replacement starts the journal still reaches a consistent
-  state. A first Ctrl-C on those commands now requests that graceful stop.
+- `apply`, `revert`, and `sync` honor an abort signal. Cancellation before the
+  transaction commits leaves the target, journal, and approval untouched and
+  releases the writer lease; once a replacement starts the journal still reaches
+  a consistent state, and a cancelled sync kills its `gh` child and never saves a
+  partial snapshot. The first Ctrl-C forwards the signal before scheduling a
+  bounded graceful exit; a second one exits at once.
 - Writer serialization uses a claim directory plus a lease. A stale claim left
   by a dead process is recovered; a live owner's lease path is never moved, and
   a takeover re-checks ownership under the claim.

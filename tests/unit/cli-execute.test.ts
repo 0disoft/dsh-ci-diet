@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { executeCli } from "../../src/cli/index.ts";
+import { cancelAction, executeCli } from "../../src/cli/index.ts";
 
 function capture(): { write: (text: string) => void; text: () => string } {
   const chunks: string[] = [];
@@ -15,6 +15,12 @@ function makeRoot(): string {
   mkdirSync(join(root, ".github", "workflows"), { recursive: true });
   return root;
 }
+
+test("a Ctrl-C forwards the abort before any deferred exit", () => {
+  assert.equal(cancelAction(false, false), "stop-now");
+  assert.equal(cancelAction(true, false), "abort-then-wait");
+  assert.equal(cancelAction(true, true), "force-exit");
+});
 
 test("executeCli runs against injected streams instead of the process", async () => {
   const stdout = capture();

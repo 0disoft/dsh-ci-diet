@@ -80,6 +80,16 @@ const EXIT_NONCE = 5;
 const EXIT_BACKUP = 6;
 const EXIT_STORAGE = 7;
 const EXIT_CANCELLED = 130;
+/** Time a cancelled command gets to finish its journal or kill its child before a forced exit. */
+const CANCEL_GRACE_MS = 5_000;
+
+/** What the second and later Ctrl-C presses should do for a command. */
+export type CancelAction = "stop-now" | "abort-then-wait" | "force-exit";
+
+export function cancelAction(deferred: boolean, waiting: boolean): CancelAction {
+  if (!deferred) return "stop-now";
+  return waiting ? "force-exit" : "abort-then-wait";
+}
 
 interface Options {
   readonly command: string;
@@ -1136,16 +1146,24 @@ export async function main(argv: readonly string[]): Promise<number> {
 const invokedDirectly = process.argv[1] !== undefined && /(?:^|[\\/])cli(?:[\\/]index)?\.[cm]?[jt]s$/.test(process.argv[1]);
 if (invokedDirectly) {
   const argv = process.argv.slice(2);
-  // Only mutating commands defer cancellation: their journal must reach a
-  // consistent state before the process leaves, matching the documented
-  // "record the transaction state first" rule. Everything else stops at once.
-  const deferred = argv.some((arg) => arg === "apply" || arg === "revert");
+  // Mutating commands finish their journal and network commands kill their gh
+  // child before leaving. Everything else stops once the signal is forwarded.
+  const deferred = argv.some((arg) => arg === "apply" || arg === "revert" || arg === "sync");
   const controller = new AbortController();
   let interrupted = false;
+  let graceTimer: NodeJS.Timeout | null = null;
   process.on("SIGINT", () => {
-    if (!deferred || interrupted) process.exit(EXIT_CANCELLED);
     interrupted = true;
+    // Always forward the signal first: exiting before abort can orphan a gh
+    // child that then writes to the store after the CLI is gone.
     controller.abort();
+    const action = cancelAction(deferred, graceTimer !== null);
+    if (action !== "abort-then-wait") {
+      process.exit(EXIT_CANCELLED);
+      return;
+    }
+    graceTimer = setTimeout(() => process.exit(EXIT_CANCELLED), CANCEL_GRACE_MS);
+    graceTimer.unref();
   });
   executeCli(argv, { signal: controller.signal }).then(
     (code) => {
