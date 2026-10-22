@@ -1,4 +1,5 @@
 import type { Config, Dimension, MissingScope } from "../contracts/schema.ts";
+import { assertValidDocument } from "../contracts/validate.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { GitHubError } from "../../adapters/github/errors.ts";
@@ -76,6 +77,7 @@ export async function syncRepositoryHistory(options: {
   const { config, now } = options;
   const signal = options.signal;
   signal?.throwIfAborted();
+  assertValidDocument("Config", config);
   const historyConfig = config.history;
   const budget = new RequestBudget(historyConfig.quotas);
   const ghVersion = options.transport === undefined ? await readGhVersion(options.runner, signal) : null;
@@ -353,7 +355,7 @@ export async function syncRepositoryHistory(options: {
   const historyStatus: Dimension["status"] =
     historyError !== null
       ? "unavailable"
-      : truncatedByLimit || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs") || jobsFetched === 0
+      : truncatedByLimit || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
         ? "partial"
         : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";

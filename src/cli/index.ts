@@ -157,7 +157,7 @@ function parseArgs(argv: readonly string[]): Options {
       const value = takeValue(index, "--days");
       index += 1;
       const parsed = Number(value);
-      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 90) throw new UsageError("INVALID_VALUE:--days");
+      if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 30) throw new UsageError("INVALID_VALUE:--days");
       days = parsed;
     } else if (arg === "--account-minutes-used") {
       const value = takeValue(index, "--account-minutes-used");

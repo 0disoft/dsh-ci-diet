@@ -52,6 +52,15 @@ test("usage at or below the allowance keeps the marginal cost at zero", () => {
   }
 });
 
+test("a known SKU with no removable minutes costs zero instead of unknown", () => {
+  const value = computeReportMetrics(
+    [{ jobId: "j1", durationMillis: 600000, sku: knownString("actions_linux", "runner label"), removals: [] }],
+    { unavailableReason: "NO_HISTORY", billing: { accountMinutesUsed: 2500, includedMinutes: 2000 } },
+  ).metrics.estimatedMarginalUsd;
+  assert.equal(value.status, "known");
+  assert.equal(value.value, "0.000000");
+});
+
 test("an unknown SKU keeps the marginal estimate unknown", () => {
   const value = marginal({ accountMinutesUsed: 2500, includedMinutes: 2000 }, "unknown");
   assert.equal(value.status, "unknown");

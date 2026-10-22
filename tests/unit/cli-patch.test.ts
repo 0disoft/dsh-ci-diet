@@ -504,6 +504,15 @@ test("CLI plan bounds --minutes to the timeout edit range", () => {
   assert.doesNotMatch(accepted.stderr, /Invalid value for --minutes/);
 });
 
+test("CLI sync bounds --days to the config contract", () => {
+  const { root } = makeRepo();
+  const rejected = cli(["sync", "--network", "--repo", "owner/repo", "--days", "31", "--cwd", root, "--lang", "en"], root);
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /Invalid value for --days/);
+  const accepted = cli(["sync", "--repo", "owner/repo", "--days", "30", "--cwd", root, "--lang", "en"], root);
+  assert.doesNotMatch(accepted.stderr, /Invalid value for --days/);
+});
+
 test("CLI diagnose explains attribution for stored history", () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");

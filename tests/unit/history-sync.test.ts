@@ -454,6 +454,35 @@ test("stops collecting when the caller aborts between runs", async () => {
   assert.equal(calls, 5); // repository, workflows, runs, jobs, contents; aborted before the pull request
 });
 
+test("a genuinely empty run window is complete, not a partial collection", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: 0, workflow_runs: [] });
+    return original(request, family);
+  };
+  const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(result.history.runs.length, 0);
+  assert.equal(result.history.coverage.history.status, "complete");
+  assert.deepEqual(result.history.coverage.history.reasons, []);
+});
+
+test("rejects a lookback outside the config contract before any request", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  let calls = 0;
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    calls += 1;
+    return original(request, family);
+  };
+  const tooLong = { ...config(), history: { ...config().history, lookbackDays: 31 } };
+  await assert.rejects(
+    syncRepositoryHistory({ owner: "o", repo: "r", config: tooLong, now: NOW, transport }),
+    /lookbackDays maximum must be <= 30/,
+  );
+  assert.equal(calls, 0);
+});
+
 test("propagates authentication failures instead of recording them", async () => {
   const transport = {
     async get(): Promise<GhResponse> {

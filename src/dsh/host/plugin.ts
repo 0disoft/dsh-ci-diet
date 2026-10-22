@@ -228,7 +228,7 @@ export function apply(ctx: Context, config: Config) {
         [owner, repo] = [remote.owner, remote.repository];
       }
       const days = args.days ?? DEFAULT_CONFIG.history.lookbackDays;
-      if (!Number.isSafeInteger(days) || days < 1 || days > 90) throw new Error("days must be an integer between 1 and 90");
+      if (!Number.isSafeInteger(days) || days < 1 || days > 30) throw new Error("days must be an integer between 1 and 30");
       const settings = { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: days } };
       const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date(), signal: exec.signal });
       exec.signal.throwIfAborted();

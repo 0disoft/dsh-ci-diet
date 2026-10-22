@@ -90,11 +90,14 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
 
   const billing = options.billing ?? null;
   let estimatedMarginalUsd;
-  if (unknownSku || knownSkuJobs === 0 || knownRateMinutes <= 0) {
+  if (unknownSku || knownSkuJobs === 0) {
     estimatedMarginalUsd = unknownUsd(
       "known subset " + formatUsd(knownRateMicroUsd) + " USD across " + knownSkuJobs + "/" + jobs.length + " jobs",
       "UNKNOWN_SKU",
     );
+  } else if (knownRateMinutes <= 0) {
+    // Nothing removable means nothing billed, even though the SKU is known.
+    estimatedMarginalUsd = knownUsd("0.000000", "no removable minutes at confirmed SKUs");
   } else if (billing === null) {
     estimatedMarginalUsd = unknownUsd(
       "configure billing.includedMinutes and billing.accountMinutesUsed",
