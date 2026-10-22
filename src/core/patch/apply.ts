@@ -341,6 +341,18 @@ function changeForPlan(store: PatchStore, planId: string): AppliedChange | null 
   return store.listChanges().find((change) => change.planId === planId) ?? null;
 }
 
+/**
+ * The journal, not the nonce, is the lasting record of a transaction: a nonce
+ * that survived a failed cleanup would otherwise authorize a second apply of
+ * an already applied or reverted change.
+ */
+function journalBlocksApply(store: PatchStore, planId: string): boolean {
+  const change = changeForPlan(store, planId);
+  if (change === null) return false;
+  return change.state === "APPLIED" || change.state === "APPLYING"
+    || change.state === "REVERTING" || change.state === "REVERTED";
+}
+
 function readTargetHash(target: string): string | null {
   try {
     return textHash(readFileSync(target, "utf8"));
@@ -445,6 +457,15 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
     const recovered = convergeInterruptedApply(options, plan, beforeText, beforeHash, nonce);
     if (recovered !== null) return recovered;
 
+    // One approval authorizes one apply transaction. A crash is handled above by
+    // convergence; anything else past NOT_APPLIED must stay refused, even when
+    // the nonce file survived a failed cleanup.
+    if (journalBlocksApply(options.store, plan.planId)) {
+      const reasons: readonly ApplyReasonCode[] = ["NONCE_INVALID"];
+      const warnings = options.store.appendSummaryEvent({ type: "apply_refused", planId: plan.planId, reasons }, options.now);
+      return { state: "not_applied", reasons, change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) };
+    }
+
     const reasons = checkApply({
       plan,
       now: options.now,
@@ -531,8 +552,11 @@ export async function revertChange(options: {
 }): Promise<{ readonly state: string; readonly reason: string | null; readonly warnings?: readonly string[] }> {
   const change = options.store.readChange(options.changeId);
   if (change === null) throw new Error("CHANGE_NOT_FOUND: " + options.changeId);
+  // CONFLICT is kept retryable: the user may restore the original bytes by hand,
+  // and the hash check below then converges to REVERTED instead of dead-ending.
   const revertable = change.state === "APPLIED" || change.state === "RECOVERY_REQUIRED"
-    || change.state === "REVERTING" || change.state === "PREPARED" || change.state === "APPLYING";
+    || change.state === "REVERTING" || change.state === "PREPARED" || change.state === "APPLYING"
+    || change.state === "CONFLICT";
   if (!revertable) return { state: change.state, reason: "CHANGE_NOT_APPLIED" };
   // PREPARED/APPLYING may be in doubt after a crash: the replacement may or may
   // not have landed, so classify by the target bytes before touching anything.

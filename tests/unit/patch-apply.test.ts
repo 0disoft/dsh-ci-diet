@@ -625,6 +625,111 @@ test("a nonce cleanup failure after a successful replacement keeps the change ap
   assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
 });
 
+
+test("a surviving approval converges on an applied target instead of rewriting it", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  t.mock.method(fixture.store, "consumeNonce", () => {
+    throw new Error("injected nonce cleanup failure");
+  });
+  const first = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(first.state, "applied");
+  assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
+  const patched = readFileSync(fixture.file, "utf8");
+  // The target already holds the planned result, so the second call converges on
+  // the recorded change (retrying the cleanup) and never writes the file again.
+  const second = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(second.state, "applied");
+  assert.deepEqual(second.warnings, ["NONCE_NOT_CONSUMED"]);
+  assert.equal(second.change?.changeId, first.change?.changeId);
+  assert.equal(readFileSync(fixture.file, "utf8"), patched);
+  assert.equal(fixture.store.listChanges().length, 1);
+  assert.equal(fixture.store.readChange(first.change!.changeId)?.state, "APPLIED");
+});
+
+test("a reverted change cannot be applied again with the stale approval", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  t.mock.method(fixture.store, "consumeNonce", () => {
+    throw new Error("injected nonce cleanup failure");
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const reverted = await revertChange({ store: fixture.store, changeId: applied.change!.changeId, now: fixture.now });
+  assert.equal(reverted.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
+  const replay = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(replay.state, "not_applied");
+  assert.deepEqual(replay.reasons, ["NONCE_INVALID"]);
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.equal(fixture.store.readChange(applied.change!.changeId)?.state, "REVERTED");
+});
+
+test("a conflicted revert converges once the original bytes are restored", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  const patched = readFileSync(fixture.file, "utf8");
+  writeFileSync(fixture.file, patched + "# local edit\n", "utf8");
+  const conflict = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(conflict.state, "CONFLICT");
+  assert.equal(fixture.store.readChange(changeId)?.state, "CONFLICT");
+  // The user restores the pre-apply bytes by hand: the goal already holds.
+  writeFileSync(fixture.file, fixture.text, "utf8");
+  const converged = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(converged.state, "REVERTED");
+  assert.equal(fixture.store.readChange(changeId)?.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
+test("a conflicted revert still warns but retries when the file holds the patched bytes", async (t) => {
+  const fixture = setup();
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  approvePlan({
+    store: fixture.store,
+    planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan),
+    subjectId: "tester",
+    channel: "human-cli",
+    now: fixture.now,
+  });
+  const applied = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  const changeId = applied.change!.changeId;
+  const patched = readFileSync(fixture.file, "utf8");
+  writeFileSync(fixture.file, patched + "# local edit\n", "utf8");
+  assert.equal((await revertChange({ store: fixture.store, changeId, now: fixture.now })).state, "CONFLICT");
+  // Another hand edit puts back exactly the applied bytes: the revert is safe again.
+  writeFileSync(fixture.file, patched, "utf8");
+  const retried = await revertChange({ store: fixture.store, changeId, now: fixture.now });
+  assert.equal(retried.state, "REVERTED");
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+});
+
 test("wrong confirmation never approves", () => {
   const fixture = setup();
   assert.throws(
