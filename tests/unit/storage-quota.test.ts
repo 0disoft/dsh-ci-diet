@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { acquireStoreLock, withStoreWriteLock } from "../../src/core/patch/locks.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../src/core/patch/store.ts";
-import type { AppliedChange } from "../../src/core/contracts/schema.ts";
+import type { AnalysisReport, AppliedChange, RepositoryBinding } from "../../src/core/contracts/schema.ts";
 import type { HistoryBundle } from "../../src/core/history/model.ts";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { buildHistoryReport } from "../../src/core/analysis/report.ts";
@@ -58,6 +58,20 @@ function history(requestedTo: string): HistoryBundle {
   };
 }
 
+function reportFor(binding: RepositoryBinding, snapshot: HistoryBundle): AnalysisReport {
+  return buildHistoryReport({
+    binding,
+    workflows: [],
+    history: snapshot,
+    config: DEFAULT_CONFIG,
+    generatedAt: snapshot.requestedTo,
+  }).report;
+}
+
+function jsonBytes(value: unknown): number {
+  return Buffer.byteLength(JSON.stringify(value, null, 2) + "\n", "utf8");
+}
+
 function withRoot<T>(run: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), "ci-diet-quota-"));
   try {
@@ -83,6 +97,53 @@ test("an older overlapping sync cannot publish a partial snapshot", () => {
     assert.equal(store.saveHistorySnapshot(binding, newer, reportFor(newer)), true);
     assert.equal(store.saveHistorySnapshot(binding, older, reportFor(older)), false);
     assert.equal(store.readLatestHistory(binding.bindingId)?.requestedTo, newer.requestedTo);
+  });
+});
+
+test("a stale usage snapshot cannot admit a second process write", () => {
+  withRoot((root) => {
+    const snapshot = history("2026-10-20T00:00:00Z");
+    const limit = jsonBytes(snapshot) * 2 - 1;
+    const first = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: limit }));
+    const second = PatchStore.open(join(root, "state"), limits({ storeMaxBytes: limit }));
+    // This instance caches the empty store; the other process then fills it.
+    second.usage();
+    assert.equal(first.saveHistory("b_" + "1".repeat(24), snapshot), true);
+    assert.throws(
+      () => second.saveHistory("b_" + "2".repeat(24), snapshot),
+      (error: unknown) => error instanceof StoreQuotaError,
+    );
+  });
+});
+
+test("a failed report write leaves the previous generation committed", () => {
+  withRoot((root) => {
+    const state = join(root, "state");
+    const store = PatchStore.open(state);
+    const binding = createLocalBinding(root, "2026-10-20T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const first = history("2026-10-20T02:00:00Z");
+    const firstReport = reportFor(binding, first);
+    assert.equal(store.saveHistorySnapshot(binding, first, firstReport), true);
+    const before = store.usage();
+
+    const nextBinding = createLocalBinding(root, "2026-10-21T00:00:00Z", { repositoryFullName: "owner/repo" }).binding;
+    const next = history("2026-10-21T00:00:00Z");
+    const nextReport = reportFor(nextBinding, next);
+    const additional = jsonBytes(nextBinding) + jsonBytes(next) + jsonBytes(nextReport);
+    const limited = PatchStore.open(state, limits({ storeMaxBytes: before.bytes + additional - 1 }));
+    assert.throws(
+      () => limited.saveHistorySnapshot(nextBinding, next, nextReport),
+      (error: unknown) => error instanceof StoreQuotaError,
+    );
+
+    assert.equal(limited.readLatestHistory(binding.bindingId)?.requestedTo, first.requestedTo);
+    assert.equal(limited.readBinding(binding.bindingId)?.createdAt, binding.createdAt);
+    assert.equal(limited.findBindingByRoot(root)?.createdAt, binding.createdAt);
+    assert.equal(limited.latestReportForBinding(binding.bindingId)?.reportId, firstReport.reportId);
+    assert.equal(limited.latestReport()?.reportId, firstReport.reportId);
+    assert.equal(limited.readReport(firstReport.reportId)?.reportId, firstReport.reportId);
+    assert.equal(limited.readReport(nextReport.reportId), null);
+    assert.equal(readdirSync(join(state, "snapshots", "generations", binding.bindingId)).length, 1);
   });
 });
 

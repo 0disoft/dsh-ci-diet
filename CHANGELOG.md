@@ -117,9 +117,12 @@ Keep a Changelog, and the project uses semantic versioning.
   CLI and the DSH tool show the git explanation, and coverage reasons keep the
   GitHub error code alongside its message. A gh response with no HTTP block but
   auth guidance is classified as a credential problem rather than HTTP 0.
-- Binding, history, and report are written as one snapshot under the store write
-  lock. When an older overlapping sync finishes last, it writes nothing and says
-  so, instead of leaving a newer history beside an older report.
+- Binding, history, and report are committed as one generation. The three files
+  are written into a new directory and only then does the current-snapshot
+  pointer switch, so a quota or I/O failure while writing the report leaves the
+  previous generation visible instead of a new binding and history without a
+  report. When an older overlapping sync finishes last, it writes nothing and
+  says so.
 - Coverage documents, merged configs, and attestations copy the arrays and
   objects they receive, so mutating a result or an input can no longer change
   the other object. Job parsing returns its unsupported-feature list instead of
@@ -142,6 +145,9 @@ Keep a Changelog, and the project uses semantic versioning.
 - Store writes reserve quota and write their bytes under one filesystem lock, so
   two processes can no longer pass the same free-space check and together exceed
   the store limit. The backup reservation and its three files share that lock.
+  Quota admission re-scans after taking the lock instead of trusting this
+  process's display cache, so a second process cannot spend bytes the first one
+  already wrote.
 - Confirmed backup cleanup re-lists under a maintenance lock that revert also
   holds, and its token now binds each change's state, update time, size, and
   backup manifest. A concurrent revert or a backup changed after the listing is

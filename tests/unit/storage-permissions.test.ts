@@ -8,6 +8,7 @@ import { PatchStore } from "../../src/core/patch/store.ts";
 const posix = process.platform === "win32" ? { skip: "POSIX file modes are not exposed on Windows" } : {};
 const MANAGED = [
   "bindings", "reports", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history",
+  "snapshots/current", "snapshots/generations",
 ];
 
 function modeOf(path: string): number {

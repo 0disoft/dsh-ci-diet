@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type { AnalysisReport, AppliedChange, Attestation, PatchPlan, PlanStatus, RepositoryBinding } from "../contracts/schema.ts";
@@ -48,6 +48,23 @@ interface ReportPointer {
   readonly reportId: string;
   readonly generatedAt: string;
   readonly bindingId: string;
+}
+
+/** Committed generation of one binding, history window, and report. */
+interface SnapshotPointer {
+  readonly generationId: string;
+  readonly bindingId: string;
+  readonly requestedTo: string;
+  readonly reportId: string;
+  readonly generatedAt: string;
+}
+
+interface CurrentSnapshot {
+  readonly pointer: SnapshotPointer;
+  readonly binding: RepositoryBinding;
+  readonly history: HistoryBundle;
+  readonly report: AnalysisReport;
+  readonly directory: string;
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_-]+$/;
@@ -168,6 +185,18 @@ function entryBytes(path: string): number {
   }
 }
 
+function newestBinding(left: RepositoryBinding | null, right: RepositoryBinding | null): RepositoryBinding | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return Date.parse(right.createdAt) > Date.parse(left.createdAt) ? right : left;
+}
+
+function newestReport(left: AnalysisReport | null, right: AnalysisReport | null): AnalysisReport | null {
+  if (left === null) return right;
+  if (right === null) return left;
+  return Date.parse(right.generatedAt) > Date.parse(left.generatedAt) ? right : left;
+}
+
 /** Bytes in one file or an entire directory tree; used by cache and backup accounting. */
 function deepBytes(path: string): number {
   let stat;
@@ -187,6 +216,8 @@ export class PatchStore {
   private readonly limits: StorageLimits | null;
   /** Cached store size for this instance; adjusted by its own writes and rescanned when old. */
   private usageSnapshot: { bytes: number; files: number; observedAt: number } | null = null;
+  /** Depth of the current write lock; quota checks rescan once per acquisition. */
+  private writeLockDepth = 0;
 
   constructor(root: string, limits: StorageLimits | null = null) {
     this.root = root;
@@ -196,7 +227,7 @@ export class PatchStore {
   static open(root: string, limits: StorageLimits | null = null): PatchStore {
     const store = new PatchStore(root, limits);
     store.ensureDirectory(root);
-    for (const directory of ["bindings", "reports", "index", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history", "locks"]) {
+    for (const directory of ["bindings", "reports", "index", "plans", "attestations", "backups", "changes", "events", "snapshots", "snapshots/history", "snapshots/current", "snapshots/generations", "locks"]) {
       store.ensureDirectory(join(root, directory));
     }
     return store;
@@ -237,7 +268,22 @@ export class PatchStore {
   }
 
   private writeText(path: string, text: string): void {
-    withStoreWriteLock(this, () => this.writeTextUnlocked(path, text));
+    this.withWriteLock(() => this.writeTextUnlocked(path, text));
+  }
+
+  /**
+   * Every mutation holds the store write lock. A usage snapshot can predate
+   * another process's write, so the lock entry discards it; the first quota
+   * check inside the lock rescans, and later checks reuse the adjusted total.
+   */
+  private withWriteLock<T>(run: () => T): T {
+    this.writeLockDepth += 1;
+    if (this.writeLockDepth === 1) this.invalidateUsage();
+    try {
+      return withStoreWriteLock(this, run);
+    } finally {
+      this.writeLockDepth -= 1;
+    }
   }
 
   private writeJsonUnlocked(path: string, value: unknown): void {
@@ -305,7 +351,10 @@ export class PatchStore {
   }
 
   readBinding(bindingId: string): RepositoryBinding | null {
-    return this.readJson<RepositoryBinding>(this.path("bindings", requireId(bindingId, "bindingId") + ".json"), "RepositoryBinding");
+    const id = requireId(bindingId, "bindingId");
+    const legacy = this.readJson<RepositoryBinding>(this.path("bindings", id + ".json"), "RepositoryBinding");
+    const snapshot = this.readCurrentSnapshot(id);
+    return snapshot === null ? legacy : newestBinding(legacy, snapshot.binding);
   }
 
   saveReport(report: AnalysisReport): void {
@@ -331,42 +380,182 @@ export class PatchStore {
         latestAt = at;
       }
     }
+    for (const snapshot of this.currentSnapshots()) {
+      const binding = snapshot.binding;
+      const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
+      if (candidate !== wanted) continue;
+      const merged = newestBinding(latest, binding);
+      if (merged !== latest) {
+        latest = merged;
+        latestAt = Date.parse(binding.createdAt);
+      }
+    }
     return latest;
   }
 
   readReport(reportId: string): AnalysisReport | null {
-    return this.readJson<AnalysisReport>(this.path("reports", requireId(reportId, "reportId") + ".json"), "AnalysisReport");
+    const id = requireId(reportId, "reportId");
+    const direct = this.readJson<AnalysisReport>(this.path("reports", id + ".json"), "AnalysisReport");
+    if (direct !== null) return direct;
+    return this.snapshotReport(id);
   }
 
   latestReport(): AnalysisReport | null {
+    const snapshotLatest = this.latestSnapshotReport(null);
     const pointer = this.readReportPointer(this.latestReportPointer());
-    if (pointer !== null) {
-      const report = this.readReportPointerReport(pointer, null);
-      if (report !== null) return report;
-    }
-    const latest = this.scanLatestReport(null);
-    // The pointer named a missing report, so it must be allowed to move back to
-    // the next newest; a normal save still keeps a newer pointer intact.
-    if (latest !== null) this.saveReportPointers(latest, this.latestReportPointer());
+    const pointerReport = pointer === null ? null : this.readReportPointerReport(pointer, null);
+    const scanned = this.scanLatestReport(null);
+    const latest = newestReport(snapshotLatest, newestReport(pointerReport, scanned));
+    if (latest === null || latest === snapshotLatest) return latest;
+    // A report file is authoritative for its index pointer. Snapshot reports
+    // live in their generation and deliberately do not get a report pointer.
+    this.saveReportPointers(latest, this.latestReportPointer());
     return latest;
   }
 
   /** Latest report produced for one binding, never another repository's report. */
   latestReportForBinding(bindingId: string): AnalysisReport | null {
+    const snapshot = this.readCurrentSnapshot(bindingId);
+    const snapshotReport = snapshot?.report ?? null;
+    let pointerReport: AnalysisReport | null = null;
     // A binding id is a file name here, so only pattern-safe ids get a pointer;
     // other schema-valid ids still work through the scan below.
     if (ID_PATTERN.test(bindingId)) {
       const pointer = this.readReportPointer(this.latestReportPointerFor(bindingId));
       if (pointer !== null && pointer.bindingId === bindingId) {
-        const report = this.readReportPointerReport(pointer, bindingId);
-        if (report !== null) return report;
+        pointerReport = this.readReportPointerReport(pointer, bindingId);
       }
     }
-    const latest = this.scanLatestReport(bindingId);
-    if (latest !== null) {
-      this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
+    const scanned = this.scanLatestReport(bindingId);
+    const latest = newestReport(snapshotReport, newestReport(pointerReport, scanned));
+    if (latest === null || latest === snapshotReport) return latest;
+    this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
+    return latest;
+  }
+
+  private snapshotPointerPath(bindingId: string): string {
+    return this.path("snapshots", "current", requireId(bindingId, "bindingId") + ".json");
+  }
+
+  private snapshotDirectory(bindingId: string, generationId: string): string {
+    return this.path("snapshots", "generations", requireId(bindingId, "bindingId"), requireId(generationId, "generationId"));
+  }
+
+  /** A corrupt or half-written pointer is a cache miss; the legacy files still answer. */
+  private readSnapshotPointer(bindingId: string): SnapshotPointer | null {
+    let text: string;
+    try {
+      text = readFileSync(this.snapshotPointerPath(bindingId), "utf8");
+    } catch {
+      return null;
+    }
+    let value: unknown;
+    try {
+      value = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    if (typeof record.generationId !== "string" || !ID_PATTERN.test(record.generationId)) return null;
+    if (record.bindingId !== bindingId) return null;
+    if (typeof record.requestedTo !== "string" || !Number.isFinite(Date.parse(record.requestedTo))) return null;
+    if (typeof record.reportId !== "string" || !ID_PATTERN.test(record.reportId)) return null;
+    if (typeof record.generatedAt !== "string" || !Number.isFinite(Date.parse(record.generatedAt))) return null;
+    return {
+      generationId: record.generationId,
+      bindingId,
+      requestedTo: record.requestedTo,
+      reportId: record.reportId,
+      generatedAt: record.generatedAt,
+    };
+  }
+
+  /**
+   * Resolve the committed generation. A concurrent save can switch the pointer
+   * and delete the old generation between the pointer read and the file reads,
+   * so a vanished generation is retried once against the new pointer.
+   */
+  private readCurrentSnapshot(bindingId: string): CurrentSnapshot | null {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const pointer = this.readSnapshotPointer(bindingId);
+      if (pointer === null) return null;
+      const directory = this.snapshotDirectory(bindingId, pointer.generationId);
+      const binding = this.readJson<RepositoryBinding>(join(directory, "binding.json"), "RepositoryBinding");
+      const history = this.readJson<HistoryBundle>(join(directory, "history.json"));
+      const report = this.readJson<AnalysisReport>(join(directory, "report.json"), "AnalysisReport");
+      if (
+        binding !== null && history !== null && report !== null
+        && binding.bindingId === pointer.bindingId
+        && history.requestedTo === pointer.requestedTo
+        && report.reportId === pointer.reportId
+        && report.bindingId === pointer.bindingId
+        && report.generatedAt === pointer.generatedAt
+      ) {
+        return { pointer, binding, history, report, directory };
+      }
+    }
+    return null;
+  }
+
+  private currentSnapshots(): CurrentSnapshot[] {
+    let names: string[];
+    try {
+      names = readdirSync(this.path("snapshots", "current"));
+    } catch {
+      return [];
+    }
+    const snapshots: CurrentSnapshot[] = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const bindingId = name.slice(0, -".json".length);
+      if (!ID_PATTERN.test(bindingId)) continue;
+      const snapshot = this.readCurrentSnapshot(bindingId);
+      if (snapshot !== null) snapshots.push(snapshot);
+    }
+    return snapshots;
+  }
+
+  private latestSnapshotReport(bindingId: string | null): AnalysisReport | null {
+    let latest: AnalysisReport | null = null;
+    for (const snapshot of this.currentSnapshots()) {
+      if (bindingId !== null && snapshot.report.bindingId !== bindingId) continue;
+      latest = newestReport(latest, snapshot.report);
     }
     return latest;
+  }
+
+  private snapshotReport(reportId: string): AnalysisReport | null {
+    for (const snapshot of this.currentSnapshots()) {
+      if (snapshot.report.reportId === reportId) return snapshot.report;
+    }
+    return null;
+  }
+
+  /** Keep the committed generation and one predecessor; readers retry the pointer. */
+  private pruneSnapshots(bindingId: string): void {
+    try {
+      const directory = this.path("snapshots", "generations", requireId(bindingId, "bindingId"));
+      const entries = readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => ({ name: entry.name, modified: statSync(join(directory, entry.name)).mtimeMs }))
+        .sort((a, b) => b.modified - a.modified);
+      // Never prune the generation the pointer names, even when three saves
+      // share one mtime; keep it plus the newest predecessor.
+      const keep = new Set<string>();
+      const current = this.readSnapshotPointer(bindingId)?.generationId;
+      if (current !== undefined) keep.add(current);
+      for (const entry of entries) {
+        if (keep.size >= 2) break;
+        keep.add(entry.name);
+      }
+      for (const entry of entries) {
+        if (!keep.has(entry.name)) rmSync(join(directory, entry.name), { recursive: true, force: true });
+      }
+      if (entries.some((entry) => !keep.has(entry.name))) this.invalidateUsage();
+    } catch {
+      // Cleanup is best effort; an unreferenced generation only costs space.
+    }
   }
 
   /**
@@ -452,15 +641,7 @@ export class PatchStore {
   /** Best effort: a pointer write failure must not fail the report it describes. */
   private saveReportPointers(report: AnalysisReport, repairPath?: string): void {
     try {
-      withStoreWriteLock(this, () => this.writeReportPointersUnlocked(report, repairPath));
-    } catch {
-      this.discardReportPointers(report);
-    }
-  }
-
-  private saveReportPointersUnlocked(report: AnalysisReport, repairPath?: string): void {
-    try {
-      this.writeReportPointersUnlocked(report, repairPath);
+      this.withWriteLock(() => this.writeReportPointersUnlocked(report, repairPath));
     } catch {
       this.discardReportPointers(report);
     }
@@ -562,7 +743,7 @@ export class PatchStore {
   writeBackup(changeId: string, beforeText: string, afterText: string, workflowPath: string, now: Date): BackupManifest {
     // One lock covers the reservation and all three files, so a concurrent
     // writer cannot pass the quota check with the same free bytes.
-    return withStoreWriteLock(this, () => {
+    return this.withWriteLock(() => {
       // Reserve before, after, manifest, and target temp space in one check so a
       // quota failure cannot leave a partially written backup behind.
       this.ensureCapacity(
@@ -620,7 +801,7 @@ export class PatchStore {
    * still replace, so a retry can complete a partial collection.
    */
   saveHistory(bindingId: string, history: HistoryBundle): boolean {
-    return withStoreWriteLock(this, () => {
+    return this.withWriteLock(() => {
       const current = this.readLatestHistory(bindingId);
       if (current !== null && Date.parse(current.requestedTo) > Date.parse(history.requestedTo)) return false;
       this.writeJsonUnlocked(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"), history);
@@ -629,26 +810,52 @@ export class PatchStore {
   }
 
   /**
-   * Persist a binding, its history window, and the report as one snapshot.
+   * Persist a binding, its history window, and the report as one generation.
+   * The three records are written into a new directory, and only after all of
+   * them are durable does the current-snapshot pointer switch to it. A quota or
+   * I/O failure removes the whole generation and leaves the previous pointer,
+   * so readers never observe a binding or history whose report is missing.
    * Returns false without writing anything when the stored window is newer.
    */
   saveHistorySnapshot(binding: RepositoryBinding, history: HistoryBundle, report: AnalysisReport): boolean {
     assertValidDocument("RepositoryBinding", binding);
     assertValidDocument("AnalysisReport", report);
-    return withStoreWriteLock(this, () => {
+    return this.withWriteLock(() => {
       const bindingId = requireId(binding.bindingId, "bindingId");
       const current = this.readLatestHistory(bindingId);
       if (current !== null && Date.parse(current.requestedTo) > Date.parse(history.requestedTo)) return false;
-      this.writeJsonUnlocked(this.path("bindings", bindingId + ".json"), binding);
-      this.writeJsonUnlocked(this.path("snapshots", "history", bindingId + ".json"), history);
-      this.writeJsonUnlocked(this.path("reports", requireId(report.reportId, "reportId") + ".json"), report);
-      this.saveReportPointersUnlocked(report);
+      const generationId = "g_" + randomUUID().replaceAll("-", "");
+      const directory = this.snapshotDirectory(bindingId, generationId);
+      try {
+        this.ensureDirectory(directory);
+        this.writeJsonUnlocked(join(directory, "binding.json"), binding);
+        this.writeJsonUnlocked(join(directory, "history.json"), history);
+        this.writeJsonUnlocked(join(directory, "report.json"), report);
+        const pointer: SnapshotPointer = {
+          generationId,
+          bindingId,
+          requestedTo: history.requestedTo,
+          reportId: report.reportId,
+          generatedAt: report.generatedAt,
+        };
+        this.writeJsonUnlocked(this.snapshotPointerPath(bindingId), pointer);
+      } catch (error) {
+        rmSync(directory, { recursive: true, force: true });
+        this.invalidateUsage();
+        throw error;
+      }
+      this.pruneSnapshots(bindingId);
       return true;
     });
   }
 
   readLatestHistory(bindingId: string): HistoryBundle | null {
-    return this.readJson<HistoryBundle>(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"));
+    const id = requireId(bindingId, "bindingId");
+    const snapshot = this.readCurrentSnapshot(id);
+    const legacy = this.readJson<HistoryBundle>(this.path("snapshots", "history", id + ".json"));
+    if (snapshot === null) return legacy;
+    if (legacy === null) return snapshot.history;
+    return Date.parse(legacy.requestedTo) > Date.parse(snapshot.history.requestedTo) ? legacy : snapshot.history;
   }
 
   saveChange(change: AppliedChange): void {
@@ -672,7 +879,7 @@ export class PatchStore {
   appendEvent(event: Record<string, unknown>, now: Date): void {
     // Reserve and append under the same lock; otherwise two processes can pass
     // the quota check and both append past the limit.
-    withStoreWriteLock(this, () => {
+    this.withWriteLock(() => {
       const line = JSON.stringify({ at: now.toISOString().replace(/\.\d{3}Z$/, "Z"), ...event }) + "\n";
       const lineBytes = Buffer.byteLength(line, "utf8");
       this.ensureCapacity(lineBytes);
@@ -886,12 +1093,23 @@ export class PatchStore {
     return { bytes, files, limit, percent, warning, blocked: limit > 0 && bytes >= limit };
   }
 
-  /** Refuse a write before it starts when it would cross the store quota. */
+  /**
+   * Refuse a write before it starts when it would cross the store quota.
+   * Admission never trusts the display cache: outside a write lock it scans,
+   * and inside one the entry scan plus this instance's landed writes are exact
+   * because every cooperating process serializes on the same lock.
+   */
   ensureCapacity(additionalBytes: number): void {
     const limit = this.limits?.storeMaxBytes ?? 0;
     if (limit <= 0 || !Number.isFinite(additionalBytes) || additionalBytes <= 0) return;
-    const { bytes } = this.usage();
+    const { bytes } = this.writeLockDepth > 0 ? this.usage() : this.usageFresh();
     if (bytes + additionalBytes > limit) throw new StoreQuotaError(bytes, limit, additionalBytes);
+  }
+
+  private usageFresh(): { bytes: number; files: number } {
+    const scanned = this.scanUsage();
+    this.usageSnapshot = { bytes: scanned.bytes, files: scanned.files, observedAt: Date.now() };
+    return scanned;
   }
 
   /**

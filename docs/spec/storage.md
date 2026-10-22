@@ -82,10 +82,21 @@ store quota and the target volume's free space are separate checks: a write can
 fail below quota when the OS disk is full, and the project stays untouched. A
 quota reservation does not replace a durable write. A write that would exceed
 the store quota fails with `STORAGE_QUOTA_EXCEEDED` before any file is created,
-so a refused backup or record leaves no partial directory behind. Automatic
-cache or report cleanup never reclaims space by deleting recovery backups; only
-an explicit `--applied-backups --confirm` procedure deletes a backup, after the
-listing shows the targets and confirms that revert will be lost.
+so a refused backup or record leaves no partial directory behind. Quota
+admission re-reads usage after taking the store write lock; the cached usage
+used for display is never trusted for admission. Automatic cache or report
+cleanup never reclaims space by deleting recovery backups; only an explicit
+`--applied-backups --confirm` procedure deletes a backup, after the listing
+shows the targets and confirms that revert will be lost.
+
+A sync publishes its binding, history window, and report as one generation: the
+three files are written into `snapshots/generations/<binding>/<generation>` and
+the last step switches `snapshots/current/<binding>.json`. If writing any of
+them fails, the generation is removed and the previous pointer still names a
+complete snapshot. Readers resolve the pointer first, retry once if a
+concurrent save removed that generation, and fall back to the legacy
+`bindings/`, `snapshots/history/`, and `reports/` records for stores written by
+an older version.
 
 ## Configuration
 

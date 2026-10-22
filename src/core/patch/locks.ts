@@ -93,8 +93,8 @@ export function acquireStoreLock(store: LockRoot, name: string, waitMs: number, 
 
 /**
  * Serialize one store mutation with the quota check. The lock doubles as the
- * reservation: a second process cannot pass ensureCapacity until the bytes of
- * the first write are visible to usage().
+ * reservation: the store re-scans usage after acquiring it, so a second process
+ * cannot admit a write from bytes cached before the first process wrote.
  */
 export function withStoreWriteLock<T>(store: LockRoot, run: () => T, seams?: RuntimeSeams): T {
   const lock = acquireLock(
