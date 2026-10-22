@@ -145,6 +145,9 @@ Keep a Changelog, and the project uses semantic versioning.
   clears the revision guard, so the reset cannot overwrite a change another
   screen saved first. Duplicate rule ids are canonicalized to one entry in
   contract order instead of failing the next tool call.
+- A job display name that two jobs or two matrix legs render identically is now
+  unattributed instead of silently picking the first match, so one leg's
+  samples cannot stand in for another leg's cohort.
 - Planning and applying now enforce `apply.allowedRules`. `plan` refuses a
   requested rule outside the configured list instead of producing a plan the
   engine would never apply, and `apply` refuses a plan whose rules are no longer

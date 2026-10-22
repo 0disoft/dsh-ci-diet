@@ -20,8 +20,6 @@ jobs:
           - false
         exclude:
           - run-all: false
-            runner:
-              name: Windows
     runs-on: ${{ matrix.runner.os }}
     timeout-minutes: 30
     name: ${{ matrix.runner.name }}

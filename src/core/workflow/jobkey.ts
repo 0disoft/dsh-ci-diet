@@ -33,13 +33,37 @@ function defaultMatrixName(
 interface JobKeyIndex {
   /** Present only for a single job without a matrix. */
   readonly singleJob: JobKeyMatch | null;
-  readonly byKey: ReadonlyMap<string, JobKeyMatch>;
-  readonly byName: ReadonlyMap<string, JobKeyMatch>;
-  readonly byMatrixName: ReadonlyMap<string, JobKeyMatch>;
+  // A null value records that two different jobs, or two matrix legs of one
+  // job, render the same display name; the match is then unknowable.
+  readonly byKey: ReadonlyMap<string, JobKeyMatch | null>;
+  readonly byName: ReadonlyMap<string, JobKeyMatch | null>;
+  readonly byMatrixName: ReadonlyMap<string, JobKeyMatch | null>;
 }
 
 /** Workflow job arrays are immutable after parsing, so each array is indexed once. */
 const JOB_KEY_INDEX = new WeakMap<readonly WorkflowJob[], JobKeyIndex>();
+
+function matrixSignature(matrix: Readonly<Record<string, CanonicalJsonValue>> | null): string {
+  if (matrix === null) return "";
+  return Object.keys(matrix).sort().map((name) => name + "=" + JSON.stringify(matrix[name])).join("&");
+}
+
+/** First match wins only when it is the same match; anything else becomes ambiguous. */
+function remember(
+  map: Map<string, JobKeyMatch | null>,
+  name: string,
+  match: JobKeyMatch,
+): void {
+  const current = map.get(name);
+  if (current === undefined) {
+    map.set(name, match);
+    return;
+  }
+  if (current === null) return;
+  if (current.key !== match.key || matrixSignature(current.matrix) !== matrixSignature(match.matrix)) {
+    map.set(name, null);
+  }
+}
 
 function buildJobKeyIndex(jobs: readonly WorkflowJob[]): JobKeyIndex {
   const first = jobs[0];
@@ -50,15 +74,13 @@ function buildJobKeyIndex(jobs: readonly WorkflowJob[]): JobKeyIndex {
     jobs.length === 1 && first !== undefined && first.matrix === null
       ? { key: first.key, level: "single-job" as const, matrix: null }
       : null;
-  const byKey = new Map<string, JobKeyMatch>();
-  const byName = new Map<string, JobKeyMatch>();
-  const byMatrixName = new Map<string, JobKeyMatch>();
+  const byKey = new Map<string, JobKeyMatch | null>();
+  const byName = new Map<string, JobKeyMatch | null>();
+  const byMatrixName = new Map<string, JobKeyMatch | null>();
   for (const job of jobs) {
-    const keyName = normalizeName(job.key);
-    if (!byKey.has(keyName)) byKey.set(keyName, { key: job.key, level: "key-equals-name", matrix: null });
+    remember(byKey, normalizeName(job.key), { key: job.key, level: "key-equals-name", matrix: null });
     if (job.displayName !== null) {
-      const literal = normalizeName(job.displayName);
-      if (!byName.has(literal)) byName.set(literal, { key: job.key, level: "name-literal", matrix: null });
+      remember(byName, normalizeName(job.displayName), { key: job.key, level: "name-literal", matrix: null });
     }
   }
   // Matrix names are lowest precedence, and jobs are indexed in YAML order.
@@ -72,17 +94,13 @@ function buildJobKeyIndex(jobs: readonly WorkflowJob[]): JobKeyIndex {
       for (const values of combinations) {
         const rendered = renderMatrixTemplate(job.displayName, values);
         if (rendered === null) continue;
-        if (!byMatrixName.has(rendered)) {
-          byMatrixName.set(rendered, { key: job.key, level: "matrix-expanded", matrix: values });
-        }
+        remember(byMatrixName, rendered, { key: job.key, level: "matrix-expanded", matrix: values });
       }
     }
     for (const values of combinations) {
       const rendered = defaultMatrixName(job.key, values);
       if (rendered === null) continue;
-      if (!byMatrixName.has(rendered)) {
-        byMatrixName.set(rendered, { key: job.key, level: "matrix-expanded", matrix: values });
-      }
+      remember(byMatrixName, rendered, { key: job.key, level: "matrix-expanded", matrix: values });
     }
   }
   return { singleJob, byKey, byName, byMatrixName };
@@ -104,5 +122,9 @@ export function recoverJobKey(displayName: string, jobs: readonly WorkflowJob[])
   }
   if (index.singleJob !== null) return index.singleJob;
   const name = normalizeName(displayName);
-  return index.byKey.get(name) ?? index.byName.get(name) ?? index.byMatrixName.get(name) ?? null;
+  const keyMatch = index.byKey.get(name);
+  if (keyMatch !== undefined) return keyMatch;
+  const nameMatch = index.byName.get(name);
+  if (nameMatch !== undefined) return nameMatch;
+  return index.byMatrixName.get(name) ?? null;
 }
