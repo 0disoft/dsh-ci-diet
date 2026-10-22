@@ -411,6 +411,49 @@ test("hands unused jobs quota to the definitions stage", async () => {
   assert.ok(result.budget.snapshot().families.definitions.borrowed > 0);
 });
 
+test("rejects before collecting anything when the caller already aborted", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  let calls = 0;
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    calls += 1;
+    return original(request, family);
+  };
+  const controller = new AbortController();
+  controller.abort(new Error("stop now"));
+  await assert.rejects(
+    syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport, signal: controller.signal }),
+    /stop now/,
+  );
+  assert.equal(calls, 0);
+});
+
+test("stops collecting when the caller aborts between runs", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  let calls = 0;
+  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+    calls += 1;
+    return original(request, family);
+  };
+  const controller = new AbortController();
+  await assert.rejects(
+    syncRepositoryHistory({
+      owner: "o",
+      repo: "r",
+      config: config(),
+      now: NOW,
+      transport,
+      signal: controller.signal,
+      onProgress: ({ runsProcessed }) => {
+        if (runsProcessed === 1) controller.abort(new Error("cancelled by caller"));
+      },
+    }),
+    /cancelled by caller/,
+  );
+  assert.equal(calls, 5); // repository, workflows, runs, jobs, contents; aborted before the pull request
+});
+
 test("propagates authentication failures instead of recording them", async () => {
   const transport = {
     async get(): Promise<GhResponse> {

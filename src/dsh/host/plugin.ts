@@ -209,7 +209,8 @@ export function apply(ctx: Context, config: Config) {
       render: (_args, value) =>
         text(t("dsh.sync.render", { repository: value.repository ?? "", findings: (value.findings ?? []).length, report: value.reportId ?? "" })),
     },
-    async execute(args, _exec) {
+    async execute(args, exec) {
+      exec.signal.throwIfAborted();
       if (!config.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet plugin config");
       const root = args.cwd ?? process.cwd();
       const discovery = discoverWorkflows(root, { maxBytes: DEFAULT_CONFIG.storage.workflowMaxBytes });
@@ -229,9 +230,11 @@ export function apply(ctx: Context, config: Config) {
       const days = args.days ?? DEFAULT_CONFIG.history.lookbackDays;
       if (!Number.isSafeInteger(days) || days < 1 || days > 90) throw new Error("days must be an integer between 1 and 90");
       const settings = { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: days } };
-      const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date() });
+      const synced = await syncRepositoryHistory({ owner, repo, config: settings, now: new Date(), signal: exec.signal });
+      exec.signal.throwIfAborted();
       const binding = createLocalBinding(root, new Date().toISOString(), { repositoryFullName: synced.history.repositoryFullName }).binding;
       const built = buildHistoryReport({ binding, workflows, history: synced.history, config: settings, generatedAt: new Date().toISOString() });
+      exec.signal.throwIfAborted();
       const store = PatchStore.open(stateDirOf(config), DEFAULT_CONFIG.storage);
       store.saveBinding(binding);
       store.saveReport(built.report);

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -102,6 +102,18 @@ test("ci_diet_sync refuses without networkEnabled", async () => {
     () => tools.get("ci_diet_sync")!.execute({ cwd: workspace() }, { signal: new AbortController().signal }),
     /networkEnabled/,
   );
+});
+
+test("ci_diet_sync refuses to run or save when the caller aborted", async () => {
+  const { tools, stateDir } = harness({ networkEnabled: true });
+  const controller = new AbortController();
+  controller.abort(new Error("caller gave up"));
+  await assert.rejects(
+    () => tools.get("ci_diet_sync")!.execute({ cwd: workspace(), repo: "o/r" }, { signal: controller.signal }),
+    /caller gave up/,
+  );
+  const historyDir = join(stateDir, "snapshots", "history");
+  assert.equal(existsSync(historyDir) ? readdirSync(historyDir).length : 0, 0);
 });
 
 test("reports truncated history from the history coverage dimension", () => {
