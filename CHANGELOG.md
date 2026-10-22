@@ -95,6 +95,17 @@ Keep a Changelog, and the project uses semantic versioning.
   hour; a longer pause fails fast and reports the rate limit instead of leaving
   the process asleep. The configured request timeout now also bounds the gh
   version probe.
+- History collection runs jobs, workflow-definition, and pull-request reads with
+  at most concurrentRequests gh requests in flight, and maxRequests now caps the
+  whole sync instead of only summing the family quotas. Results are merged in
+  repository order, so concurrency does not change the report.
+- The store keeps an in-process usage snapshot adjusted by its own writes and
+  rescans at most once per second, and latest-report lookups read an index pointer
+  with a full-scan fallback when the pointer is missing, corrupt, or dangling.
+- Rule evaluation indexes the pull-to-run, superseded-run, workflow-definition,
+  job, and matrix-name lookups it used to rescan, and dependency collection
+  resolves each run script once. Report order, finding order, and duplicate
+  semantics are unchanged.
 
 ### Fixed
 
