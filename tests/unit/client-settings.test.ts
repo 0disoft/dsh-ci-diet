@@ -7,6 +7,7 @@ import vm from "node:vm";
 import { RULE_CHOICES, SETTINGS_FIELDS, collectSettingsEdits } from "../../src/client/fields.ts";
 import { DICTIONARIES, NS } from "../../src/client/i18n.ts";
 import { CSS_TEXT, STYLE_ATTRIBUTE, installStyles } from "../../src/client/styles.ts";
+import { REVIEW_DICTIONARIES, REVIEW_NS } from "../../src/client/review-i18n.ts";
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
@@ -129,11 +130,11 @@ function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
   return { id: entry.id, plugin, sections, registrations, languages };
 }
 
-test("the client bundle registers one settings section for the package", () => {
+test("the client bundle registers settings and browser review sections", () => {
   const loaded = loadBundle();
   assert.equal(loaded.id, "dsh-ci-diet");
-  assert.deepEqual(Array.from(loaded.plugin.inject), ["slots", "locale", "configForms"]);
-  assert.equal(loaded.sections.length, 1);
+  assert.deepEqual(Array.from(loaded.plugin.inject), ["slots", "locale", "configForms", "connection", "sessions"]);
+  assert.equal(loaded.sections.length, 2);
   const options = loaded.sections[0]!.options;
   assert.equal(options.name, "settings.section");
   assert.equal(options.id, "ci-diet");
@@ -142,11 +143,91 @@ test("the client bundle registers one settings section for the package", () => {
   assert.equal((options.label as () => string)(), "CI Diet");
   const injected = (options.inject as () => { form: unknown })();
   assert.equal(typeof injected.form, "object");
-  assert.equal(loaded.registrations.length, 1);
+  assert.equal(loaded.registrations.length, 2);
   assert.equal(loaded.registrations[0]!.namespace, NS);
   assert.equal(typeof loaded.sections[0]!.component, "function");
+  assert.equal(loaded.sections[1]!.options.id, "ci-diet-reports");
+  assert.equal(loaded.registrations[1]!.namespace, REVIEW_NS);
   assert.deepEqual(loaded.languages.map((language) => language.id), ["ko", "hi", "es", "fr"]);
   assert.ok(loaded.languages.every((language) => language.fallback === "en"));
+});
+
+test("review dictionaries have the same complete nonempty key set", () => {
+  const keys = Object.keys(REVIEW_DICTIONARIES.en).sort();
+  for (const [locale, dictionary] of Object.entries(REVIEW_DICTIONARIES)) {
+    assert.deepEqual(Object.keys(dictionary).sort(), keys, locale);
+    assert.ok(Object.values(dictionary).every((text) => text.trim().length > 0));
+  }
+});
+
+function reviewHarness(call: (payload: Record<string, unknown>) => Promise<unknown>) {
+  const fake = fakeReact();
+  let effectIndex = 0;
+  const effects: { deps: readonly unknown[]; cleanup?: void | (() => void) }[] = [];
+  const pending: (() => void)[] = [];
+  fake.react.useRef = (initial: unknown) => (fake.react.useState as (value: unknown) => unknown[])({ current: initial })[0];
+  fake.react.useEffect = (run: () => void | (() => void), deps: readonly unknown[]) => {
+    const index = effectIndex++;
+    const previous = effects[index];
+    if (previous !== undefined && deps.every((dep, i) => dep === previous.deps[i])) return;
+    pending.push(() => { previous?.cleanup?.(); effects[index] = { deps, cleanup: run() }; });
+  };
+  const component = loadBundle(fake.react).sections[1]!.component;
+  let session = "session-one";
+  const ctx = { useSessionId: () => session, connection: { rpc: { call: async (_channel: string, endpoint: string, payload: Record<string, unknown>) => {
+    assert.equal(endpoint, "ciDiet/review"); return { ok: true, value: await call(payload) };
+  } } } };
+  return {
+    render() { effectIndex = 0; return renderPage(fake.react, component, { ctx }); },
+    async settle() { while (pending.length > 0) pending.shift()!(); await new Promise((resolve) => setImmediate(resolve)); },
+    session(next: string) { session = next; },
+  };
+}
+
+const REVIEW_PLAN = { id: "p_review", digest: "sha256:123456789abc", workflowPath: ".github/workflows/ci.yml", ruleId: "CD001",
+  state: "preview", expiresAt: "2099-01-01T00:00:00Z", sourceValid: true, blockers: [], diff: [{ kind: "added", text: "concurrency: ci" }] };
+
+test("review UI sends typed approval separately from apply and disables stale plans", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let stale = false;
+  const h = reviewHarness(async (payload) => {
+    calls.push(payload);
+    if (payload.action !== "load") return { state: "approved" };
+    return { root: "C:/workspace", bindingId: "b_one", localApplyEnabled: true, report: null,
+      plans: [{ ...REVIEW_PLAN, sourceValid: !stale, blockers: stale ? ["SOURCE_HASH_MISMATCH"] : [] }], changes: [] };
+  });
+  h.render(); await h.settle();
+  let tree = h.render();
+  const input = findElement(tree, (element) => element.type === "input")!;
+  assert.ok(input);
+  (input.props.onChange as (event: unknown) => void)({ target: { value: "123456789abc" } });
+  tree = h.render();
+  const approve = findElement(tree, (element) => element.type === "button" && element.props.children === REVIEW_DICTIONARIES.en["plan.approve"])!;
+  assert.ok(approve);
+  assert.equal(approve.props.disabled, false);
+  (approve.props.onClick as () => void)(); await h.settle();
+  assert.equal(calls.filter((call) => call.action === "approve").length, 1);
+  assert.equal(calls.some((call) => call.action === "apply"), false);
+  assert.equal(calls.find((call) => call.action === "approve")!.confirmation, "123456789abc");
+  stale = true;
+  const refresh = findElement(h.render(), (element) => element.type === "button" && element.props.children === REVIEW_DICTIONARIES.en["page.refresh"])!;
+  (refresh.props.onClick as () => void)(); await h.settle();
+  const staleApprove = findElement(h.render(), (element) => element.type === "button" && element.props.children === REVIEW_DICTIONARIES.en["plan.approve"])!;
+  assert.equal(staleApprove.props.disabled, true);
+});
+
+test("review discards an older session response when current chat changes", async () => {
+  let finish: (value: unknown) => void = () => {};
+  const h = reviewHarness(async (payload) => payload.sessionId === "session-one"
+    ? new Promise((resolve) => { finish = resolve; })
+    : { root: "new-workspace", bindingId: null, localApplyEnabled: false, report: null, plans: [], changes: [] });
+  h.render(); await h.settle();
+  h.session("session-two"); h.render(); await h.settle();
+  finish({ root: "old-workspace", bindingId: null, localApplyEnabled: false, report: null, plans: [], changes: [] });
+  await h.settle();
+  const rendered = JSON.stringify(h.render());
+  assert.ok(rendered.includes("new-workspace"));
+  assert.equal(rendered.includes("old-workspace"), false);
 });
 
 test("the action bar sits outside the scrolling page body", () => {

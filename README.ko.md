@@ -2,11 +2,11 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**상태:** 알파. `dsh-ci-diet@0.3.1`이 npm에 게시되어 있습니다. 계약, 분석·패치 엔진, CLI, DSH 도구, 설정 화면, 자체 완결형 HTML 보고서는 구현했습니다. 보고서·적용 화면은 아직 없습니다.
+**상태:** 알파. `dsh-ci-diet@0.3.1`이 npm에 게시되어 있습니다. 현재 소스 트리에는 기존 계약, 분석·패치 엔진, CLI, DSH 도구, 설정 화면, 자체 완결형 HTML 보고서와 함께 **설정 → CI Diet Reports** 검토 화면이 추가되어 있습니다. 이 화면의 실제 DSH E2E 검증은 아직 진행 중입니다. 로컬 workflow 쓰기는 기본으로 꺼져 있습니다.
 
 CI Diet는 낭비 가능성이 있는 GitHub Actions 작업을 찾고, 각 발견의 근거를 보존하며, 사람이 검토할 작은 workflow 수정을 미리 보여줍니다.
 
-**설치만으로는 러너 시간이 줄지 않습니다.** 지원하는 DSH 배포 명령은 실행 전에 절감 후보를 자동으로 점검합니다. workflow 변경은 검토와 승인을 거친 뒤에만 적용합니다. DSH 플러그인에는 승인·적용·되돌리기 도구가 없고, preflight 자체도 파일을 바꾸지 않습니다. 설정 화면은 도구 설정을 저장할 뿐 workflow를 최적화하지 않습니다. 어떤 발견도 비용 절감을 보장하지 않습니다.
+**설치만으로는 러너 시간이 줄지 않습니다.** 지원하는 DSH 배포 명령은 실행 전에 절감 후보를 자동으로 점검합니다. workflow 변경은 검토와 승인을 거친 뒤에만 적용합니다. DSH 플러그인에는 승인·적용·되돌리기 도구가 없고, preflight 자체도 파일을 바꾸지 않습니다. 설정 화면은 도구 설정을 저장하고 호스트의 세션별 보고서와 계획을 보여줄 뿐 workflow를 최적화하지 않습니다. 승인된 로컬 변경은 기본으로 꺼져 있습니다. 어떤 발견도 비용 절감을 보장하지 않습니다.
 
 `preflightEnabled`는 기본 `true`입니다. `workdir` 인자가 있는 지원 대상 stateless DSH bash tool에서 literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, `npm|pnpm|bun run deploy` 직전에 오프라인 점검을 합니다. npm CD006, PR 전용 workflow의 concurrency 누락, 명시적 다운로드 캐시 없는 Bun frozen install을 검토용으로 알립니다. 후보가 있으면 첫 명령은 실행하지 않고, 모델이 항목을 검토한 뒤 같은 명령을 다시 실행하면 허용합니다. 네트워크 접근이나 파일 자동 변경은 없고 plan 적용에는 여전히 사람의 승인이 필요합니다. persistent shell과 복잡한 shell wrapper는 판별하지 못해 건너뜁니다. 실제 절감량은 측정 전이므로 절감을 주장하지 않습니다.
 
@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-설치하면 플러그인 도구와 설정 화면이 등록됩니다. 네트워크 접근은 기본으로 꺼져 있고, DSH를 시작한다고 해서 스캔을 실행하거나 workflow를 수정하지 않습니다.
+설치하면 플러그인 도구, 설정 화면, **설정 → CI Diet Reports** 검토 화면이 등록됩니다. 네트워크 접근과 승인된 로컬 workflow 쓰기는 기본으로 꺼져 있고, DSH를 시작한다고 해서 스캔을 실행하거나 workflow를 수정하지 않습니다.
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -122,7 +122,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 CLI와 플러그인은 기본 상태 저장 경로를 공유합니다. Windows에서는 `%LOCALAPPDATA%\CI-Diet\profiles\default`, 그 밖에서는 `~/.local/state/ci-diet/profiles/default`입니다. 플러그인의 `stateDir`를 바꾸면 별도 저장소가 되므로 `plan`, `approve`, `apply`, `revert`마다 CLI에 같은 절대 경로를 `--state-dir`로 전달합니다. CLI의 상대 `--state-dir`는 적용된 `--cwd` 기준으로 해석됩니다. 기존 상태를 다른 디렉터리로 자동 이전하지 않습니다.
 
-Web 클라이언트에는 설정 화면만 있습니다. 보고서·승인·적용·되돌리기 화면은 없고, 승인이나 적용을 하는 플러그인 도구도 없습니다. plan은 기존 workflow 파일 하나를 바이트 범위로 수정하며 지원하지 않는 구조는 거부합니다. 이력이나 workflow 매칭이 일부만 수집되면 발견이 틀리거나 빠질 수 있고, 실제 청구 정보는 다른 시스템이 더 정확할 수 있습니다. 보고서를 검토 근거로 쓰고 GitHub에서 효과를 따로 확인합니다.
+Web 클라이언트에는 설정 화면과 **CI Diet Reports** 검토 화면이 있습니다. 보고서·승인·적용·되돌리기 UI는 구현했지만 실제 DSH E2E 검증은 아직 진행 중입니다. 승인과 적용은 이 화면에서 호스트로 요청하며 `localApplyEnabled`는 기본으로 꺼져 있습니다. 승인이나 적용을 하는 플러그인 도구는 없습니다. plan은 기존 workflow 파일 하나를 바이트 범위로 수정하며 지원하지 않는 구조는 거부합니다. 이력이나 workflow 매칭이 일부만 수집되면 발견이 틀리거나 빠질 수 있고, 실제 청구 정보는 다른 시스템이 더 정확할 수 있습니다. 보고서를 검토 근거로 쓰고 GitHub에서 효과를 따로 확인합니다.
 
 ## 비용과 근거
 
@@ -169,7 +169,7 @@ git push origin vVERSION
 ```
 src/core        workflow parsing, rules, savings, patch engine
 src/adapters    GitHub, git, storage
-src/client      Web Settings UI
+src/client      Web Settings and review UI
 src/dsh         host plugin and bundle code
 src/cli         command-line entry
 src/shared      i18n and shared helpers

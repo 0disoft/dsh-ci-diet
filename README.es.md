@@ -2,11 +2,11 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**Estado:** alfa; `dsh-ci-diet@0.3.1` está en npm. Ya están implementados los contratos, los motores de análisis y parches, la CLI, las herramientas DSH, la página de ajustes y el informe HTML autocontenido. Las pantallas de informe y aplicación aún no existen.
+**Estado:** alfa; `dsh-ci-diet@0.3.1` está en npm. El código fuente actual añade la pantalla de revisión **Ajustes → CI Diet Reports** a los contratos, los motores de análisis y parches, la CLI, las herramientas DSH, la página de ajustes y el informe HTML autocontenido. La verificación E2E en un DSH real sigue pendiente. Las escrituras locales de workflow están desactivadas por defecto.
 
 CI Diet detecta trabajo de GitHub Actions que probablemente se desperdicia, conserva la evidencia de cada hallazgo y muestra una vista previa de pequeños cambios en los workflows para que una persona los revise.
 
-**La instalación por sí sola no ahorra minutos de runner.** Los comandos de despliegue DSH admitidos comprueban automáticamente si hay candidatos de ahorro antes de ejecutarse; los cambios de workflow solo se aplican tras revisión y aprobación. El plugin de DSH no tiene herramientas de aprobación, aplicación ni reversión, y preflight nunca modifica archivos. Su página de ajustes guarda la configuración de las herramientas; no optimiza un workflow. No hay garantía de que un hallazgo reduzca el coste.
+**La instalación por sí sola no ahorra minutos de runner.** Los comandos de despliegue DSH admitidos comprueban automáticamente si hay candidatos de ahorro antes de ejecutarse; los cambios de workflow solo se aplican tras revisión y aprobación. El plugin de DSH no tiene herramientas de aprobación, aplicación ni reversión, y preflight nunca modifica archivos. Sus páginas de ajustes guardan la configuración y muestran los informes y planes de sesión del host; no optimizan un workflow. Las escrituras locales aprobadas están desactivadas por defecto. No hay garantía de que un hallazgo reduzca el coste.
 
 `preflightEnabled` está activado por defecto. Antes de un literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy` o `npm|pnpm|bun run deploy` en una herramienta bash DSH sin estado admitida (con argumento `workdir`), CI Diet hace una comprobación sin conexión. Señala para revisión los candidatos npm CD006, la falta de concurrency en un workflow solo de PR y una instalación Bun frozen sin caché de descargas explícita. Si hay candidatos, el primer comando no se ejecuta; tras revisar los elementos, el modelo puede reintentar el mismo comando. No hay acceso a la red ni cambios automáticos de archivos, y aplicar un plan sigue necesitando aprobación humana. Las shells persistentes y los wrappers de shell complejos no se identifican de forma fiable, así que preflight los omite. El ahorro sigue sin medirse, así que no se afirma ningún ahorro.
 
@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-La instalación registra las herramientas del plugin y la página de ajustes. El acceso a la red está desactivado por defecto, y arrancar DSH no ejecuta un scan ni modifica un workflow.
+La instalación registra las herramientas del plugin, la página de ajustes y la pantalla de revisión **Ajustes → CI Diet Reports**. El acceso a la red y las escrituras locales de workflow aprobadas están desactivados por defecto, y arrancar DSH no ejecuta un scan ni modifica un workflow.
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -122,7 +122,7 @@ Para una CI apta que solo se ejecuta en PRs, el ejemplo de CD001 usa `ci-only` y
 
 La CLI y el plugin comparten el directorio de estado predeterminado: `%LOCALAPPDATA%\CI-Diet\profiles\default` en Windows y, en otros sistemas, `~/.local/state/ci-diet/profiles/default`. Una anulación de `stateDir` en el plugin es un almacén aparte; pasa la misma ruta absoluta a la CLI con `--state-dir` en `plan`, `approve`, `apply` y `revert`. Las rutas relativas de `--state-dir` de la CLI se resuelven contra el `--cwd` efectivo. El estado existente nunca se migra automáticamente entre directorios.
 
-El cliente web solo tiene Ajustes. No hay pantallas de informe, aprobación, aplicación ni reversión, y ninguna herramienta del plugin realiza aprobaciones ni aplicaciones. Un plan edita un único workflow existente mediante rangos de bytes y rechaza estructuras no admitidas. Los hallazgos pueden ser incorrectos o incompletos cuando el historial o la atribución de workflows es parcial, y otro sistema puede tener datos de facturación más precisos. Usa el informe como evidencia para la revisión y luego verifica el efecto en GitHub.
+El cliente web tiene Ajustes y la pantalla de revisión **CI Diet Reports**. Los controles de informe, aprobación, aplicación y reversión están implementados, pero la verificación E2E en un DSH real sigue pendiente. La aprobación y la aplicación llegan al host desde esa pantalla, y `localApplyEnabled` está desactivado por defecto. Ninguna herramienta del plugin realiza aprobaciones ni aplicaciones. Un plan edita un único workflow existente mediante rangos de bytes y rechaza estructuras no admitidas. Los hallazgos pueden ser incorrectos o incompletos cuando el historial o la atribución de workflows es parcial, y otro sistema puede tener datos de facturación más precisos. Usa el informe como evidencia para la revisión y luego verifica el efecto en GitHub.
 
 ## Coste y evidencia
 
@@ -169,7 +169,7 @@ El workflow compara la etiqueta con `package.json`, ejecuta las comprobaciones d
 ```
 src/core        workflow parsing, rules, savings, patch engine
 src/adapters    GitHub, git, storage
-src/client      Web Settings UI
+src/client      Web Settings and review UI
 src/dsh         host plugin and bundle code
 src/cli         command-line entry
 src/shared      i18n and shared helpers

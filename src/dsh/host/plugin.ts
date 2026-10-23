@@ -30,7 +30,7 @@ import { createTranslator } from "../../shared/i18n/index.ts";
 import { registerPreflight } from "./preflight.ts";
 import { registerReview } from "./review.ts";
 export const name = "ci-diet";
-export const inject = { required: ["tools"], optional: ["workingDirectory"] };
+export const inject = ["tools"];
 
 /**
  * Live settings. Every engine-facing value is volatile: the Settings page and

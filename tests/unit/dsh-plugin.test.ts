@@ -5,7 +5,7 @@ import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Config, apply, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
+import { Config, apply, inject, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { defaultPluginSettings, engineSettingsOf } from "../../src/core/config/plugin-settings.ts";
 import type { PluginSettingsValues } from "../../src/core/config/plugin-settings.ts";
@@ -110,6 +110,7 @@ test("ci_diet_prune applies the configured retention limits", async () => {
 });
 
 test("exposes every engine-facing setting as live", () => {
+  assert.deepEqual(inject, ["tools"], "Cordis dependency metadata names actual services");
   const fields = (Config as unknown as { dict: Record<string, { meta?: { volatile?: boolean } }> }).dict;
   for (const key of Object.keys(defaultPluginSettings())) {
     assert.equal(fields[key]?.meta?.volatile, true, key + " must be volatile");

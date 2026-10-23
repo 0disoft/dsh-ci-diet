@@ -3,6 +3,8 @@ import { RULE_CHOICES, SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } 
 import type { SettingsDraftValue } from "./fields.ts";
 import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 import { installStyles } from "./styles.ts";
+import { ReviewPage } from "./review.ts";
+import { REVIEW_DICTIONARIES, REVIEW_NS } from "./review-i18n.ts";
 
 const FORM_NAMESPACE = "ciDiet.bootstrap";
 
@@ -286,6 +288,8 @@ interface ClientContext {
     addLanguage?(language: { id: string; label: string; fallback: string }): () => void;
   } | undefined;
   readonly configForms: { get(namespace: string): ConfigForm };
+  readonly connection: { readonly rpc: { call(channel: string, endpoint: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }> } };
+  readonly sessions: { readonly list: { getSnapshot(): { current: string | undefined }; subscribe(listener: () => void): () => void } };
   effect?(run: () => unknown): unknown;
 }
 
@@ -299,7 +303,7 @@ function registerLanguages(locale: ClientContext["locale"]): void {
 }
 
 const plugin = {
-  inject: ["slots", "locale", "configForms"],
+  inject: ["slots", "locale", "configForms", "connection", "sessions"],
   apply(ctx: ClientContext): void {
     const t = ctx.locale === undefined ? translateWith(EN) : ctx.locale.bind(NS);
     if (ctx.locale !== undefined && ctx.effect !== undefined) {
@@ -309,6 +313,11 @@ const plugin = {
       });
     }
     registerLanguages(ctx.locale);
+    if (ctx.locale !== undefined) {
+      const registerReviewLocale = () => ctx.locale!.register(REVIEW_NS, REVIEW_DICTIONARIES);
+      if (ctx.effect !== undefined) ctx.effect(registerReviewLocale);
+      else registerReviewLocale();
+    }
     if (ctx.effect !== undefined) ctx.effect(() => installStyles());
     else installStyles();
     const register = () => ctx.slots.inject("settings.section", () => ctx.slots.register({
@@ -321,6 +330,21 @@ const plugin = {
     }, SettingsPage));
     if (ctx.effect !== undefined) ctx.effect(register);
     else register();
+    const reviewContext = {
+      connection: ctx.connection,
+      locale: ctx.locale,
+      useSessionId: () => React.useSyncExternalStore(
+        (listener) => ctx.sessions.list.subscribe(listener),
+        () => ctx.sessions.list.getSnapshot().current,
+      ),
+    };
+    const registerReview = () => ctx.slots.inject("settings.section", () => ctx.slots.register({
+      name: "settings.section", id: "ci-diet-reports", order: 92,
+      label: () => ctx.locale?.bind(REVIEW_NS)("nav") ?? "CI Diet Reports",
+      locale: REVIEW_NS, inject: () => ({ ctx: reviewContext }),
+    }, ReviewPage));
+    if (ctx.effect !== undefined) ctx.effect(registerReview);
+    else registerReview();
   },
 };
 

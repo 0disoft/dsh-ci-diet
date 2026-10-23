@@ -2,11 +2,11 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**Status:** alpha; `dsh-ci-diet@0.3.1` is on npm. The contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report are implemented. Report and apply screens are not.
+**Status:** alpha; `dsh-ci-diet@0.3.1` is on npm. The current source tree adds the **Settings → CI Diet Reports** review screen to the existing contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report. Live DSH E2E verification of that screen is still pending. Local workflow writes are off by default.
 
 CI Diet finds GitHub Actions work that is likely wasted, preserves the evidence behind each finding, and previews small workflow edits for a human to review.
 
-**Installation alone does not save runner minutes.** Supported DSH deploy commands are checked automatically for savings candidates before running; workflow changes are applied only after review and approval. The DSH plugin has no approval, apply, or revert tools, and preflight itself never changes files. Its Settings page stores tool configuration; it does not optimize a workflow. There is no guarantee that any finding will reduce cost.
+**Installation alone does not save runner minutes.** Supported DSH deploy commands are checked automatically for savings candidates before running; workflow changes are applied only after review and approval. The DSH plugin has no approval, apply, or revert tools, and preflight itself never changes files. Its Settings pages store tool configuration and show the host's session-scoped reports and plans; they do not optimize a workflow. Approved local writes are off by default. There is no guarantee that any finding will reduce cost.
 
 `preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. There is no network access or automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-Installing registers the plugin tools and the Settings page. Network access is off by default, and starting DSH does not run a scan or modify a workflow.
+Installing registers the plugin tools, the Settings page, and the **Settings → CI Diet Reports** review screen. Network access and approved local workflow writes are off by default, and starting DSH does not run a scan or modify a workflow.
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -122,7 +122,7 @@ For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as 
 
 The CLI and plugin share the default state directory: `%LOCALAPPDATA%\CI-Diet\profiles\default` on Windows, otherwise `~/.local/state/ci-diet/profiles/default`. A plugin `stateDir` override is a separate store; pass the same absolute path to the CLI with `--state-dir` on `plan`, `approve`, `apply`, and `revert`. Relative CLI `--state-dir` paths resolve against the effective `--cwd`. Existing state is never migrated automatically between directories.
 
-The Web client has only Settings. There is no report, approve, apply, or revert screen, and no plugin tool performs approval or application. A plan edits one existing workflow file at byte ranges and refuses unsupported structures. Findings can be wrong or incomplete when history or workflow attribution is partial, and another system may have more accurate billing data. Use the report as review evidence, then verify the effect in GitHub.
+The Web client has Settings and the **CI Diet Reports** review screen. Report, approve, apply, and revert controls are implemented; live DSH E2E verification is still pending. Approval and apply reach the host from that screen, and `localApplyEnabled` is off by default. No plugin tool performs approval or application. A plan edits one existing workflow file at byte ranges and refuses unsupported structures. Findings can be wrong or incomplete when history or workflow attribution is partial, and another system may have more accurate billing data. Use the report as review evidence, then verify the effect in GitHub.
 
 ## Cost and evidence
 
@@ -169,7 +169,7 @@ The workflow compares the tag with `package.json`, runs the release checks, refu
 ```
 src/core        workflow parsing, rules, savings, patch engine
 src/adapters    GitHub, git, storage
-src/client      Web Settings UI
+src/client      Web Settings and review UI
 src/dsh         host plugin and bundle code
 src/cli         command-line entry
 src/shared      i18n and shared helpers

@@ -272,3 +272,43 @@ new record, not an edit to the rationale.
 - Rationale: tools that are only called on request are easy to miss during a
   coding-and-deployment session. A bounded reminder exposes an opportunity at
   the decision point without making an optimization mandatory.
+
+## ADR-23: Report review uses public session and connection RPC channels
+
+- Scope: how report, plan, approval, apply, and revert state reaches a DSH Web
+  page, and where human intent is checked.
+- Decision: add the **Settings → CI Diet Reports** section. It reads the current
+  DSH session from the observable `ctx.sessions.list` and calls the public
+  `ctx.connection.rpc.call("/api", "ciDiet/review", payload)` channel with
+  `load`, `approve`, `apply`, or `revert`. The connection's `browserPeer` owner
+  check is the authorization boundary. The page uses no private Typert
+  descriptor. This supersedes ADR-16's deferral for these report and review
+  screens; its static HTML report remains supported.
+- A load returns the workspace root, binding, `localApplyEnabled`, the latest
+  report, plans with diffs and blockers, and applied changes. Results are for
+  the current session. A session switch clears visible state, and a generation
+  guard discards responses from requests started under an earlier session.
+- Approval is a separate human action: the person types the final 12 characters
+  of a plan digest. The plan card also shows evidence completeness, source
+  validity, blockers, expiry, and diff. Apply is available only for an approved,
+  unexpired plan with valid source, no blockers, and `localApplyEnabled` on;
+  the host still rechecks all of those conditions. The model tools do not gain
+  approve, apply, or revert actions.
+- Revert requires typing the exact applied change ID before the explicit revert
+  action. The host rechecks the backup and current bytes. Existing approval TTL,
+  one-use nonce, policy freshness, dependency hashes, source hashes, backup, and
+  lock gates remain authoritative for both writes.
+- `localApplyEnabled` is a Connection switch on the existing CI Diet settings
+  page and defaults to false. The review page remains read-only when it is off
+  and explains how to enable local apply in settings.
+- Rationale: the public session observable and connection RPC expose host data
+  without a private remote contract, while keeping every write decision on the
+  host. Splitting approval from apply gives a person a review point after a
+  digest challenge instead of treating a button click as authorization for a
+  later file write.
+- Consequence: a report-screen change uses the same session-scoped review RPC,
+  six complete client dictionaries, and host response state; old ADRs 15, 16,
+  and 21 are not rewritten. A failed or refused host result stays visible to the
+  user and the page reloads state after the request.
+- Reversal: removing the section registration and client export removes this
+  UI without changing contracts, stored reports, plans, or CLI behavior.

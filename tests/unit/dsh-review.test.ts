@@ -103,7 +103,7 @@ test("review keeps approval TTL enforcement in the existing apply engine", async
   await f.call("approve", { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) });
   const nonce = f.store.readNonce(f.plan.planId)!;
   f.store.saveNonce(f.plan.planId, { ...nonce, createdAt: new Date(Date.now() - 601_000).toISOString() });
-  const result = await f.call("apply", { id: f.plan.planId }) as { state: string; reasons: string[] };
+  const result = await f.call("apply", { id: f.plan.planId }) as { state: string; reasons: readonly string[] };
   assert.equal(result.state, "not_applied");
   assert.ok(result.reasons.includes("NONCE_INVALID"));
   assert.equal(readFileSync(f.file, "utf8"), SOURCE);

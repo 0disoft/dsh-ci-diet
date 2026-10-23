@@ -5,10 +5,12 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in 0.3.1. The CLI, the DSH model tools, and the DSH Web
-Settings screen are available; the report and apply screens are still open. The
-machine-readable contracts in `contracts/` are the authority where prose and
-schema disagree.
+Status: implemented in the current source tree. The CLI, the DSH model tools, the
+DSH Web Settings screen, and the **Settings → CI Diet Reports** review screen are
+available. The published 0.3.1 package predates the review screen. Live DSH E2E
+verification of the review screen is still pending, and local workflow writes are
+off by default. The machine-readable contracts in `contracts/` are the authority
+where prose and schema disagree.
 
 Development additions (not yet published): offline CD006 npm cache plans and
 a configurable, read-only deployment preflight in the DSH stateless bash tool.
@@ -23,10 +25,10 @@ a configurable, read-only deployment preflight in the DSH stateless bash tool.
   (timeout-minutes), CD006 (npm download cache), CD008 (retention-days). CD002, CD003, and CD004 are
   explanation-only in v0.1.
 - One plan edits one existing `.github/workflows/*.yml` or `*.yaml` file. The
-  patch is applied to the working tree by the local CLI after an explicit human
-  approval; the Web client's Settings screen does not apply changes, and report
-  and apply screens are not implemented yet. CI Diet never commits, pushes,
-  opens a PR, or merges.
+  patch is applied to the working tree by the local CLI or the session-scoped
+  review screen after an explicit human approval; approved local writes are off
+  by default, and the host rechecks the digest, source, evidence, and backup.
+  CI Diet never commits, pushes, opens a PR, or merges.
 - All durable state is local. Nothing is uploaded, and there is no telemetry.
 - UI languages: English (default), Korean, Simplified Chinese, Hindi, Spanish,
   and French. Each dictionary is complete; English is the source of truth.

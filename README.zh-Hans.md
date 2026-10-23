@@ -2,11 +2,11 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**状态：** alpha；`dsh-ci-diet@0.3.1` 已发布到 npm。契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告已经实现。报告页面和 apply 页面尚未实现。
+**状态：** alpha；`dsh-ci-diet@0.3.1` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。该页面的实际 DSH E2E 验证仍在进行中。本地 workflow 写入默认关闭。
 
 CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发现背后的证据，并预览供人审查的小型 workflow 修改。
 
-**只安装本工具不会节省 runner 分钟。** 支持的 DSH 部署命令会在运行前自动检查节省候选项；workflow 修改只有在审查和批准后才会应用。DSH 插件没有批准、apply 或 revert 工具，preflight 本身不会修改文件。设置页面只保存工具配置，不会自行优化 workflow。任何发现都不能保证降低成本。
+**只安装本工具不会节省 runner 分钟。** 支持的 DSH 部署命令会在运行前自动检查节省候选项；workflow 修改只有在审查和批准后才会应用。DSH 插件没有批准、apply 或 revert 工具，preflight 本身不会修改文件。设置页面保存工具配置并显示主机提供的会话级报告和计划，不会自行优化 workflow。已批准的本地写入默认关闭。任何发现都不能保证降低成本。
 
 `preflightEnabled` 默认为开启。在带 `workdir` 参数的受支持 stateless DSH bash tool 中，literal `git push`、`npm|pnpm|bun publish`、`wrangler deploy` 或 `npm|pnpm|bun run deploy` 执行前会做一次离线检查。它会把 npm CD006、仅 PR workflow 缺少 concurrency、以及未显式设置下载缓存的 Bun frozen install 作为候选项提示审查。存在候选项时，第一次命令不会执行；模型审查这些项目后重试同一命令即可放行。不会联网，也不会自动修改文件；应用 plan 仍需要人工批准。持久 shell 和复杂 shell wrapper 无法可靠识别，preflight 会跳过。节省量尚未测量，因此不声称节省。
 
@@ -42,7 +42,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-安装后会注册插件工具和设置页面。网络访问默认关闭，启动 DSH 不会执行扫描或修改 workflow。
+安装后会注册插件工具、设置页面和 **设置 → CI Diet Reports** 审查页面。网络访问和已批准的本地 workflow 写入默认关闭，启动 DSH 不会执行扫描或修改 workflow。
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -122,7 +122,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 CLI 和插件共享默认状态目录：Windows 上为 `%LOCALAPPDATA%\CI-Diet\profiles\default`，其他平台为 `~/.local/state/ci-diet/profiles/default`。插件里的 `stateDir` 覆盖会形成独立存储；在 CLI 的 `plan`、`approve`、`apply`、`revert` 中都要用 `--state-dir` 传入同一个绝对路径。CLI 的相对 `--state-dir` 从实际生效的 `--cwd` 解析。现有状态不会在不同目录间自动迁移。
 
-Web 客户端只有设置页面。没有报告、批准、apply 或 revert 页面，也没有执行批准或应用的插件工具。plan 会对一个现有 workflow 文件做字节范围编辑，不支持的结构会被拒绝。历史或 workflow 归属信息不完整时，发现可能有误或缺失，其他系统可能拥有更准确的账单数据。请把报告作为审查证据，并在 GitHub 中单独确认效果。
+Web 客户端有设置页面和 **CI Diet Reports** 审查页面。报告、批准、apply 和 revert 控件已经实现，但实际 DSH E2E 验证仍在进行中。批准和应用会从该页面发送给主机，`localApplyEnabled` 默认关闭。插件工具不执行批准或应用。plan 会对一个现有 workflow 文件做字节范围编辑，不支持的结构会被拒绝。历史或 workflow 归属信息不完整时，发现可能有误或缺失，其他系统可能拥有更准确的账单数据。请把报告作为审查证据，并在 GitHub 中单独确认效果。
 
 ## 成本与证据
 
@@ -169,7 +169,7 @@ git push origin vVERSION
 ```
 src/core        workflow parsing, rules, savings, patch engine
 src/adapters    GitHub, git, storage
-src/client      Web Settings UI
+src/client      Web Settings and review UI
 src/dsh         host plugin and bundle code
 src/cli         command-line entry
 src/shared      i18n and shared helpers

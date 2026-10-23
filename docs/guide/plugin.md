@@ -43,13 +43,51 @@ The Settings page edits the engine configuration read by DSH tools. Every engine
 
 | Group | Fields |
 | --- | --- |
-| Connection | `networkEnabled`, `stateDir`, `preflightEnabled` |
+| Connection | `networkEnabled`, `stateDir`, `preflightEnabled`, `localApplyEnabled` |
 | Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD006`, `CD008`); at least one remains enabled |
 | History collection | `historyLookbackDays`, `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests`, `historyRequestTimeoutMs` |
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
 
 Network access defaults to false. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan.
+
+`localApplyEnabled` is a separate Connection switch and defaults to off. It
+gates plan approval and the review page's local apply button. Turning it on does
+not approve a plan or bypass source, policy, digest, or backup checks.
+
+## Reports and approval
+
+**Settings → CI Diet Reports** shows the latest stored report and the plans and
+applied changes for the current DSH session. Start with `ci_diet_scan` (static)
+or `ci_diet_sync` (Actions history), then run `ci_diet_plan` when you want a
+change plan. Use **Refresh** after running those tools. Opening the page does
+not run a scan, make a plan, or modify a workflow.
+
+The report view lists findings and incomplete coverage dimensions. Every metric
+shows its status, basis, and reason; an unknown or inapplicable value is not
+rendered as a saving. Plan cards show the rule, workflow, state, expiry,
+blockers, source validity, and diff. A changed or deleted source makes the plan
+unusable in the page, and the host checks the files again before writing.
+
+Approve and apply are separate actions. To approve, type the final 12 characters
+of that plan's digest. **Apply locally** is available only when the plan is
+approved, its source is valid, it has no blockers, has not expired, and
+`localApplyEnabled` is on. Neither action is automatic. Apply does not commit,
+push, deploy, run a workflow, or change repository settings.
+
+Applied changes appear with their change ID. Reverting requires typing that ID
+exactly before the explicit revert action. The host rechecks the saved backup
+and current bytes. After every load, approval, apply, or revert request, the
+page reloads host state. A session change clears the visible result and ignores
+an older in-flight response.
+
+The page uses the public `ctx.connection.rpc.call("/api", "ciDiet/review", ...)`
+channel and `ctx.sessions.list`; it does not use a private Typert remote shape.
+The host owns session identity and accepts only `load`, `approve`, `apply`, and
+`revert`. Approval TTLs, one-use approvals, policy freshness, dependency and
+source hashes, backups, and locks are still enforced on the host. Reports and
+plans remain session-scoped, and the model tools still have no approve, apply,
+or revert action.
 
 ## Model tools
 
