@@ -2,13 +2,15 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**状态：** alpha；`dsh-ci-diet@0.3.1` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。该页面的实际 DSH E2E 验证仍在进行中。本地 workflow 写入默认关闭。
+**状态：** alpha；`dsh-ci-diet@0.3.1` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
+
+**DSH 默认值与迁移。** 新建 DSH profile 时，`preflightEnabled`、`networkEnabled` 和 `localApplyEnabled` 默认为 `true`，并启用 CD001、CD002、CD004、CD006、CD008。首次启动已有 profile 时，CI Diet 通过 DSH `configEditor` 的加锁编辑保存这三个开关，把这些规则加入现有选择，并在该 profile 中记录 `defaultsRevision: 1`。状态路径、保留期、配额、计费输入以及原先显式启用的 CD003 或 CD005 会保留。保存后关闭的开关或被排除的规则会在重启和更新后继续生效；CD003 和 CD005 只在启用时运行，计费估算默认关闭且需要显式启用，原有的开启设置会保留。
 
 CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发现背后的证据，并预览供人审查的小型 workflow 修改。
 
-**只安装本工具不会节省 runner 分钟。** 支持的 DSH 部署命令会在运行前自动检查节省候选项；workflow 修改只有在审查和批准后才会应用。DSH 插件没有批准、apply 或 revert 工具，preflight 本身不会修改文件。设置页面保存工具配置并显示主机提供的会话级报告和计划，不会自行优化 workflow。已批准的本地写入默认关闭。任何发现都不能保证降低成本。
+**只安装本工具不会节省 runner 分钟。** 支持的 DSH 部署命令会在运行前自动检查节省候选项；workflow 修改只有在审查和批准后才会应用。DSH 插件没有批准、apply 或 revert 工具，preflight 本身不会修改文件。设置页面保存工具配置并显示主机提供的会话级报告和计划，不会自行优化 workflow。已批准的本地写入默认开启，但应用仍需单独的 digest 批准。任何发现都不能保证降低成本。
 
-`preflightEnabled` 默认为开启。在带 `workdir` 参数的受支持 stateless DSH bash tool 中，literal `git push`、`npm|pnpm|bun publish`、`wrangler deploy` 或 `npm|pnpm|bun run deploy` 执行前会做一次离线检查。它会把 npm CD006、仅 PR workflow 缺少 concurrency、以及未显式设置下载缓存的 Bun frozen install 作为候选项提示审查。存在候选项时，第一次命令不会执行；模型审查这些项目后重试同一命令即可放行。不会联网，也不会自动修改文件；应用 plan 仍需要人工批准。持久 shell 和复杂 shell wrapper 无法可靠识别，preflight 会跳过。节省量尚未测量，因此不声称节省。
+`preflightEnabled` 默认为开启。在带 `workdir` 参数的受支持 stateless DSH bash tool 中，literal `git push`、`npm|pnpm|bun publish`、`wrangler deploy` 或 `npm|pnpm|bun run deploy` 执行前会做一次离线检查。它会把 npm CD006、仅 PR workflow 缺少 concurrency、以及未显式设置下载缓存的 Bun frozen install 作为候选项提示审查。存在候选项时，第一次命令不会执行；模型审查这些项目后重试同一命令即可放行。preflight 本身不会联网，也不会自动修改文件；应用 plan 仍需要人工批准。持久 shell 和复杂 shell wrapper 无法可靠识别，preflight 会跳过。节省量尚未测量，因此不声称节省。
 
 ## 功能
 
@@ -42,7 +44,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-安装后会注册插件工具、设置页面和 **设置 → CI Diet Reports** 审查页面。网络访问和已批准的本地 workflow 写入默认关闭，启动 DSH 不会执行扫描或修改 workflow。
+安装后会注册插件工具、设置页面和 **设置 → CI Diet Reports** 审查页面。插件的 preflight、网络访问和本地应用默认开启。安装和启动不会调用 `gh`、收集历史、执行扫描或修改 workflow。
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -65,11 +67,11 @@ ci-diet report --cwd . --format html --out report.html
 
 `scan` 在没有网络的情况下输出静态报告；`--json` 或 `--out FILE` 可以写出该输出，但 CLI scan 不会把报告保存到状态存储。`report` 需要 CLI `sync`、插件 `ci_diet_scan` 或插件 `ci_diet_sync` 已保存的报告。在下面的纯 CLI 流程中，sync 会保存报告，随后 HTML 选项生成一个自包含文件。历史同步要求安装并认证 `gh`，且 `gh` 能读取该仓库的 Actions 运行和 job。`sync --network` 是 CLI 的网络启用方式，不需要 GitHub 写权限。历史不完整时仍会生成并保存报告，并标出覆盖不完整的维度。插件的离线 `ci_diet_scan` 会保存报告，因此可以直接在其后运行 `ci_diet_report`。
 
-对于 DSH 插件，网络访问默认关闭。打开 **设置 → CI Diet**，启用 **允许网络访问**，然后选择 **保存更改**。该页面设置只作用于插件工具，不会开启 CLI 的 `--network` 参数。静态扫描和报告无需网络。启用后，`ci_diet_sync` 使用同一个已认证且具有读取权限的 `gh`。设置页面本身不会执行优化。
+DSH 插件的网络访问默认开启，因此只要 `gh` 已安装并认证，就可以运行 `ci_diet_sync`。该开关只允许这个工具调用 `gh`；安装、启动和保存设置本身不会收集历史。要阻止插件联网，请在 **设置 → CI Diet** 中关闭 **允许网络访问**，然后选择 **保存更改**。该页面设置只作用于插件工具，不会开启 CLI 的 `--network` 参数。静态扫描和报告无需网络。设置页面本身不会执行优化。
 
 清晰的聊天请求应写明执行顺序和审查边界。请把示例绝对路径换成自己的仓库路径：
 
-> 以 cwd `C:\work\my-repo` 运行 `ci_diet_scan`。等我在设置 → CI Diet 中启用网络访问后，使用同一个 cwd 运行 `ci_diet_sync`，再运行 `ci_diet_report`。如果用 `ci_diet_plan` 预览补丁，只显示编辑内容。不要批准、apply、revert、提交、推送或部署任何内容。
+> 以 cwd `C:\work\my-repo` 运行 `ci_diet_scan`，再用同一个 cwd 运行 `ci_diet_sync` 和 `ci_diet_report`。如果 `gh` 未认证或我关闭了网络访问，就在扫描后停止。如果用 `ci_diet_plan` 预览补丁，只显示编辑内容。不要批准、apply、revert、提交、推送或部署任何内容。
 
 插件预览不会保存 plan。响应中的 `nextCommand` 会通过 CLI 重新创建 plan，使其持久保存并进入人工批准流程。
 
@@ -122,7 +124,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 CLI 和插件共享默认状态目录：Windows 上为 `%LOCALAPPDATA%\CI-Diet\profiles\default`，其他平台为 `~/.local/state/ci-diet/profiles/default`。插件里的 `stateDir` 覆盖会形成独立存储；在 CLI 的 `plan`、`approve`、`apply`、`revert` 中都要用 `--state-dir` 传入同一个绝对路径。CLI 的相对 `--state-dir` 从实际生效的 `--cwd` 解析。现有状态不会在不同目录间自动迁移。
 
-Web 客户端有设置页面和 **CI Diet Reports** 审查页面。报告、批准、apply 和 revert 控件已经实现，但实际 DSH E2E 验证仍在进行中。批准和应用会从该页面发送给主机，`localApplyEnabled` 默认关闭。插件工具不执行批准或应用。plan 会对一个现有 workflow 文件做字节范围编辑，不支持的结构会被拒绝。历史或 workflow 归属信息不完整时，发现可能有误或缺失，其他系统可能拥有更准确的账单数据。请把报告作为审查证据，并在 GitHub 中单独确认效果。
+Web 客户端有设置页面和 **CI Diet Reports** 审查页面。报告、批准、apply 和 revert 控件已在之前的提交中通过真实浏览器 E2E。默认值迁移则在 DSH `0.2.1-rc.2` 运行时中，使用 configEditor、SettingsForms、Loader 和临时 profile 单独验证：legacy `false` 会保存为 `true`，之后显式保存的 `false` 在重启后仍保持关闭。这不是新的浏览器渲染验证。批准和应用会从该页面发送给主机，`localApplyEnabled` 默认开启。插件工具不执行批准或应用。plan 会对一个现有 workflow 文件做字节范围编辑，不支持的结构会被拒绝。历史或 workflow 归属信息不完整时，发现可能有误或缺失，其他系统可能拥有更准确的账单数据。请把报告作为审查证据，并在 GitHub 中单独确认效果。
 
 ## 成本与证据
 

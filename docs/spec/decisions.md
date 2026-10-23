@@ -312,3 +312,50 @@ new record, not an edit to the rationale.
   user and the page reloads state after the request.
 - Reversal: removing the section registration and client export removes this
   UI without changing contracts, stored reports, plans, or CLI behavior.
+
+## ADR-24: DSH defaults are opt-out and migrate once per profile
+
+- Scope: the DSH plugin's first-use switches, default rules, and the upgrade of
+  settings saved by older plugin versions. This supersedes the `false`
+  `networkEnabled` and `localApplyEnabled` defaults stated in ADR-15 and ADR-23.
+  ADR-13's rule-default reasoning remains historical; CD003 and CD005 stay off.
+- Decision: `defaultPluginSettings` and the bundle `cordis.patch.yml` set
+  `preflightEnabled`, `networkEnabled`, and `localApplyEnabled` to `true`. The
+  default rule set is CD001, CD002, CD004, CD006, and CD008. Network access on
+  by default permits a user-requested `ci_diet_sync` to run with an authenticated
+  `gh`; installation and startup do not call `gh` or collect history. The
+  standalone CLI keeps `DEFAULT_CONFIG.networkEnabled=false` and its explicit
+  `--network` requirement.
+- Migration: a profile whose raw `defaultsRevision` is absent or below `1` is
+  migrated when the plugin starts. The plugin locates its own active loader
+  entry and calls DSH `configEditor.edit`, so the change is made under the
+  editor's profile lock against the latest raw config. The same save sets all
+  three switches to `true`, unions the default rules into the existing rule
+  list, and writes `defaultsRevision: 1`. The marker lives in the profile, not
+  the bundle. State paths, history limits, storage limits and quotas, billing
+  inputs, and an existing explicit CD003 or CD005 enablement are preserved. A
+  legacy explicit `false` is upgraded once because it predates the revision;
+  an explicit `false` or rule exclusion saved after the marker survives later
+  restarts and updates. A failed edit keeps the old configuration and remains
+  retryable. Billing estimates stay off by default and need explicit activation;
+  an existing on setting is preserved.
+- Safety: turning local apply on does not approve a plan. Human digest approval,
+  separate apply, source and dependency checks, TTL, single-use nonce, policy
+  freshness, backup, and lock checks remain authoritative. Model tools still
+  have no approve, apply, or revert actions.
+- Evidence: the defaults migration was exercised on DSH `0.2.1-rc.2` with its
+  `configEditor`, `SettingsForms`, and Loader in a temporary profile. A legacy
+  `false` became `true` on disk, and an explicit `false` saved afterward stayed
+  false after restart. This runtime check did not add a new browser render
+  test. The **CI Diet Reports** approval, apply, and revert UI had already
+  passed a real-browser E2E check in an earlier commit.
+- Rationale: rules and checks that are only found on request are easy to miss.
+  Useful DSH defaults reduce that friction, while a revision marker makes the
+  upgrade deterministic and prevents later startup or plugin updates from
+  overwriting a deliberate opt-out.
+- Consequence: DSH and CLI now have intentionally different network defaults.
+  The plugin guide states both contracts, and the first migration's rule union
+  can add a default rule that an older profile had excluded. Only settings
+  saved after the marker are treated as later user policy.
+- Reversal: ship a new higher `defaultsRevision` with a new ADR. Reverting only
+  the bundle defaults would not reprocess profiles whose marker is already `1`.

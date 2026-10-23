@@ -10,7 +10,7 @@ Keep a Changelog, and the project uses semantic versioning.
 - DSH's **CI Diet review** settings page shows workspace reports, coverage,
   metrics and source-validated plan diffs. Human digest approval, local apply
   and confirmed recovery use the existing single-use approval and backup engine.
-  Local writes default off; model tools cannot approve, apply or revert.
+  Local apply defaults on; model tools cannot approve, apply or revert.
   The page and settings switch support all six UI languages.
 
 - `ci-diet compare --before-run ID --after-run ID --network` reads successful
@@ -45,13 +45,33 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Changed
 
+- The DSH plugin now defaults `preflightEnabled`, `networkEnabled`, and
+  `localApplyEnabled` to `true`, with CD001, CD002, CD004, CD006, and CD008
+  enabled. Profiles without `defaultsRevision: 1` migrate once at startup
+  through DSH `configEditor.edit`: one locked save enables the three switches,
+  unions the default rules into the existing selection, and records the
+  revision in the profile. State paths, history and storage limits, retention,
+  quotas, billing inputs, and existing explicit CD003 or CD005 enablement are
+  preserved. Billing estimates stay off by default and require explicit
+  activation; an existing on setting is preserved. After migration, explicit
+  `false` switches and rule exclusions survive restarts and updates. The CLI
+  keeps `networkEnabled=false` and requires `--network`.
+
+- The defaults migration was verified on DSH `0.2.1-rc.2` with its
+  `configEditor`, `SettingsForms`, and Loader in a temporary profile. Legacy
+  `false` values were saved as `true`, and a later explicit `false` stayed false
+  after restart. This was a runtime and file-storage check, not a new browser
+  render. The report approval, apply, and revert UI had already passed a
+  real-browser E2E check in an earlier commit.
+
 - Settings bundle tests compile their unchanged input once per suite instead
   of four times. Each behavior test still loads an independent VM and form.
 
 - Reworked the six README editions and plugin guide around current first-use
-  behavior: CLI scan output versus saved reports, explicit network opt-in,
-  human approval and revert, shared versus overridden state directories, and
-  the limits of the DSH plugin tools. Commands and version claims now match
+  behavior: CLI scan output versus saved reports, the CLI's explicit network
+  opt-in, the DSH plugin's opt-out defaults and one-time migration, human
+  approval and revert, shared versus overridden state directories, and the
+  limits of the DSH plugin tools. Commands and version claims now match
   `0.3.1` and the supported DSH range.
 
 ### Fixed

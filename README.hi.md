@@ -2,13 +2,15 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**स्थिति:** alpha; `dsh-ci-diet@0.3.1` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। उस screen का live DSH E2E verification अभी pending है। Local workflow writes default में बंद हैं।
+**स्थिति:** alpha; `dsh-ci-diet@0.3.1` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। Review screen ने पिछले commit में असली browser E2E पास किया था। एक बार होने वाली defaults migration को अलग से DSH `0.2.1-rc.2` के configEditor, SettingsForms और Loader runtime में verify किया गया; यह नए browser render का verification नहीं है। DSH plugin अब preflight, history के लिए network access और local apply के साथ चालू होता है।
+
+**DSH defaults और migration.** नए DSH profile में `preflightEnabled`, `networkEnabled` और `localApplyEnabled` `true` होते हैं, और CD001, CD002, CD004, CD006 तथा CD008 चालू रहते हैं। मौजूदा profile को पहली बार शुरू करने पर CI Diet DSH `configEditor` के locked edit से तीनों switches save करता है, इन rules को मौजूदा चयन में जोड़ता है और उसी profile में `defaultsRevision: 1` दर्ज करता है। State paths, retention, quotas, billing inputs और पहले से स्पष्ट रूप से चालू किए गए CD003 या CD005 सुरक्षित रहते हैं। इस save के बाद बंद किया गया switch या हटाया गया rule restart और update के बाद भी लागू रहता है; CD003 और CD005 केवल चालू करने पर चलते हैं, billing estimates default में बंद रहते हैं और स्पष्ट रूप से चालू करने पड़ते हैं, जबकि पहले से चालू billing setting सुरक्षित रहता है।
 
 CI Diet संभवतः बर्बाद हो रहे GitHub Actions काम को खोजता है, हर finding के पीछे का evidence सुरक्षित रखता है, और मनुष्य द्वारा समीक्षा के लिए छोटे workflow बदलावों का preview देता है।
 
-**केवल installation से runner minutes कम नहीं होते।** समर्थित DSH deployment commands चलने से पहले बचत के उम्मीदवार अपने आप जाँचते हैं; workflow बदलाव समीक्षा और approval के बाद ही लागू होते हैं। DSH plugin में approval, apply या revert tools नहीं हैं, और preflight खुद files नहीं बदलता। Settings pages tool configuration रखते हैं और host के session-scoped reports और plans दिखाते हैं; वे workflow को optimize नहीं करते। Approved local writes default में बंद हैं। किसी finding से लागत कम होने की गारंटी नहीं है।
+**केवल installation से runner minutes कम नहीं होते।** समर्थित DSH deployment commands चलने से पहले बचत के उम्मीदवार अपने आप जाँचते हैं; workflow बदलाव समीक्षा और approval के बाद ही लागू होते हैं। DSH plugin में approval, apply या revert tools नहीं हैं, और preflight खुद files नहीं बदलता। Settings pages tool configuration रखते हैं और host के session-scoped reports और plans दिखाते हैं; वे workflow को optimize नहीं करते। Approved local writes default में चालू हैं, पर apply के लिए अलग digest approval अब भी ज़रूरी है। किसी finding से लागत कम होने की गारंटी नहीं है।
 
-`preflightEnabled` default में चालू है। `workdir` argument वाले समर्थित stateless DSH bash tool में literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy` या `npm|pnpm|bun run deploy` से ठीक पहले offline जाँच होती है। यह npm CD006, केवल-PR workflow में concurrency की कमी, और स्पष्ट download cache के बिना Bun frozen install को समीक्षा के लिए दिखाता है। उम्मीदवार मिलने पर पहली command नहीं चलती; model items देखकर वही command फिर चलाए तो अनुमति मिलती है। कोई network access या automatic file change नहीं होता, और plan apply के लिए मानव approval अभी भी ज़रूरी है। persistent shells और जटिल shell wrappers पहचाने नहीं जाते, इसलिए preflight उन्हें skip करता है। बचत अभी मापी नहीं गई है, इसलिए बचत का दावा नहीं है।
+`preflightEnabled` default में चालू है। `workdir` argument वाले समर्थित stateless DSH bash tool में literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy` या `npm|pnpm|bun run deploy` से ठीक पहले offline जाँच होती है। यह npm CD006, केवल-PR workflow में concurrency की कमी, और स्पष्ट download cache के बिना Bun frozen install को समीक्षा के लिए दिखाता है। उम्मीदवार मिलने पर पहली command नहीं चलती; model items देखकर वही command फिर चलाए तो अनुमति मिलती है। preflight खुद कोई network request या automatic file change नहीं करता, और plan apply के लिए मानव approval अभी भी ज़रूरी है। persistent shells और जटिल shell wrappers पहचाने नहीं जाते, इसलिए preflight उन्हें skip करता है। बचत अभी मापी नहीं गई है, इसलिए बचत का दावा नहीं है।
 
 ## यह क्या करता है
 
@@ -42,7 +44,7 @@ dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-Install करने से plugin tools, Settings page और **सेटिंग्स → CI Diet Reports** review screen register होते हैं। Network access और approved local workflow writes default में बंद हैं, और DSH शुरू होने पर scan नहीं चलता या workflow नहीं बदलता।
+Install करने से plugin tools, Settings page और **सेटिंग्स → CI Diet Reports** review screen register होते हैं। Plugin का preflight, network access और local apply default में चालू हैं। Install और startup `gh` call, history collection, scan या workflow change नहीं करते।
 
 ```
 npm install --global dsh-ci-diet@latest
@@ -65,11 +67,11 @@ ci-diet report --cwd . --format html --out report.html
 
 `scan` network के बिना static report output करता है; `--json` या `--out FILE` वह output लिख सकते हैं, लेकिन CLI scan report को state store में save नहीं करता। `report` को CLI `sync`, plugin `ci_diet_scan` या plugin `ci_diet_sync` द्वारा saved report चाहिए। नीचे के केवल-CLI क्रम में sync report save करता है; फिर HTML विकल्प एक self-contained file लिखता है। History sync के लिए `gh` install और authenticated होना चाहिए तथा repository के Actions runs और jobs पढ़ने की अनुमति चाहिए। `sync --network` CLI की स्पष्ट opt-in है। GitHub write permission नहीं चाहिए। अधूरी history पर भी report बनती और save होती है, साथ में incomplete coverage दिखती है। Plugin का offline `ci_diet_scan` report save करता है, इसलिए उसके ठीक बाद `ci_diet_report` चल सकता है।
 
-DSH plugin में network access default में बंद है। **सेटिंग्स → CI Diet** खोलें, **नेटवर्क पहुँच की अनुमति दें** enable करें और **बदलाव सहेजें** चुनें। यह page setting केवल plugin tools पर लागू होती है; CLI का `--network` flag enable नहीं करती। Static scan और report network के बिना चलते हैं। Opt-in के बाद `ci_diet_sync` उसी authenticated `gh` का उपयोग करता है जिसके पास read access है। Settings page अपने आप optimization नहीं चलाता।
+DSH plugin में network access default में चालू है, इसलिए `gh` install और authenticate होने पर `ci_diet_sync` सीधे चल सकता है। यह switch केवल उस tool को `gh` call करने देता है; install, startup या settings save खुद history collect नहीं करते। Plugin का network उपयोग रोकने के लिए **सेटिंग्स → CI Diet** में **नेटवर्क पहुँच की अनुमति दें** बंद करें और **बदलाव सहेजें** चुनें। यह page setting केवल plugin tools पर लागू होती है; CLI का `--network` flag enable नहीं करती। Static scan और report network के बिना चलते हैं। Settings page अपने आप optimization नहीं चलाता।
 
 अच्छे chat request में क्रम और review सीमा साफ़ लिखें। उदाहरण absolute path की जगह अपनी repository का path रखें:
 
-> cwd `C:\work\my-repo` के साथ `ci_diet_scan` चलाओ। मेरे सेटिंग्स → CI Diet में network access enable करने के बाद उसी cwd के लिए `ci_diet_sync` और फिर `ci_diet_report` चलाओ। अगर `ci_diet_plan` से patch preview हो तो केवल edits दिखाओ। कुछ भी approve, apply, revert, commit, push या deploy मत करो।
+> cwd `C:\work\my-repo` के साथ `ci_diet_scan`, फिर उसी cwd के लिए `ci_diet_sync` और `ci_diet_report` चलाओ। अगर `gh` authenticate नहीं है या मैंने network access बंद किया है तो scan के बाद रुक जाओ। अगर `ci_diet_plan` से patch preview हो तो केवल edits दिखाओ। कुछ भी approve, apply, revert, commit, push या deploy मत करो।
 
 Plugin preview plan को save नहीं करता। उसका `nextCommand` CLI के ज़रिए plan फिर बनाता है ताकि plan durable store में जाए और human approval चरण में आ सके।
 
@@ -122,7 +124,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 CLI और plugin डिफ़ॉल्ट state directory साझा करते हैं: Windows पर `%LOCALAPPDATA%\CI-Diet\profiles\default`, अन्यथा `~/.local/state/ci-diet/profiles/default`। Plugin का `stateDir` override अलग store बनाता है; CLI के `plan`, `approve`, `apply` और `revert` में `--state-dir` से वही absolute path दें। CLI का relative `--state-dir` effective `--cwd` के सापेक्ष resolve होता है। मौजूदा state दूसरे directory में अपने आप migrate नहीं होता।
 
-Web client में Settings और **CI Diet Reports** review screen हैं। Report, approve, apply और revert controls लागू हैं, लेकिन live DSH E2E verification अभी pending है। Approval और apply इसी screen से host तक जाते हैं, और `localApplyEnabled` default में बंद है। कोई plugin tool approval या application नहीं करता। Plan एक मौजूदा workflow file को byte ranges पर बदलता है और unsupported structures अस्वीकार करता है। History या workflow attribution अधूरा हो तो findings गलत या छूटे हो सकते हैं, और किसी दूसरे system के billing data ज़्यादा सही हो सकते हैं। Report को review evidence मानें और effect GitHub में अलग से जाँचें।
+Web client में Settings और **CI Diet Reports** review screen हैं। Report, approve, apply और revert controls ने पिछले commit में असली browser E2E पास किया था। Defaults migration को DSH `0.2.1-rc.2` runtime में configEditor, SettingsForms, Loader और temporary profile के साथ अलग से verify किया गया: legacy `false` मान `true` के रूप में save हुए, और बाद में स्पष्ट रूप से save किया गया `false` restart के बाद भी बंद रहा। यह नया browser render verification नहीं है। Approval और apply इसी screen से host तक जाते हैं, और `localApplyEnabled` default में चालू है। कोई plugin tool approval या application नहीं करता। Plan एक मौजूदा workflow file को byte ranges पर बदलता है और unsupported structures अस्वीकार करता है। History या workflow attribution अधूरा हो तो findings गलत या छूटे हो सकते हैं, और किसी दूसरे system के billing data ज़्यादा सही हो सकते हैं। Report को review evidence मानें और effect GitHub में अलग से जाँचें।
 
 ## Cost और evidence
 

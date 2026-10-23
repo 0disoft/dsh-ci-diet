@@ -4,7 +4,7 @@ CI Diet ships as one npm package with a command-line tool and a DeepSeek Harness
 
 The plugin checks supported DSH deployment commands automatically for savings candidates. Its scan, sync, report, prune, and plan tools remain available on request; it has no approval, apply, or revert tools. Workflow changes require review and human approval through the CLI. Its default-on preflight checks supported deploy commands from a stateless DSH bash tool before running them; ordinary CLI runs have no hook. The Settings page changes tool configuration; it does not optimize a workflow.
 
-`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. There is no network access or automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
+`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. Preflight itself makes no network request and no automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
 ## Install and update
 
@@ -13,13 +13,13 @@ npm install --global dsh-ci-diet@0.3.1
 dsh plugin --profile web add dsh-ci-diet@0.3.1
 ```
 
-The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported. Installing registers the plugin tools and the **Settings → CI Diet** page. Network access is off by default, and starting DSH does not start a scan or modify a workflow.
+The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported. Installing registers the plugin tools and the **Settings → CI Diet** page. In this source tree, preflight, network access, and local apply are on by default. Installation and startup do not call `gh`, collect history, start a scan, or modify a workflow.
 
 To update, run the same installation commands with `@latest`, then restart DSH. Confirm the plugin with `dsh plugin --profile web list` and the CLI with `ci-diet --version` or `npx dsh-ci-diet@latest --version`.
 
 ## First use
 
-Run CLI commands from the target repository. `--cwd .` selects that checkout; `--cwd` can take another path. The static command is offline. History collection is a separate network opt-in.
+Run CLI commands from the target repository. `--cwd .` selects that checkout; `--cwd` can take another path. The static command is offline. For the CLI, history collection is a separate network opt-in: `DEFAULT_CONFIG.networkEnabled` stays false and `--network` is still required.
 
 ```
 ci-diet scan --cwd .
@@ -31,11 +31,11 @@ ci-diet report --cwd . --format html --out report.html
 
 CLI `scan` prints the static report. Use its `--json` or `--out FILE` option to write that output, but scan does not save a report in the state store. `ci-diet report` needs a saved report, so this CLI sequence uses `sync --network` to create it. `sync` needs `gh` installed, authenticated, and able to read the repository's Actions runs and jobs. It uses read-only access and does not need GitHub write permission.
 
-With DSH, call `ci_diet_scan` with an absolute `cwd` for static analysis. It saves a report, so `ci_diet_report` can follow immediately without network. To collect history, open **Settings → CI Diet**, enable **Allow network access**, and choose **Save changes**. Then call `ci_diet_sync` for the same `cwd`, followed by `ci_diet_report`. The plugin setting applies to plugin tools and does not enable the CLI's `--network` flag.
+With DSH, call `ci_diet_scan` with an absolute `cwd` for static analysis. It saves a report, so `ci_diet_report` can follow immediately without network. Network access is on by default, so after `gh` is installed and authenticated you can call `ci_diet_sync` for the same `cwd`, followed by `ci_diet_report`. The switch only permits that tool to call `gh`; installation, startup, and saving settings do not collect history. To block plugin network use, turn off **Allow network access** in **Settings → CI Diet** and choose **Save changes**. The plugin setting does not enable the CLI's `--network` flag.
 
 A useful chat request names the calls and stops before any mutation:
 
-> Run `ci_diet_scan` with cwd `C:\work\my-repo`. If I enable network access in Settings → CI Diet, run `ci_diet_sync` for the same cwd and then `ci_diet_report`. If you preview a patch with `ci_diet_plan`, show the edits only. Do not approve, apply, revert, commit, push, or deploy anything.
+> Run `ci_diet_scan` with cwd `C:\work\my-repo`, then `ci_diet_sync` for the same cwd and `ci_diet_report`. If `gh` is not authenticated or I turn off network access, stop after the scan. If you preview a patch with `ci_diet_plan`, show the edits only. Do not approve, apply, revert, commit, push, or deploy anything.
 
 ## Settings
 
@@ -49,11 +49,42 @@ The Settings page edits the engine configuration read by DSH tools. Every engine
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
 
-Network access defaults to false. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan.
+Network access defaults to true for DSH tools; the CLI remains offline unless `--network` is passed. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan.
 
-`localApplyEnabled` is a separate Connection switch and defaults to off. It
-gates plan approval and the review page's local apply button. Turning it on does
-not approve a plan or bypass source, policy, digest, or backup checks.
+`localApplyEnabled` is a separate Connection switch and defaults to on. It gates
+the review page's local apply button. A plan still needs its own digest approval,
+and source, policy, TTL, nonce, dependency, backup, and lock checks still apply.
+
+### Defaults and one-time migration
+
+New DSH profiles use these server-side defaults: `preflightEnabled`,
+`networkEnabled`, and `localApplyEnabled` are `true`, and CD001, CD002, CD004,
+CD006, and CD008 are enabled. The bundle patch repeats the three switch values.
+CD003 and CD005 stay off unless explicitly enabled. Billing estimates stay off
+by default and require an explicit enablement; an existing on setting is
+preserved.
+
+An existing profile without `defaultsRevision: 1` is migrated when the plugin
+starts. CI Diet finds its own active loader entry and calls DSH `configEditor.edit`,
+which takes the profile lock and reads the latest raw config. One save sets the
+three switches on, unions the five default rules into the existing rule list,
+and records `defaultsRevision: 1` in the profile. The marker is stored in that
+profile, not in the bundle. State paths, history and storage limits, retention,
+quotas, billing inputs, and an existing explicit CD003 or CD005 enablement are
+left unchanged. A failed edit keeps the old configuration and is retried on a
+later start.
+
+The first save adds the five default rules even when a legacy profile had
+excluded them. After that marker is stored, turning a switch off or excluding a
+rule survives restarts and updates. Clearing `defaultsRevision`, or moving the
+profile back to an older value, asks for that migration again.
+
+The defaults migration was verified on DSH `0.2.1-rc.2` with `configEditor`,
+`SettingsForms`, and the Loader in a temporary profile. The test saved legacy
+`false` values as `true`, then verified that a later explicit `false` stayed
+false after restart. This checked the profile runtime and storage path, not a
+new browser render. The **CI Diet Reports** review controls had already passed
+a real-browser E2E check in an earlier commit.
 
 ## Reports and approval
 
