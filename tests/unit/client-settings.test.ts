@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import test from "node:test";
+import test, { before } from "node:test";
 import vm from "node:vm";
 import { RULE_CHOICES, SETTINGS_FIELDS, collectSettingsEdits } from "../../src/client/fields.ts";
 import { DICTIONARIES, NS } from "../../src/client/i18n.ts";
@@ -10,9 +10,11 @@ import { CSS_TEXT, STYLE_ATTRIBUTE, installStyles } from "../../src/client/style
 
 const ROOT = join(import.meta.dirname, "..", "..");
 
-function buildBundle(): void {
+// Every case loads a fresh VM and form state from the same immutable bundle.
+// Compile it once for this suite rather than rebuilding identical inputs per case.
+before(() => {
   execFileSync(process.execPath, [join(ROOT, "scripts", "build-client.mjs")], { cwd: ROOT, stdio: "ignore" });
-}
+});
 
 interface SectionRegistration {
   readonly options: Record<string, unknown>;
@@ -128,7 +130,6 @@ function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
 }
 
 test("the client bundle registers one settings section for the package", () => {
-  buildBundle();
   const loaded = loadBundle();
   assert.equal(loaded.id, "dsh-ci-diet");
   assert.deepEqual(Array.from(loaded.plugin.inject), ["slots", "locale", "configForms"]);
@@ -149,7 +150,6 @@ test("the client bundle registers one settings section for the package", () => {
 });
 
 test("the action bar sits outside the scrolling page body", () => {
-  buildBundle();
   const fake = fakeReact();
   const loaded = loadBundle(fake.react);
   const form = {
@@ -170,7 +170,6 @@ test("the action bar sits outside the scrolling page body", () => {
 });
 
 test("the page saves against the revision it started editing", async () => {
-  buildBundle();
   const fake = fakeReact();
   const loaded = loadBundle(fake.react);
   let revision = 1;
@@ -217,7 +216,6 @@ test("the page saves against the revision it started editing", async () => {
 });
 
 test("editing a field replaces its staged reset", async () => {
-  buildBundle();
   const fake = fakeReact();
   const loaded = loadBundle(fake.react);
   const calls: { ops: readonly unknown[] }[] = [];
