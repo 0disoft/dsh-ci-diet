@@ -120,14 +120,19 @@ test("exposes every engine-facing setting as live", () => {
 
 test("defaults match the contract and rule defaults", () => {
   const settings = engineSettingsOf(defaultPluginSettings());
-  assert.deepEqual(settings.config, DEFAULT_CONFIG);
+  assert.deepEqual(settings.config, { ...DEFAULT_CONFIG, networkEnabled: true });
+  const shipped = Config({}) as unknown as { networkEnabled: { get(): boolean }; localApplyEnabled: { get(): boolean }; preflightEnabled: { get(): boolean } };
+  assert.equal(shipped.networkEnabled.get(), true);
+  assert.equal(shipped.localApplyEnabled.get(), true);
+  assert.equal(shipped.preflightEnabled.get(), true);
+  assert.equal(DEFAULT_CONFIG.networkEnabled, false, "CLI remains offline by default");
   assert.deepEqual(settings.enabledRules, ["CD001", "CD002", "CD004", "CD006", "CD008"]);
   assert.equal(settings.config.storage.storeMaxBytes, 268435456);
   assert.equal(settings.config.billing, undefined);
 });
 
 test("ci_diet_plan previews the npm cache patch with network disabled and no history", async () => {
-  const { tools } = harness();
+  const { tools } = harness({ networkEnabled: false });
   const root = workspace();
   const workflow = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n      - run: npm ci\n";
   writeFileSync(join(root, ".github/workflows/ci.yml"), workflow);
@@ -174,7 +179,7 @@ test("enables billing only when the switch is on", () => {
 });
 
 test("reads live settings on every tool call", async () => {
-  const { tools, stateDirRef, networkEnabled } = harness();
+  const { tools, stateDirRef, networkEnabled } = harness({ networkEnabled: false });
   const root = workspace();
   await tools.get("ci_diet_scan")!.execute({ cwd: root }, { signal: new AbortController().signal });
 

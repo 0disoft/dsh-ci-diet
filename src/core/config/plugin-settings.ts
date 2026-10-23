@@ -10,6 +10,7 @@ import type { Config } from "../contracts/schema.ts";
 export interface PluginSettingsValues {
   readonly preflightEnabled: boolean;
   readonly networkEnabled: boolean;
+  readonly localApplyEnabled: boolean;
   readonly stateDir: string;
   /** Enabled analysis rules in display order; the host schema refuses an empty list. */
   readonly rules: readonly RuleId[];
@@ -41,7 +42,10 @@ export interface EngineSettings {
 export function defaultPluginSettings(): PluginSettingsValues {
   return {
     preflightEnabled: true,
-    networkEnabled: DEFAULT_CONFIG.networkEnabled,
+    // DSH history collection is opt-out; the standalone CLI keeps its explicit
+    // --network contract and its offline default.
+    networkEnabled: true,
+    localApplyEnabled: true,
     stateDir: "",
     rules: [...DEFAULT_ENABLED_RULES],
     historyLookbackDays: DEFAULT_CONFIG.history.lookbackDays,

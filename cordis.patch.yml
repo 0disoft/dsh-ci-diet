@@ -4,5 +4,6 @@
     - id: ciDiet.bootstrap
       name: dsh-ci-diet
       config:
-        networkEnabled: false
-        localApplyEnabled: false
+        preflightEnabled: true
+        networkEnabled: true
+        localApplyEnabled: true

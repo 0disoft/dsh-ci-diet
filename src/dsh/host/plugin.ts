@@ -29,6 +29,7 @@ import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 import { createTranslator } from "../../shared/i18n/index.ts";
 import { registerPreflight } from "./preflight.ts";
 import { registerReview } from "./review.ts";
+import { registerDefaultsMigration } from "./defaults-migration.ts";
 export const name = "ci-diet";
 export const inject = ["tools"];
 
@@ -37,6 +38,7 @@ export const inject = ["tools"];
  * the Plugins page edit the same reference, and the next tool call reads it.
  */
 export interface Config {
+  defaultsRevision: Volatile<number>;
   preflightEnabled: Volatile<boolean>;
   networkEnabled: Volatile<boolean>;
   /** Human browser approval and local writes; never enables model write tools. */
@@ -64,9 +66,12 @@ const SHIPPED = defaultPluginSettings();
 const RULE_SCHEMA = Schema.union(RULE_IDS.map((ruleId) => Schema.const(ruleId)));
 
 export const Config = Schema.object({
+  // Persisted per profile, never in the bundle: old user-layer false values
+  // must migrate even when the inherited bundle has already been updated.
+  defaultsRevision: Schema.number().min(0).step(1).default(0).hidden().volatile(),
   preflightEnabled: Schema.boolean().default(SHIPPED.preflightEnabled).volatile(),
   networkEnabled: Schema.boolean().default(SHIPPED.networkEnabled).volatile(),
-  localApplyEnabled: Schema.boolean().default(false).volatile(),
+  localApplyEnabled: Schema.boolean().default(SHIPPED.localApplyEnabled).volatile(),
   stateDir: Schema.string().default(SHIPPED.stateDir).volatile(),
   // The contract lives in the schema itself: a save that disables every rule is
   // rejected here, before the next tool call has to fail.
@@ -92,6 +97,7 @@ export function readPluginSettings(config: Config): PluginSettingsValues {
   return {
     preflightEnabled: config.preflightEnabled.get(),
     networkEnabled: config.networkEnabled.get(),
+    localApplyEnabled: typeof config.localApplyEnabled === "boolean" ? config.localApplyEnabled : config.localApplyEnabled.get(),
     stateDir: config.stateDir.get(),
     rules: [...config.rules.get()],
     historyLookbackDays: config.historyLookbackDays.get(),
@@ -221,6 +227,7 @@ function toolRoot(ctx: Context, exec: ToolRootExec, requested: string | undefine
 }
 
 export function apply(ctx: Context, config: Config) {
+  registerDefaultsMigration(ctx, () => config.defaultsRevision.get());
   registerReview(ctx, () => ({ engine: engineSettingsOf(readPluginSettings(config)),
     localApplyEnabled: typeof config.localApplyEnabled === "boolean" ? config.localApplyEnabled : config.localApplyEnabled.get() }));
   // The registry captures this text at mount time; a live locale switch needs a reload.
