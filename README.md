@@ -1,174 +1,129 @@
 # CI Diet
 
-Find wasted GitHub Actions runner time and propose small, reviewable patches.
+[English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-Status: **alpha**, `dsh-ci-diet@0.3.1` is released on npm. The contracts,
-specification, analysis engine, patch engine, CLI, DSH plugin tools, and a
-self-contained HTML report are implemented and tested. The DSH Web client has a
-Settings screen; the report and apply screens are still open.
+**Status:** alpha; `dsh-ci-diet@0.3.1` is on npm. The contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report are implemented. Report and apply screens are not.
+
+CI Diet finds GitHub Actions work that is likely wasted, preserves the evidence behind each finding, and previews small workflow edits for a human to review.
+
+**Installation alone does not save runner minutes.** Installing the package, or asking an LLM to write or deploy code, neither calls the tools nor edits a workflow. You must explicitly ask for a scan, sync, report, prune, or plan, then review any proposed change. The DSH plugin has no automatic pre-push or deploy hook and no approval, apply, or revert tools. Its Settings page stores tool configuration; it does not optimize a workflow. There is no guarantee that any finding will reduce cost.
 
 ## What it does
 
-CI Diet reads two things and compares them:
+The static scan reads workflow YAML in a target checkout. The optional history sync uses read-only `gh api` calls to collect recent runs. Findings carry an evidence level (`observed`, `inferred`, or `static`) and per-axis collection coverage.
 
-1. Workflow YAML from the current working tree.
-2. Optionally, execution history fetched with read-only `gh api` calls.
-
-From that it reports where runner minutes are spent and which findings are
-safe to turn into a small YAML edit. Every finding carries an evidence level
-(`observed`, `inferred`, `static`) and a coverage state per rule.
-
-| Rule | Finds | Plan in v0.1 |
+| Rule | Finds | Possible plan |
 | --- | --- | --- |
-| CD001 | PR runs superseded by a newer commit | patch: `concurrency` |
+| CD001 | PR runs made obsolete by a newer commit | `concurrency` edit |
 | CD002 | Overlapping triggers | explanation only |
-| CD003 | Heavy checks on docs-only changes | explanation only |
+| CD003 | Heavy checks for docs-only changes | explanation only; off by default |
 | CD004 | Oversized matrices | explanation only |
-| CD005 | Jobs without `timeout-minutes` | patch: `timeout-minutes` |
-| CD008 | Long artifact retention | patch: `retention-days` |
+| CD005 | Jobs without `timeout-minutes` | timeout edit; off by default |
+| CD008 | Long artifact retention | retention edit |
 
-The rule set is deliberately small. A rule ships only after it passes a
-quality gate measured on real repositories, because a noisy rule is worse than
-a missing one. CD003 and CD005 are implemented but disabled by default until
-that gate passes (see ADR-13).
+CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. Cache hygiene appears only as advisory diagnostics: the frozen contract has no cache rule, so cache hints never become findings or patches.
 
-## What it never does
+## Install and upgrade
 
-- No commits, pushes, pull requests, or merges.
-- No workflow runs, no cancelling running jobs, no deleting artifacts or caches.
-- No branch protection changes.
-- No write permission on GitHub. History access is read-only; a repository
-  with no network access still gets the static scan.
-- No LLM judging whether a job is wasteful.
-- Patches are byte-range edits of the YAML you already have. You review the
-  diff, approve it explicitly, and apply it to your working tree.
-
-## Honest numbers
-
-Cost output keeps four separate values and never mixes them:
-
-| Field | Meaning |
-| --- | --- |
-| `observedRunnerSeconds` | What the run records actually say |
-| `modeledRoundedMinutes` | Per-job minutes, rounded up the way billing does |
-| `listPriceUsd` | Converted at the snapshot list price |
-| `actualBilledUsd` | Always `null` until we can prove otherwise |
-
-Every report embeds the pricing snapshot it used (with a content hash), so a
-number can be reproduced later. If the snapshot cannot be verified, the report
-is not shipped.
-
-## Install
-
-The CLI needs Node `^22.19.0 || >=24.0.0`. The DSH plugin needs DSH
-`>=0.2.1-rc.2 <0.3.0-0` or `>=0.2.2-rc.1 <0.3.0-0`. Release `0.3.1` was tested
-against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported yet.
-
-Install the CLI:
+The CLI requires Node `^22.19.0 || >=24.0.0`. The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported.
 
 ```
 npm install --global dsh-ci-diet@0.3.1
 ci-diet --version
 ```
 
-If you do not want a global install, `npx dsh-ci-diet@0.3.1` runs the same CLI.
-
-Install the DSH plugin into a profile:
+Without a global install, replace the `ci-diet` command name with `npx dsh-ci-diet@0.3.1`, for example `npx dsh-ci-diet@0.3.1 report --cwd .`.
 
 ```
 dsh plugin --profile web add dsh-ci-diet@0.3.1
 dsh --profile web
 ```
 
-The plugin adds one disabled loader entry and a **Settings → CI Diet** page.
-The page edits every engine setting used by the DSH tools: analysis rules, history
-caps, storage limits, the cost estimate, network access, and the state directory.
-Values use the same contract validation and defaults as `ci-diet --config`, apply
-to the next tool call without a restart, and never rewrite the CLI's own config.
-`localApplyEnabled` is not exposed because there is no apply tool yet.
-
-Update an existing install:
+Installing registers the plugin tools and the Settings page. Network access is off by default, and starting DSH does not run a scan or modify a workflow.
 
 ```
 npm install --global dsh-ci-diet@latest
 dsh plugin --profile web add dsh-ci-diet@latest
 ```
 
-Restart DSH after updating the plugin. `dsh plugin --profile web list` shows the
-installed plugin version, and `ci-diet --version` (or
-`npx dsh-ci-diet@latest --version`) shows the CLI version.
+Restart DSH after updating the plugin. Use `dsh plugin --profile web list`, `ci-diet --version`, or `npx dsh-ci-diet@latest --version` to verify the installed versions.
 
-## Run it
+## First scan and history report
 
-```
-ci-diet scan --cwd .                     # static scan, no network
-ci-diet sync --network                   # read GitHub Actions history for this checkout
-ci-diet plan --rule CD001 --workflow .github/workflows/ci.yml \
-             --claims ci-only,replace-safe
-ci-diet approve --plan <planId> --confirm <digest tail>
-ci-diet apply --plan <planId>            # rewrites only the planned byte range
-ci-diet revert --change <changeId>       # restores the backed-up bytes
-```
-
-`plan` refuses to write when the finding is not patch-eligible, when coverage
-does not allow a write, or when the policy snapshot a rule depends on is stale.
-CD005 needs `--job` and `--minutes`; CD008 needs `--job` and `--step`, plus
-`--claims artifact-purpose:temporary,consumer-min-days:7`. The command prints the
-proposed lines as a diff, and `ci-diet plans --plan <planId>` shows a saved plan
-again. Nothing is committed, pushed, or applied without the explicit `approve`
-step.
-
-`--config <file>` merges a partial JSON configuration over the built-in defaults
-for any command, so a repository can lower the workflow size limit or the
-storage quota without code changes. The merged document is validated against
-the frozen contract before the command runs; an unreadable or invalid file
-exits `2`. Relative paths resolve against the effective `--cwd`.
-
-## Read a report
+Run these commands from the repository you want to inspect. `--cwd .` means that repository; `--cwd` accepts another path, and relative paths resolve from the effective working directory. The first command is offline. History collection is a separate, explicit network opt-in.
 
 ```
-ci-diet report                 # text summary for this repository
-ci-diet report --format html --out report.html
-ci-diet diagnose               # explain job-name attribution and collection coverage
-ci-diet prune                  # drop expired reports, plans, and cache entries
+ci-diet scan --cwd .
+gh auth status
+ci-diet sync --cwd . --network
+ci-diet report --cwd .
+ci-diet report --cwd . --format html --out report.html
 ```
 
-The HTML file is self-contained: inline CSS, no scripts, no external requests.
-It is read-only, so approvals stay in the CLI where the digest and nonce checks
-live.
+`scan` prints a static report without network access; `--json` or `--out FILE` writes that output, but CLI scan does not save a report in the state store. `report` needs a saved report from CLI `sync`, plugin `ci_diet_scan`, or plugin `ci_diet_sync`. In this CLI-only sequence, sync stores the report; the HTML option then writes one self-contained file. History sync needs `gh` installed, authenticated, and able to read the repository’s Actions runs and jobs. `sync --network` is the CLI opt-in. It never needs GitHub write permission. A partial history still produces and stores a report, marking incomplete coverage. The plugin’s offline `ci_diet_scan` does save its report, so `ci_diet_report` can follow it directly.
 
-`diagnose` reads the latest stored history and reports how many GitHub job
-names resolved to workflow keys, which matrix jobs expanded, and which
-collection caps left a coverage axis incomplete. It is read-only and works
-offline; `--require-complete` exits `3` when any axis is incomplete.
+For the DSH plugin, network access is disabled by default. Open **Settings → CI Diet**, enable **Allow network access**, and choose **Save changes**. The page setting applies to plugin tools; it does not enable the CLI’s `--network` flag. Static scan and report work without network. After the opt-in, `ci_diet_sync` uses the same authenticated `gh` with read access. The Settings page does not run an optimization by itself.
 
-It also lists advisory cache hygiene hints: a dependency install with no cache,
-and a literal cache key that cannot follow the lockfile. The frozen contract has
-no cache rule id, so hints never become findings or patches.
+A useful chat request makes the sequence and review boundary explicit. Replace the example absolute path with your own repository:
 
+> Run `ci_diet_scan` with cwd `C:\work\my-repo`. After I enable network access in Settings → CI Diet, run `ci_diet_sync` for that same cwd and then `ci_diet_report`. If you preview a patch with `ci_diet_plan`, show the edits only. Do not approve, apply, revert, commit, push, or deploy anything.
 
-## Releasing
+The plugin preview does not save a plan. Its `nextCommand` re-creates the plan through the CLI so that the plan is durable and can enter the human approval flow.
 
-Pushing a tag that matches the version in `package.json` triggers
-`.github/workflows/publish.yml`:
+## CLI command reference
 
 ```
-git tag v0.3.1
-git push origin v0.3.1
+ci-diet scan --cwd .
+ci-diet sync --cwd . --network
+ci-diet sync --cwd . --network --repo OWNER/REPO --days 7
+ci-diet report --cwd .
+ci-diet report --cwd . --format json
+ci-diet report --cwd . --format html --out report.html
+ci-diet diagnose --cwd .
+ci-diet prune
+ci-diet changes --cwd .
+ci-diet plans --cwd . --plan PLAN_ID
+ci-diet report --cwd . --lang ko
 ```
 
-The workflow compares the tag with `package.json` (`node
-scripts/check-release-tag.mjs`), runs the same checks as CI, refuses to
-overwrite an already published version, and then publishes with npm trusted
-publishing. It uses GitHub OIDC (`id-token: write`) and no npm token, so the
-package's trusted publisher must name `publish.yml` for this repository.
+`scan` checks workflow files. `sync` reads history only after `--network`; `--repo` selects `OWNER/REPO` explicitly and `--days` adjusts the lookback within its configured bounds. `report` renders text, JSON, or HTML and writes `--out` relative to `--cwd`. `diagnose` explains job-name matching and coverage from stored history; add `--require-complete` to exit `3` for incomplete data. `prune` removes expired reports, plans, and cache entries under the state store settings. `changes` lists applied changes; `plans` reopens a saved plan. `--config FILE` merges a partial JSON configuration for any command.
 
-## Requirements
+## Review, approve, apply, and revert
 
-- Node `^22.19.0 || >=24.0.0`
-- `gh` CLI, optional, only for execution history
-- DSH `>=0.2.1-rc.2 <0.3.0-0 || >=0.2.2-rc.1 <0.3.0-0`, optional, only for
-  the plugin tools
+A successful CLI `plan` prints the proposed diff, a real plan id such as `p_...`, and a confirmation made from the last 12 characters of the plan digest. Plan creation refuses stale evidence and other unsafe writes; a missing workflow can be a usage error with exit `1`. If a saved plan is viewed after its workspace or workflow disappears, `plans --plan` hides the diff, preserves the plan JSON, asks for a replan, and exits `3`. The same occurs when the workflow bytes no longer match the saved source hash. Inspect the diff and the plan again before approving.
+
+```
+ci-diet plan --cwd . --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
+ci-diet plans --cwd . --plan PLAN_ID
+ci-diet approve --cwd . --plan PLAN_ID --confirm CONFIRMATION
+ci-diet apply --cwd . --plan PLAN_ID
+ci-diet revert --cwd . --change CHANGE_ID
+```
+
+Replace `PLAN_ID` with the id printed by the plan, `CONFIRMATION` with its 12-character digest tail, and `CHANGE_ID` with the id printed by apply. Every value is a literal argument; do not type angle brackets. `approve` creates a single-use approval, `apply` rewrites only the planned byte range in one workflow file, and `revert` restores that change’s backup. Review the resulting diff and run the repository’s checks as needed. CI Diet does not commit, push, deploy, run workflows, change branch protection, or delete artifacts.
+
+For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as human attestations. They state the operator’s review of cancellation semantics; they are not bypass switches. CD005 needs a measured `--job` and `--minutes`, and CD008 needs `--job`, a zero-based numeric `--step` array index for the target step, and artifact claims. The numeric step is not a step-name upload token.
+
+## State and limitations
+
+The CLI and plugin share the default state directory: `%LOCALAPPDATA%\CI-Diet\profiles\default` on Windows, otherwise `~/.local/state/ci-diet/profiles/default`. A plugin `stateDir` override is a separate store; pass the same absolute path to the CLI with `--state-dir` on `plan`, `approve`, `apply`, and `revert`. Relative CLI `--state-dir` paths resolve against the effective `--cwd`. Existing state is never migrated automatically between directories.
+
+The Web client has only Settings. There is no report, approve, apply, or revert screen, and no plugin tool performs approval or application. A plan edits one existing workflow file at byte ranges and refuses unsupported structures. Findings can be wrong or incomplete when history or workflow attribution is partial, and another system may have more accurate billing data. Use the report as review evidence, then verify the effect in GitHub.
+
+## Cost and evidence
+
+| Field | Meaning |
+| --- | --- |
+| `observedRunnerSeconds` | Runner time recorded by collected runs |
+| `modeledRoundedMinutes` | Per-job minutes rounded up for modeling |
+| `listPriceUsd` | Cost at the embedded list-price snapshot |
+| `actualBilledUsd` | Always `null` until the actual bill can be proven |
+
+Reports embed the pricing snapshot and a content hash so numbers can be reproduced. They do not claim automatic savings. The HTML report has inline CSS, no scripts, and no external requests.
+
+## Languages
+
+The DSH Settings UI, CLI messages, HTML reports, and these six READMEs support English, Korean, Simplified Chinese, Hindi, Spanish, and French. The detailed specifications remain English. Selection order is `--lang`, the DSH locale, `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. The CLI language codes are `en`, `ko`, `zh-Hans`, `hi`, `es`, and `fr`; replace `ko` in the example command with the desired code. Regional tags resolve by language. Reports are stored in English and localized when displayed. Rule ids, error codes, enum values, paths, hashes, and numbers stay literal. The HTML `lang` attribute follows the selected locale. DSH tool descriptions are captured at plugin load, so reload after changing the DSH language preference.
 
 ## Development
 
@@ -182,52 +137,38 @@ bun run lint
 bun run test:docs
 ```
 
-Run the tests with Node so the published entry points stay Node-compatible;
-Bun is used for dependency management only.
+Run tests with Node so published entry points stay Node-compatible. Bun is used for dependency management.
+
+## Release
+
+Pushing a tag that matches `package.json` starts `.github/workflows/publish.yml`. In the following commands, replace the literal `VERSION` in both arguments with a new version; version `0.3.1` is already published, so do not create that tag again.
+
+```
+git tag vVERSION
+git push origin vVERSION
+```
+
+The workflow compares the tag with `package.json`, runs the release checks, refuses an existing npm version, and publishes with npm trusted publishing through GitHub OIDC. The trusted publisher must name `publish.yml`.
 
 ## Layout
 
 ```
 src/core        workflow parsing, rules, savings, patch engine
-src/adapters    github, git, storage
-src/dsh         host and client plugin code
-src/cli         command line entry
-src/shared      i18n and small shared helpers
-contracts       JSON Schemas, imported from the frozen design pack
+src/adapters    GitHub, git, storage
+src/client      Web Settings UI
+src/dsh         host plugin and bundle code
+src/cli         command-line entry
+src/shared      i18n and shared helpers
+contracts       JSON Schemas from the frozen design pack
 examples        sample records and evaluation vectors
-docs/spec       normative product specification
+docs/spec       normative specification
 scripts         contract and documentation checks
 tests/unit      fast checks that need no network
 ```
 
-## Languages
-
-English is the default and the source of truth for message keys. The CLI, the
-HTML report, and DSH tool text ship in English, Korean, Simplified Chinese,
-Hindi, Spanish, and French; every dictionary is complete, so a missing key is a
-type error. Regional tags resolve by language (`hi-IN`, `es-MX`, `fr-CA`), and
-Chinese variants that are not Simplified fall back to English.
-
-Language selection is an explicit `--lang`, then the DSH locale preference,
-then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. Reports are stored in
-English and translated only when displayed: rule ids, error codes, enum values,
-paths, digests, and numbers stay untranslated, and the HTML report sets its
-`lang` attribute to the selected locale. DSH tool descriptions are captured at
-plugin load, so changing the DSH language preference needs a reload. Public
-documentation is English, with a Korean README mirror.
-
 ## Documentation
 
-- Specification: [docs/spec/README.md](docs/spec/README.md)
-- Rules: [docs/spec/rules.md](docs/spec/rules.md)
-- Cost model: [docs/spec/cost-model.md](docs/spec/cost-model.md)
-- Patch model: [docs/spec/patch-model.md](docs/spec/patch-model.md)
-- Storage and errors: [docs/spec/storage.md](docs/spec/storage.md)
-- Decisions: [docs/spec/decisions.md](docs/spec/decisions.md)
-- Measurement: [docs/spikes/a0a-rules.md](docs/spikes/a0a-rules.md)
-- Plugin and CLI guide: [docs/guide/plugin.md](docs/guide/plugin.md)
-- Contract provenance: [contracts/UPSTREAM.md](contracts/UPSTREAM.md)
-- Korean: [README.ko.md](README.ko.md)
+The detailed specification, rule, cost, patch, storage, and decision documents are English. The specification index is [docs/spec/README.md](docs/spec/README.md). Also available: [rules](docs/spec/rules.md), [cost model](docs/spec/cost-model.md), [patch model](docs/spec/patch-model.md), [storage and errors](docs/spec/storage.md), [decisions](docs/spec/decisions.md), [measurement](docs/spikes/a0a-rules.md), the [plugin and CLI guide](docs/guide/plugin.md), and [contract provenance](contracts/UPSTREAM.md).
 
 ## License
 

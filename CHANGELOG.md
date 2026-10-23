@@ -3,6 +3,16 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
+## Unreleased
+
+### Changed
+
+- Reworked the six README editions and plugin guide around current first-use
+  behavior: CLI scan output versus saved reports, explicit network opt-in,
+  human approval and revert, shared versus overridden state directories, and
+  the limits of the DSH plugin tools. Commands and version claims now match
+  `0.3.1` and the supported DSH range.
+
 ## 0.3.1 (2026-10-23)
 
 ### Added

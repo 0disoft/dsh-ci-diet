@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 // Public documentation guard.
 //
 // 1. Every relative link in a public markdown file must resolve on disk.
-// 2. Public documentation is English; only the Korean README mirror may
-//    contain Hangul.
+// 2. Detailed documentation is English; the six READMEs are localized.
+//    Their language links and executable examples must stay in sync.
 // 3. Every specification file must be registered in the specification index,
 //    and the index must link each of them.
 // 4. Public documents must not point at excluded material (design packs,
@@ -15,7 +15,8 @@ import { fileURLToPath } from "node:url";
 
 const root = normalize(join(dirname(fileURLToPath(import.meta.url)), ".."));
 
-const KOREAN_ALLOWLIST = new Set(["README.ko.md"]);
+const READMES = ["README.md", "README.ko.md", "README.zh-Hans.md", "README.hi.md", "README.es.md", "README.fr.md"];
+const LOCALIZED_READMES = new Set(READMES);
 const FORBIDDEN_TERMS = [
   { term: "docs/design", reason: "design packs stay outside the public repository" },
   { term: "_design/", reason: "local design archive must not leak into public docs" },
@@ -54,12 +55,13 @@ function rel(path) {
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".tmp", ".review-bundles"]);
 
 async function listMarkdown(dir) {
-  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
-    .filter((file) => !rel(file).split("/").some((segment) => SKIP_DIRS.has(segment)))
-    .sort();
+  const files = [];
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory() && !SKIP_DIRS.has(entry.name)) files.push(...await listMarkdown(path));
+    else if (entry.isFile() && entry.name.endsWith(".md")) files.push(path);
+  }
+  return files.sort();
 }
 
 function isExternal(target) {
@@ -80,7 +82,7 @@ for (const file of files) {
   const lines = text.split(/\r?\n/);
   counts.files += 1;
 
-  if (!KOREAN_ALLOWLIST.has(name) && /[\uac00-\ud7a3]/.test(text)) {
+  if (!LOCALIZED_READMES.has(name) && /[\uac00-\ud7a3]/.test(text)) {
     counts.hangul += 1;
     fail(name, 1, "public documentation must be English (Hangul found)");
   }
@@ -137,6 +139,30 @@ if (await exists(rootReadme)) {
   if (!readmeText.includes("docs/spec/README.md")) {
     fail("README.md", 0, "README must link the specification index");
   }
+  // Commands, flags, versions, and paths must not drift between translations.
+  // Keep explanatory prose outside fences so it can be translated freely.
+  const fencedExamples = (text) => [...text.replaceAll("\r\n", "\n").matchAll(/^```[^\n]*\n([\s\S]*?)^```\s*$/gm)]
+    .map((match) => match[1].trim());
+  const sourceExamples = fencedExamples(readmeText);
+  for (const name of READMES) {
+    if (!(await exists(join(root, name)))) {
+      fail(name, 0, "expected localized README is missing");
+      continue;
+    }
+    const text = await readFile(join(root, name), "utf8");
+    const top = text.split(/\r?\n/).slice(0, 8).join("\n");
+    for (const target of READMES) {
+      if (!top.includes(`](${target})`)) fail(name, 1, `language navigation must link ${target} near the title`);
+    }
+    if (JSON.stringify(fencedExamples(text)) !== JSON.stringify(sourceExamples)) {
+      fail(name, 0, "fenced examples differ from README.md; keep commands and paths identical");
+    }
+    if (!(linkTargets.get(name)?.has(normalize("docs/spec/README.md")))) {
+      fail(name, 0, "README must link the English specification index");
+    }
+  }
+} else {
+  fail("README.md", 0, "source README is missing");
 }
 
 for (const failure of failures) console.error(`FAIL ${failure}`);
@@ -146,5 +172,5 @@ if (failures.length > 0) {
 }
 
 console.log(
-  `docs ok: ${counts.files} files, ${counts.links} links, ${counts.specEntries} spec entries, 0 hangul outside allowlist`,
+  `docs ok: ${counts.files} files, ${counts.links} links, ${counts.specEntries} spec entries, ${READMES.length} READMEs with matching examples, 0 hangul outside allowlist`,
 );

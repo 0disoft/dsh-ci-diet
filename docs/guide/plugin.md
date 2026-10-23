@@ -1,215 +1,153 @@
 # CI Diet plugin guide
 
-CI Diet ships as one npm package with two entry points: a command line tool and
-a DeepSeek Harness (DSH) plugin. Both read the same contracts and write to the
-same local store.
+CI Diet ships as one npm package with a command-line tool and a DeepSeek Harness (DSH) plugin. They share contracts and the default local state directory, but their first-use flows differ: CLI `scan` prints a report, while CLI `sync` saves one. The plugin's `ci_diet_scan` and `ci_diet_sync` both save reports.
 
-## Install
+Installing the package does not invoke a scan, edit a workflow, or save runner minutes. A chat request to write or deploy code does not invoke CI Diet tools either. The plugin exposes only explicitly called scan, sync, report, prune, and plan tools. It has no automatic pre-push or deploy hook and no approval, apply, or revert tools. The Settings page changes tool configuration; it does not optimize a workflow.
+
+## Install and update
 
 ```
-npm install --global dsh-ci-diet   # command line
-dsh plugin --profile web add dsh-ci-diet
+npm install --global dsh-ci-diet@0.3.1
+dsh plugin --profile web add dsh-ci-diet@0.3.1
 ```
 
-The DSH package declares `dsh.bundle.patch`, so installing it adds one loader
-entry, `ciDiet.bootstrap`, with both switches off by default. Nothing runs at
-boot until you enable a switch.
+The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported. Installing registers the plugin tools and the **Settings → CI Diet** page. Network access is off by default, and starting DSH does not start a scan or modify a workflow.
 
-The package also ships a Web client half (`exports "./client"`). After install,
-open **Settings → CI Diet**. The page edits every engine setting used by the DSH
-tools and labels both the scope and the time it takes effect. It has no apply,
-approval, or revert controls; those stay in the CLI.
+To update, run the same installation commands with `@latest`, then restart DSH. Confirm the plugin with `dsh plugin --profile web list` and the CLI with `ci-diet --version` or `npx dsh-ci-diet@latest --version`.
 
-All engine fields are live: the next tool call reads the current value without
-reloading the plugin. The page validates numbers against the same contract the
-CLI uses, saves the batch atomically, and stages a per-field reset into that same
-batch so it is saved under the pinned revision. Duplicate rule ids are
-normalized to one entry in contract order, never as a save error. A rejected
-write leaves the stored configuration unchanged. The CLI keeps its own
-`--config` file and flags; the page does not write them. The host schema itself
-enforces the contract bounds (lookback 1–30, concurrency 1–4, at least one
-analysis rule) while the form is written, so an out-of-contract save is refused
-before any tool reads it. The page remembers the revision it was editing; if
-another screen saves first, the page refuses your save and asks you to discard
-the draft instead of overwriting the newer values.
+## First use
+
+Run CLI commands from the target repository. `--cwd .` selects that checkout; `--cwd` can take another path. The static command is offline. History collection is a separate network opt-in.
+
+```
+ci-diet scan --cwd .
+gh auth status
+ci-diet sync --cwd . --network
+ci-diet report --cwd .
+ci-diet report --cwd . --format html --out report.html
+```
+
+CLI `scan` prints the static report. Use its `--json` or `--out FILE` option to write that output, but scan does not save a report in the state store. `ci-diet report` needs a saved report, so this CLI sequence uses `sync --network` to create it. `sync` needs `gh` installed, authenticated, and able to read the repository's Actions runs and jobs. It uses read-only access and does not need GitHub write permission.
+
+With DSH, call `ci_diet_scan` with an absolute `cwd` for static analysis. It saves a report, so `ci_diet_report` can follow immediately without network. To collect history, open **Settings → CI Diet**, enable **Allow network access**, and choose **Save changes**. Then call `ci_diet_sync` for the same `cwd`, followed by `ci_diet_report`. The plugin setting applies to plugin tools and does not enable the CLI's `--network` flag.
+
+A useful chat request names the calls and stops before any mutation:
+
+> Run `ci_diet_scan` with cwd `C:\work\my-repo`. If I enable network access in Settings → CI Diet, run `ci_diet_sync` for the same cwd and then `ci_diet_report`. If you preview a patch with `ci_diet_plan`, show the edits only. Do not approve, apply, revert, commit, push, or deploy anything.
+
+## Settings
+
+The Settings page edits the engine configuration read by DSH tools. Every engine field is live: the next tool call reads the current value without reloading the plugin. Saves are validated against the same contract as the CLI and applied as one atomic batch. A save that conflicts with a newer revision is refused. CLI `--config` files and flags remain separate.
 
 | Group | Fields |
 | --- | --- |
 | Connection | `networkEnabled`, `stateDir` |
-| Analysis rules | `rules` list (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD008`); at least one stays enabled |
-| History collection | `historyLookbackDays` (1–30), `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests` (1–4), `historyRequestTimeoutMs` |
-| Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; 0 disables that cap |
+| Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD008`); at least one remains enabled |
+| History collection | `historyLookbackDays`, `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests`, `historyRequestTimeoutMs` |
+| Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
 
-`localApplyEnabled` stays an ordinary reserved field until the plugin ships an
-apply tool, so the page does not offer it. `stateDir` changes do not migrate an
-existing store; point it at a new directory only before a fresh sync.
-
-## Languages
-
-The CLI, the HTML report, and the model tool text ship in English, Korean,
-Simplified Chinese, Hindi, Spanish, and French. Selection order is `--lang`,
-then the DSH locale preference (the `locale` plugin's `preference` in the
-profile patch), then `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. An explicit
-but unsupported `--lang` falls back to English rather than to the host setting.
-
-Reports are stored in English. Translation happens when text is displayed:
-finding titles and descriptions come from message keys, while rule ids, error
-codes, enum values, paths, hashes, and numbers are never translated. The HTML
-report sets its `lang` attribute accordingly. The Settings page registers its own
-client dictionaries in all six languages and contributes any language the host
-does not ship, with English as its fallback. Model tool descriptions and render
-templates are captured when the plugin loads, so change the DSH language
-preference and reload the plugin to see new text.
+Network access defaults to false. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan or install a hook.
 
 ## Model tools
 
 | Tool | Network | Writes | Purpose |
 | --- | --- | --- | --- |
-| `ci_diet_scan` | no | report | Static scan of `.github/workflows` in a checkout |
-| `ci_diet_sync` | yes | report | Read-only history sync with `gh` |
-| `ci_diet_report` | no | nothing | Summarize the latest stored report |
-| `ci_diet_prune` | no | deletes expired data | Apply the configured retention days and cache cap to the local store |
-| `ci_diet_plan` | no | plan | Evaluate patch eligibility and preview a plan; never approves or applies |
+| `ci_diet_scan` | no | saves a report | Static scan of `.github/workflows` in a checkout |
+| `ci_diet_sync` | yes | saves history and a report | Read-only GitHub Actions history sync with `gh` |
+| `ci_diet_report` | no | nothing | Summarize the latest saved report |
+| `ci_diet_prune` | no | deletes expired data | Apply configured report, plan, and cache retention to the local store |
+| `ci_diet_plan` | no | nothing | Preview patch eligibility and edits; does not save or approve a plan |
 
-`ci_diet_prune` is the execution path for the storage settings. It deletes
-reports, plans, and cache entries older than `storageReportDays`,
-`storagePlanDays`, and `storageCacheDays`, evicts cache entries beyond
-`storageCacheMaxBytes`, and reports the freed bytes and the current quota state.
-It never deletes applied-change backups: the contract keeps
-`pruneAppliedBackups` off, and removing a backup needs the listing token from
-`ci-diet prune --applied-backups`.
+`ci_diet_scan` accepts `cwd` and an optional `rules` list. Use an absolute repository path so the binding and saved report target the intended checkout. It never fetches history.
 
-`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, `step`, and a
-`claims` list. It returns the edits, the plan digest, the coverage level, and
-the reasons that still block a write. It has no approval argument on purpose:
-approval is a separate, human step. The CLI prints a confirmation derived from
-the plan digest, and apply consumes a single-use nonce created by that approval.
+`ci_diet_sync` accepts `cwd`, optional `repo`, and `days`. Without `repo`, it uses the checkout's GitHub origin. It requires the Settings network switch. A partial collection still saves a report and marks incomplete coverage.
+
+`ci_diet_report` reads the latest saved report. Run scan or sync first. It does not update evidence.
+
+`ci_diet_prune` removes reports, plans, and cache entries according to live storage settings, then reports freed bytes and quota state. It never deletes applied-change backups. Removing those requires the listing token from the CLI.
+
+`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, numeric `step`, `minutes`, and `claims`. Numeric `step` is the zero-based index in the workflow's step array, not a label such as `upload`. The tool returns edits, coverage, blockers, a plan digest, and `nextCommand`; it does not create or save a durable plan and never approves or applies anything. `nextCommand` reruns CLI `ci-diet plan` with the same absolute cwd and state directory so a human can inspect and save the plan there. `ci-only` and `replace-safe` are human attestations for eligible PR-only CD001 changes, not bypass switches.
 
 ## Command line
 
 ```
-ci-diet scan  --cwd <repo> [--json] [--out <file>] [--rules CD001,CD008]
-ci-diet sync  --network --repo <owner/name> [--days 7] [--json]
-ci-diet sync  --network --included-minutes N --account-minutes-used M
-ci-diet plan  --rule CD008 [--cwd <repo>] --workflow .github/workflows/ci.yml \
-              --job build --step upload --claims artifact-purpose:temporary,consumer-min-days:7
-ci-diet plan  --rule CD005 --workflow .github/workflows/ci.yml --job build --minutes 20
-ci-diet plan  --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
-ci-diet approve --plan <planId> --confirm <digestTail>
-ci-diet apply --plan <planId>
-ci-diet revert --change <changeId>
-ci-diet changes
-ci-diet plans [--plan <planId>]
-ci-diet report [--report <id>] [--format text|json|html] [--out <file>]
-ci-diet diagnose [--json] [--out <file>] [--require-complete]
+ci-diet scan --cwd .
+ci-diet scan --cwd . --json --out static-report.json
+ci-diet sync --cwd . --network --repo OWNER/REPO --days 7
+ci-diet plan --cwd . --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
+ci-diet plan --cwd . --rule CD005 --workflow .github/workflows/ci.yml --job build --minutes 20
+ci-diet plan --cwd . --rule CD008 --workflow .github/workflows/ci.yml --job build --step 0 --claims artifact-purpose:temporary,consumer-min-days:7
+ci-diet plans --cwd . --plan PLAN_ID
+ci-diet approve --cwd . --plan PLAN_ID --confirm CONFIRMATION
+ci-diet apply --cwd . --plan PLAN_ID
+ci-diet revert --cwd . --change CHANGE_ID
+ci-diet changes --cwd .
+ci-diet report --cwd .
+ci-diet report --cwd . --format json
+ci-diet report --cwd . --format html --out report.html
+ci-diet diagnose --cwd .
 ci-diet prune
+ci-diet report --cwd . --lang ko
 ```
 
-`plan` prints the proposed lines as a small diff. `ci-diet plans --plan <planId>`
-re-reads a saved plan and prints the same diff from its byte edits. When the
-workspace or workflow file is gone, or the bytes no longer match the plan's
-source hash, it hides the diff, keeps the plan JSON, asks for a re-plan, and
-exits `3`.
+Replace `PLAN_ID` with the id printed by `plan`, `CONFIRMATION` with the final 12 characters of the plan digest, and `CHANGE_ID` with the id printed by `apply`. `OWNER/REPO` is a literal argument shape, not a shell redirection. The CD008 `--step 0` command is valid only when the target retention step is actually step index zero; use the correct zero-based numeric index for another step.
 
-Exit codes: `0` success (a partial report is still success), `1` usage or
-unexpected error, `2` contract violation, `3` incomplete evidence or refused
-write, `4` invariant failure (a revert could not restore matching bytes),
-`5` approval refused or nonce invalid, `6` backup unavailable, `130`
-cancelled with Ctrl+C.
+CLI `scan` prints a report or writes it to `--out`; it does not add the report to the state store. CLI `sync` stores history and a report. `report`, `plan`, approve, apply, revert, list, and prune operations rely on the state store.
 
-Pass `--require-complete` to turn a partial coverage report into exit `3`.
+`plan` requires a matching saved report and eligibility. Missing workflow or argument errors can exit `1`; stale evidence, incomplete coverage, a changed source, and other refused writes exit `3`. It prints a real plan id and confirmation and saves the plan. `plans --plan` reopens it. If the workspace or workflow has disappeared, or workflow bytes no longer match the saved source hash, the saved-plan view hides the diff, preserves the plan JSON, asks for a replan, and exits `3`.
 
-## What a plan needs before it can write
+`approve` consumes the 12-character confirmation tail and creates a one-use approval. `apply` verifies the digest, approval nonce, policies, dependencies, source bytes, command, backup, and lock before rewriting one file's planned byte range. `revert` restores the backup for the printed change id. None of these commands commits, pushes, deploys, runs a workflow, changes branch protection, or deletes artifacts.
 
-A plan is only built when the rule's finding is patch-eligible in the latest
-report for this repository. A blocked finding never becomes a plan, and a plan
-whose evidence stops matching is refused with exit `3` and a reason code.
+All commands accept `--config FILE`, which merges a partial JSON configuration over defaults and validates the result before running. `--lang` selects display language. Relative `--out` and `--state-dir` paths resolve against the effective `--cwd`.
 
-| Requirement | CD001 | CD005 | CD008 |
-| --- | --- | --- | --- |
-| Observed history coverage that allows a write | yes | yes | yes |
-| Human claims in the attestation | `ci-only`, `replace-safe` | (none) | artifact purpose, consumer minimum days |
-| Fresh policy snapshot | branch protection | (none) | artifact retention |
-| Other blockers | PR-only trigger, no existing `concurrency`, no deploy job | a cohort of 20 samples, no existing timeout | literal retention above 7 days |
+## Plan requirements and blockers
 
-Claims are recorded on a durable Attestation, not in the plan digest. If a claim
-is withdrawn, the plan cannot apply. Policy freshness is checked per rule, so an
-unrelated stale snapshot never blocks a timeout edit.
+A plan requires a patch-eligible finding in the latest saved report for the same binding. It refuses when evidence no longer matches, coverage does not permit a write, or a required policy snapshot is stale.
 
-The request must also match the finding it is based on. The finding records the
-workflow hash, the job key, the step index, and the measured value; a request
-for another job, a value that no cohort produced, or a file that changed after
-the report is refused with exit `3` and a reason such as
-`WORKFLOW_HASH_MISMATCH` or `MINUTES_NOT_FROM_EVIDENCE`. Re-run `sync` before
-retrying against a changed workflow.
+| Rule | Human claims | Other evidence |
+| --- | --- | --- |
+| CD001 | `ci-only`, `replace-safe` | PR-only trigger, no existing concurrency, no deploy job, fresh branch-protection policy |
+| CD005 | none | A qualifying cohort, measured timeout recommendation, no existing timeout |
+| CD008 | artifact purpose and consumer minimum days | Artifact retention evidence above the proposed value and a fresh retention policy |
 
-## Safety model
+CD005 caps abnormal runs and does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 are disabled by default until their quality gates pass. Cache hints are advisory only because the frozen contract has no cache rule.
 
-- Patches are byte-range edits, one file per plan. The file is never
-  re-serialized.
-- Apply requires an approved plan, a matching approval nonce, unchanged source
-  hashes, unchanged dependency hashes, and a durable backup.
-- The semantic guard compares every step field, including `env`, `if`, and each
-  `with` entry, and reports empty mappings/sequences and parent type changes.
-  An edit that drifts outside its rule is refused even if the plan digest is
-  recomputed.
-- Dependency hashes cover interpreter scripts such as `node build.js` relative
-  to the step `working-directory`, and all files inside a local action
-  directory. A reference the scan cannot hash becomes an
-  `UNRESOLVED_DEPENDENCY:<path>` blocker, so apply refuses instead of trusting
-  an incomplete fingerprint. Boolean flags such as `--enable-source-maps` keep
-  the following token as the script, while `--require`, `--loader`, `--import`,
-  and `--env-file` consume a value that is hashed when it names a repository
-  file. A local action that hits the 500-file limit or an unreadable file or
-  directory is also reported as unresolved.
-- The working tree is authoritative: uncommitted changes are preserved, and a
-  file that changed after the plan was built is refused.
-- Backups are never deleted automatically. If the store cannot hold another
-  backup, apply refuses with `BACKUP_UNAVAILABLE`.
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success; a partial report can still succeed |
+| `1` | Usage or unexpected error |
+| `2` | Contract violation |
+| `3` | Incomplete evidence or refused write |
+| `4` | Invariant failure, including a revert that cannot restore matching bytes |
+| `5` | Approval refused or nonce invalid |
+| `6` | Backup unavailable |
+| `130` | Cancelled with Ctrl+C |
 
 ## State
 
-The CLI uses `%LOCALAPPDATA%\CI-Diet\profiles\default` on Windows and
-`~/.local/state/ci-diet/profiles/default` elsewhere. The DSH plugin uses the
-same layout under the DSH home. `--state-dir` overrides both.
+The CLI and plugin use the same default store by default: `%LOCALAPPDATA%\CI-Diet\profiles\default` on Windows, otherwise `~/.local/state/ci-diet/profiles/default`.
 
-Bindings, reports, plans, attestations, backups, changes, and an append-only
-event log live in separate subdirectories. Report retention is 90 days; plans
-expire after 7 days.
+The plugin's `stateDir` override points at a separate store. When it is set, use the same absolute directory with CLI `--state-dir` for scan when needed, sync, plan, plans view, approve, apply, and revert. Relative CLI state paths resolve against the effective `--cwd`, but the plugin override should be treated as an absolute path. Existing state is never migrated automatically.
 
-## Reports
+Bindings, reports, plans, attestations, backups, changes, and the event log live in separate subdirectories. Default report retention is 90 days and plan retention is 7 days. Applied-change backups are not removed by automatic prune.
 
-`ci-diet report` prints the latest stored report for the repository at the
-effective `--cwd` (the current directory by default), or the one named by
-`--report` regardless of root. Three formats share the same stored record:
+## Reports and diagnostics
 
-| Format | Use |
-| --- | --- |
-| `text` | Default summary: report id, runner seconds, modeled minutes, list price, findings, and which coverage axes are incomplete |
-| `json` | The contract-valid `AnalysisReport`, for another tool |
-| `html` | One self-contained file with inline CSS, no scripts, and no external URLs |
+The text report shows the report id, observed runner time, modeled minutes, list price, findings, and incomplete coverage axes. JSON emits the stored `AnalysisReport`. HTML is one self-contained file with inline CSS, no scripts, and no external URLs.
 
-`--json` is shorthand for `--format json`. `--out` writes the rendered
-document to a file instead of standard output.
+Reports keep four cost values separate: `observedRunnerSeconds`, `modeledRoundedMinutes`, `listPriceUsd`, and `actualBilledUsd`. The actual billed value remains `null` until it can be proven. Each report embeds the pricing snapshot and content hash used for reproduction. A finding or plan is not a claim that CI time was saved.
 
-`ci-diet prune` deletes reports older than 90 days, plans older than 7 days,
-and cache entries older than the configured cache window. It never deletes
-backups, and it reports the freed byte count.
+`ci-diet diagnose` is read-only and works from stored history. It explains job-name attribution, matrix expansion, incomplete collection axes, and advisory cache hygiene. `--require-complete` exits `3` when an axis is incomplete or a run has no resolved definition.
 
-## Diagnostics
+## Languages
 
-`ci-diet diagnose` explains the latest stored history without touching the
-network. For each workflow it shows how many job names resolved to YAML keys,
-which matrix jobs expanded and to how many legs, and the most frequent job
-names that did not resolve. It also lists each coverage axis with its status
-and reasons, so a cap such as `JOB_PAGE_LIMIT_REACHED` is visible next to the
-axis it truncated. The command is read-only; `--json` emits the same data and
-`--require-complete` exits `3` when any axis is incomplete or a run has no
-resolved definition.
+The DSH Settings UI, CLI messages, HTML reports, and the six READMEs support English, Korean, Simplified Chinese, Hindi, Spanish, and French. Detailed specification documents remain English.
 
-Cache hints are advisory. When a job installs dependencies without a cache, or
-an `actions/cache` key is a literal that cannot follow the lockfile, `diagnose`
-lists it under cache hygiene. The frozen v0.2.1 contract has no cache rule id,
-so these hints never become findings, never change coverage, and never produce a
-patch.
+Selection order is `--lang`, the DSH locale preference, `LC_ALL`/`LC_MESSAGES`/`LANG`, then English. The CLI language codes are `en`, `ko`, `zh-Hans`, `hi`, `es`, and `fr`; replace `ko` in the example command with the desired code. Regional tags resolve by language. An explicit unsupported `--lang` falls back to English.
+
+Reports are stored in English and translated when displayed. Rule ids, error codes, enum values, paths, hashes, and numbers stay literal. HTML sets `lang` to the selected locale. Model tool descriptions are captured when the plugin loads, so reload after changing the DSH language preference.
+
+The detailed specs and decisions remain English: [specification index](../spec/README.md), [rules](../spec/rules.md), [cost model](../spec/cost-model.md), [patch model](../spec/patch-model.md), [storage and errors](../spec/storage.md), and [decisions](../spec/decisions.md).
