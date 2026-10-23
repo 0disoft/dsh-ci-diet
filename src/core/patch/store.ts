@@ -419,7 +419,7 @@ export class PatchStore {
   }
 
   /** Latest report produced for one binding, never another repository's report. */
-  latestReportForBinding(bindingId: string): AnalysisReport | null {
+  latestReportForBinding(bindingId: string, repairIndex = true): AnalysisReport | null {
     const snapshotReport = this.latestSnapshotReport(bindingId);
     let pointerReport: AnalysisReport | null = null;
     // A binding id is a file name here, so only pattern-safe ids get a pointer;
@@ -434,7 +434,7 @@ export class PatchStore {
     const scanned = this.scanLatestReport(bindingId);
     const latest = newestReport(snapshotReport, scanned);
     if (latest === null || latest === snapshotReport) return latest;
-    this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
+    if (repairIndex) this.saveReportPointers(latest, ID_PATTERN.test(bindingId) ? this.latestReportPointerFor(bindingId) : undefined);
     return latest;
   }
 

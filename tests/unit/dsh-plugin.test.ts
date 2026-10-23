@@ -114,7 +114,7 @@ test("exposes every engine-facing setting as live", () => {
   for (const key of Object.keys(defaultPluginSettings())) {
     assert.equal(fields[key]?.meta?.volatile, true, key + " must be volatile");
   }
-  assert.notEqual(fields.localApplyEnabled?.meta?.volatile, true);
+  assert.equal(fields.localApplyEnabled?.meta?.volatile, true);
 });
 
 test("defaults match the contract and rule defaults", () => {

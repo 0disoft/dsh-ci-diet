@@ -1,0 +1,145 @@
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { join } from "node:path";
+import type { Context } from "@deepseek-ai/cordis";
+import type { EngineSettings } from "../../core/config/plugin-settings.ts";
+import type { PatchPlan, RepositoryBinding } from "../../core/contracts/schema.ts";
+import { PatchStore } from "../../core/patch/store.ts";
+import { approvePlan } from "../../core/patch/approval.ts";
+import { applyPlan, resolveWorkflowFile, revertChange } from "../../core/patch/apply.ts";
+import { renderEditDiff } from "../../core/patch/diff.ts";
+import { sourceHashOf } from "../../core/patch/plan.ts";
+import { defaultStateDir } from "../../core/state/paths.ts";
+import { localizedFinding } from "../../core/report/localize.ts";
+import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
+
+/** This transport belongs to the browser owner, never the model tool registry. */
+export const REVIEW_ENDPOINT = "ciDiet/review";
+interface ReviewSettings { readonly engine: EngineSettings; readonly localApplyEnabled: boolean }
+interface ReviewRequest { action: "load" | "approve" | "apply" | "revert"; sessionId: string; id?: string; confirmation?: string }
+
+function requestOf(value: unknown): ReviewRequest {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => !["action", "sessionId", "id", "confirmation"].includes(key))) throw new Error("INVALID_REQUEST");
+  if (!["load", "approve", "apply", "revert"].includes(String(record.action))
+    || typeof record.sessionId !== "string" || record.sessionId.length === 0 || record.sessionId.length > 256
+    || (record.id !== undefined && (typeof record.id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(record.id)))
+    || (record.confirmation !== undefined && (typeof record.confirmation !== "string" || record.confirmation.length > 200))) throw new Error("INVALID_REQUEST");
+  if (record.action !== "load" && typeof record.id !== "string") throw new Error("INVALID_REQUEST");
+  return record as unknown as ReviewRequest;
+}
+
+export class ReviewService {
+  private readonly rootForSession: (id: string) => string;
+  private readonly settings: () => ReviewSettings;
+  constructor(rootForSession: (id: string) => string, settings: () => ReviewSettings) {
+    this.rootForSession = rootForSession;
+    this.settings = settings;
+  }
+
+  private preview(store: PatchStore, binding: RepositoryBinding, plan: PatchPlan, settings: ReviewSettings, now: Date, usedPlans?: ReadonlySet<string>) {
+    const blockers = [...plan.payload.blockers];
+    let sourceValid = false;
+    let diff: ReturnType<typeof renderEditDiff> = [];
+    try {
+      const file = resolveWorkflowFile(binding, plan.payload.workflowPath);
+      if (statSync(file).size > settings.engine.config.storage.workflowMaxBytes) throw new Error("WORKFLOW_TOO_LARGE");
+      const source = readFileSync(file, "utf8");
+      sourceValid = sourceHashOf(source) === plan.payload.sourceHash;
+      if (sourceValid) diff = renderEditDiff(source, plan.payload.edits);
+      else blockers.push("SOURCE_HASH_MISMATCH");
+    } catch {
+      blockers.push("SOURCE_UNAVAILABLE");
+    }
+    if (now.getTime() >= Date.parse(plan.payload.expiresAt)) blockers.push("PLAN_EXPIRED");
+    if (!store.readPlan(plan.planId)?.meta.coverageWriteAllowed) blockers.push("COVERAGE_INSUFFICIENT_FOR_WRITE");
+    if (plan.provenance !== "observed") blockers.push("SYNTHETIC_PLAN");
+    if (plan.payload.ruleIds.some((id) => !settings.engine.config.apply.allowedRules.includes(id))) blockers.push("RULE_NOT_ALLOWED");
+    if ((usedPlans ?? new Set(store.listChanges().filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId))).has(plan.planId)) blockers.push("PLAN_ALREADY_USED");
+    return { id: plan.planId, digest: plan.planDigest, workflowPath: plan.payload.workflowPath,
+      ruleId: plan.payload.ruleIds.join(", "), state: plan.status.state, expiresAt: plan.payload.expiresAt,
+      sourceValid, blockers: [...new Set(blockers)], diff };
+  }
+
+  async execute(value: unknown, subjectId: string, signal: AbortSignal) {
+    signal.throwIfAborted();
+    const request = requestOf(value);
+    // Resolve on the Host. Neither cwd nor a caller-provided binding can escape
+    // the selected live Session's effective working directory.
+    const root = realpathSync(this.rootForSession(request.sessionId));
+    const settings = this.settings();
+    const stateDir = settings.engine.stateDir || defaultStateDir();
+    // No mkdir, chmod or index repair during read-only rendering.
+    const reader = new PatchStore(stateDir, settings.engine.config.storage);
+    const binding = existsSync(join(stateDir, "bindings")) ? reader.findBindingByRoot(root) : null;
+    if (request.action === "load") {
+      const report = binding === null ? null : reader.latestReportForBinding(binding.bindingId, false);
+      const locale = resolveRequestedLocale(null, process.env);
+      const changes = binding === null ? [] : reader.listChanges().filter((change) => change.bindingId === binding.bindingId);
+      const usedPlans = new Set(changes.filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId));
+      return { root, bindingId: binding?.bindingId ?? null, localApplyEnabled: settings.localApplyEnabled,
+        report: report === null ? null : { ...report, findings: report.findings.map((finding) => {
+          const localized = localizedFinding(finding, locale);
+          return { ...finding, title: localized.title, renderedText: localized.text };
+        }) },
+        plans: binding === null ? [] : reader.listPlans().filter(({ plan }) => plan.payload.bindingId === binding.bindingId)
+          .map(({ plan }) => this.preview(reader, binding, plan, settings, new Date(), usedPlans)),
+        changes: changes
+          .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state })) };
+    }
+    if (!settings.localApplyEnabled) throw new Error("LOCAL_APPLY_DISABLED");
+    if (binding === null) throw new Error("BINDING_NOT_FOUND");
+    const id = request.id!;
+    if (request.action === "revert") {
+      const change = reader.readChange(id);
+      if (change === null || change.bindingId !== binding.bindingId) throw new Error("CHANGE_NOT_FOUND");
+      if (request.confirmation !== id) throw new Error("CONFIRMATION_REQUIRED");
+      return revertChange({ store: PatchStore.open(stateDir, settings.engine.config.storage), changeId: id, now: new Date(), signal });
+    }
+    const stored = reader.readPlan(id);
+    if (stored === null || stored.plan.payload.bindingId !== binding.bindingId) throw new Error("PLAN_NOT_FOUND");
+    const preview = this.preview(reader, binding, stored.plan, settings, new Date());
+    if (preview.blockers.length > 0) throw new Error(preview.blockers.join(", "));
+    const store = PatchStore.open(stateDir, settings.engine.config.storage);
+    if (request.action === "approve") {
+      const approved = approvePlan({ store, planId: id, confirmation: request.confirmation ?? "", subjectId, channel: "human-ui", now: new Date() });
+      return { state: approved.plan.status.state, warnings: approved.warnings ?? [] };
+    }
+    // A separate explicit Apply click consumes the single-use approval. All
+    // dependency, policy, TTL and backup checks remain in the patch engine.
+    return applyPlan({ store, planId: id, subjectId, now: new Date(), signal,
+      allowedRules: settings.engine.config.apply.allowedRules,
+      approvalTtlSeconds: settings.engine.config.apply.approvalTtlSeconds,
+      policyMaxAgeSeconds: settings.engine.config.apply.policyMaxAgeSeconds });
+  }
+}
+
+interface Connection {
+  readonly browserPeer: { readonly id: string };
+  readonly rpc: { intercept(channel: "/api", matches: (endpoint: string) => boolean,
+    handler: (endpoint: string, payload: unknown, signal: AbortSignal, peer: { id: string; principal: { kind: string } }) => Promise<unknown>): () => Promise<void> };
+}
+
+export function registerReview(ctx: Context, settings: () => ReviewSettings): void {
+  // CLI-only / older hosts keep their tools even when the browser carrier is absent.
+  if (typeof ctx.inject !== "function") return;
+  ctx.inject(["connection", "sessions", "workingDirectory"], (scope) => {
+    const connection = scope.get("connection") as Connection;
+    const sessions = scope.get("sessions") as { get(id: string): unknown };
+    const directories = scope.get("workingDirectory") as { get(session: unknown): string };
+    const service = new ReviewService((id) => {
+      const session = sessions.get(id);
+      if (session === undefined) throw new Error("SESSION_NOT_FOUND");
+      return directories.get(session);
+    }, settings);
+    scope.effect(() => connection.rpc.intercept("/api", (endpoint) => endpoint === REVIEW_ENDPOINT, async (_endpoint, payload, signal, peer) => {
+      // An owner principal alone is insufficient: API/agent Peers cannot mint
+      // human-ui approval. Only the Host's authenticated browser Peer may call.
+      if (peer.principal.kind !== "owner" || peer.id !== connection.browserPeer.id) {
+        return { ok: false, error: { code: "FORBIDDEN", message: "BROWSER_OWNER_REQUIRED", details: {} } };
+      }
+      try { return { ok: true, value: await service.execute(payload, "dsh-browser-owner", signal) }; }
+      catch (error) { return { ok: false, error: { code: "CI_DIET_REVIEW", message: error instanceof Error ? error.message : String(error), details: {} } }; }
+    }));
+  });
+}
