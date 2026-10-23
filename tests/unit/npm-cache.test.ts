@@ -98,6 +98,12 @@ test("no cache finding without a tracked root lockfile", (t) => {
   assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
 });
 
+test("does not key package-lock when npm ci actually uses shrinkwrap", (t) => {
+  const root = fixture(t);
+  writeFileSync(join(root, "npm-shrinkwrap.json"), '{"lockfileVersion":3}');
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+});
+
 test("cache insertion preserves CRLF and rejects changes outside its two inputs", () => {
   for (const source of [SOURCE, SOURCE.replace("        with:\n          node-version: '22' # keep this comment\n", "")].map((s) => s.replaceAll("\n", "\r\n"))) {
     const workflow = parseWorkflow(PATH, source);

@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { sha256Hex } from "../../shared/cdj1.ts";
@@ -32,13 +32,16 @@ export function npmCacheTargets(workflow: WorkflowDefinition): NpmCacheTarget[] 
 export function npmCacheDependencies(root: string): { ref: string; sha256: string }[] | null {
   try {
     const realRoot = realpathSync(root);
+    // npm ci prefers shrinkwrap to package-lock; this proposal must not key a
+    // different dependency tree. Use the patch dependency collector's 2 MiB cap.
+    if (existsSync(join(realRoot, "npm-shrinkwrap.json"))) return null;
     execFileSync("git", ["ls-files", "--error-unmatch", "--", "package.json", "package-lock.json"], {
       cwd: realRoot, timeout: 2000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
     });
     const dependencies = ["package.json", "package-lock.json"].map((ref) => {
       const path = join(realRoot, ref);
       const stat = lstatSync(path);
-      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4 * 1024 * 1024) throw new Error("unsupported manifest");
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2 * 1024 * 1024) throw new Error("unsupported manifest");
       const bytes = readFileSync(path);
       const value = JSON.parse(bytes.toString("utf8"));
       if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid manifest");
