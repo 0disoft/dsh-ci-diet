@@ -52,7 +52,7 @@ export const ko: Record<MessageKey, string> = {
   "error.WRITE_CONFLICT": "검증 중 파일이 바뀌었습니다. 직접 확인하세요.",
   "error.COMMAND_FAILED": "명령이 실패했습니다.",
   "error.STORAGE_QUOTA_EXCEEDED": "로컬 상태 저장소가 가득 찼습니다. 만료된 데이터를 정리하거나 되돌릴 수 없음을 확인한 백업을 지우세요.",
-  "cli.usage": "사용법: ci-diet <command> [options]\n\n  scan    네트워크 없이 워크플로 파일을 분석합니다\n  sync    읽기 전용 API로 GitHub Actions 이력을 수집합니다 (--network 필요)\n  report  저장된 보고서를 text/JSON/HTML로 보여줍니다\n  diagnose Job 매칭과 수집 커버리지를 설명합니다\n  prune   만료된 보고서·계획·캐시를 정리합니다\n  --config <file> JSON 파일에서 저장소·이력 설정을 병합합니다\n  --help  이 도움말을 표시합니다",
+  "cli.usage": "사용법: ci-diet <command> [options]\n\n  compare --before-run <id> --after-run <id> --network [--format json|html]\n  scan    네트워크 없이 워크플로 파일을 분석합니다\n  sync    읽기 전용 API로 GitHub Actions 이력을 수집합니다 (--network 필요)\n  report  저장된 보고서를 text/JSON/HTML로 보여줍니다\n  diagnose Job 매칭과 수집 커버리지를 설명합니다\n  prune   만료된 보고서·계획·캐시를 정리합니다\n  --config <file> JSON 파일에서 저장소·이력 설정을 병합합니다\n  --help  이 도움말을 표시합니다",
   "cli.scan.help": "사용법: ci-diet scan [--cwd <path>] [--json] [--out <file>] [--rules <ids>] [--require-complete]",
   "cli.plan.help": "사용법: ci-diet plan --rule <CD001|CD005|CD006|CD008> [--workflow <path>] [--job <key>] [--step <index>] [--minutes <n>] [--claims <list>] [--state-dir <path>] [--json]",
   "cli.approve.help": "사용법: ci-diet approve --plan <planId> --confirm <digest 끝자리> [--state-dir <path>]",

@@ -51,7 +51,7 @@ export const hi: Record<MessageKey, string> = {
   "error.BACKUP_UNAVAILABLE": "टिकाऊ बैकअप नहीं लिखा जा सका; कुछ भी नहीं बदला गया।",
   "error.WRITE_CONFLICT": "सत्यापन के दौरान फ़ाइल बदल गई; कृपया मैन्युअल रूप से देखें।",
   "error.COMMAND_FAILED": "कमांड विफल रहा।",
-  "cli.usage": "उपयोग: ci-diet <command> [options]\n\n  scan    नेटवर्क के बिना वर्कफ़्लो फ़ाइलों का विश्लेषण\n  sync    रीड-ओनली API से GitHub Actions इतिहास पढ़ें (--network चाहिए)\n  report  संग्रहित रिपोर्ट को टेक्स्ट, JSON या HTML में दिखाएँ\n  diagnose job मिलान और संग्रह कवरेज समझाएँ\n  prune   समाप्त रिपोर्ट, योजनाएँ और कैश हटाएँ\n  --config <file> JSON फ़ाइल से स्टोरेज और इतिहास सेटिंग मिलाएँ\n  --help  यह सहायता दिखाएँ",
+  "cli.usage": "उपयोग: ci-diet <command> [options]\n\n  compare --before-run <id> --after-run <id> --network [--format json|html]\n  scan    नेटवर्क के बिना वर्कफ़्लो फ़ाइलों का विश्लेषण\n  sync    रीड-ओनली API से GitHub Actions इतिहास पढ़ें (--network चाहिए)\n  report  संग्रहित रिपोर्ट को टेक्स्ट, JSON या HTML में दिखाएँ\n  diagnose job मिलान और संग्रह कवरेज समझाएँ\n  prune   समाप्त रिपोर्ट, योजनाएँ और कैश हटाएँ\n  --config <file> JSON फ़ाइल से स्टोरेज और इतिहास सेटिंग मिलाएँ\n  --help  यह सहायता दिखाएँ",
   "cli.scan.help": "उपयोग: ci-diet scan [--cwd <path>] [--json] [--out <file>] [--rules <ids>] [--require-complete]",
   "cli.plan.help": "उपयोग: ci-diet plan --rule <CD001|CD005|CD006|CD008> [--workflow <path>] [--job <key>] [--step <index>] [--minutes <n>] [--claims <list>] [--state-dir <path>] [--json]",
   "cli.approve.help": "उपयोग: ci-diet approve --plan <planId> --confirm <digest tail> [--state-dir <path>]",

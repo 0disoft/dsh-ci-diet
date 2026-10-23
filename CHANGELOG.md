@@ -7,6 +7,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Added
 
+- `ci-diet compare --before-run ID --after-run ID --network` reads successful
+  Actions runs and emits JSON or a standalone HTML evidence report. It includes
+  attempt-specific job/step durations and added cache steps, rejects incomplete
+  collections, and suppresses aggregate reductions across different scopes.
+  Observed differences stay separate from causal savings and actual billing.
+
 - CD006 detects a narrow npm shape: a root `actions/checkout` with no user
   `with` options, exactly one `actions/setup-node@v3` or `@v4` step without npm
   caching, then exactly `npm ci`. The plan adds only `cache: npm` and
@@ -32,6 +38,9 @@ Keep a Changelog, and the project uses semantic versioning.
   automatically, human approval still gates apply, and savings stay unmeasured.
 
 ### Changed
+
+- Settings bundle tests compile their unchanged input once per suite instead
+  of four times. Each behavior test still loads an independent VM and form.
 
 - Reworked the six README editions and plugin guide around current first-use
   behavior: CLI scan output versus saved reports, explicit network opt-in,

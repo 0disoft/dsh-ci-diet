@@ -51,7 +51,7 @@ export const en = {
   "error.WRITE_CONFLICT": "The file changed during verification; review it manually.",
   "error.COMMAND_FAILED": "The command failed.",
   "error.STORAGE_QUOTA_EXCEEDED": "The local state store is full; prune expired data or remove confirmed backups.",
-  "cli.usage": "Usage: ci-diet <command> [options]\n\n  scan    Analyze workflow files without network access\n  sync    Read GitHub Actions history with the read-only API (needs --network)\n  report  Show a stored report as text, JSON, or HTML\n  diagnose Explain job attribution and coverage from stored history\n  prune   Remove expired reports, plans, and cache\n  --config <file> Merge storage and history settings from a JSON file\n  --help  Show this help",
+  "cli.usage": "Usage: ci-diet <command> [options]\n\n  compare --before-run <id> --after-run <id> --network [--format json|html]\n  scan    Analyze workflow files without network access\n  sync    Read GitHub Actions history with the read-only API (needs --network)\n  report  Show a stored report as text, JSON, or HTML\n  diagnose Explain job attribution and coverage from stored history\n  prune   Remove expired reports, plans, and cache\n  --config <file> Merge storage and history settings from a JSON file\n  --help  Show this help",
   "cli.scan.help": "Usage: ci-diet scan [--cwd <path>] [--json] [--out <file>] [--rules <ids>] [--require-complete]",
   "cli.plan.help": "Usage: ci-diet plan --rule <CD001|CD005|CD006|CD008> [--workflow <path>] [--job <key>] [--step <index>] [--minutes <n>] [--claims <list>] [--state-dir <path>] [--json]",
   "cli.approve.help": "Usage: ci-diet approve --plan <planId> --confirm <digest tail> [--state-dir <path>]",

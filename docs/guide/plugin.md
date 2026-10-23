@@ -148,6 +148,31 @@ Reports keep four cost values separate: `observedRunnerSeconds`, `modeledRounded
 
 `ci-diet diagnose` is read-only and works from stored history. It explains job-name attribution, matrix expansion, incomplete collection axes, and advisory cache hygiene. `--require-complete` exits `3` when an axis is incomplete or a run has no resolved definition.
 
+## Compare actual CI runs
+
+After an optimization has been reviewed, applied, and pushed, compare two
+successful runs of the same workflow, branch, event, job names, and runner
+labels. This command only reads GitHub; it never starts or cancels a run:
+
+```sh
+ci-diet compare --before-run 123 --after-run 456 --repo owner/repo --network
+ci-diet compare --before-run 123 --after-run 456 --repo owner/repo --network --format html --out comparison.html --lang ko
+```
+
+JSON includes both commit SHAs, run attempts, total job duration, matching step
+durations, newly added steps (including cache overhead), and signed observed
+reductions. A negative reduction means the later run was slower. Missing job
+pages, failed runs, or a run attempt changing during collection cause an error.
+Different workflow/branch/event/job/runner scopes produce evidence but exit `3`
+with no aggregate reduction. Existing output files are never overwritten.
+
+A single pair is an observation, not proof that the patch caused the change.
+Review the source diff and test scope, and include cache restore/save overhead
+in the total. Runner images, workload, and cache warmth can differ even when
+labels match. Actual billed cost remains unknown; this comparison does not add
+observed differences to the analysis report's modeled savings. HTML is
+self-contained and script-free; run links open GitHub only when clicked.
+
 ## Languages
 
 The DSH Settings UI, CLI messages, HTML reports, and the six READMEs support English, Korean, Simplified Chinese, Hindi, Spanish, and French. Detailed specification documents remain English.

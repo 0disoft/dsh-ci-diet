@@ -37,6 +37,7 @@ import { renderHtmlReport } from "../core/report/html.ts";
 import { localizedFinding } from "../core/report/localize.ts";
 import { resolveRequestedLocale } from "../shared/i18n/host.ts";
 import { createTranslator } from "../shared/i18n/index.ts";
+import { compareCommand } from "./compare.ts";
 import type { Locale, MessageKey } from "../shared/i18n/index.ts";
 
 /** Output sink used by the CLI; process streams by default, buffers in tests. */
@@ -1171,6 +1172,7 @@ export async function executeCli(argv: readonly string[], overrides: Partial<Cli
 }
 
 export async function main(argv: readonly string[]): Promise<number> {
+  if (argv[0] === "compare") return compareCommand(argv.slice(1), context);
   let options: Options;
   try {
     options = parseArgs(argv);
@@ -1223,7 +1225,7 @@ if (invokedDirectly) {
   const argv = process.argv.slice(2);
   // Mutating commands finish their journal and network commands kill their gh
   // child before leaving. Everything else stops once the signal is forwarded.
-  const deferred = argv.some((arg) => arg === "apply" || arg === "revert" || arg === "sync");
+  const deferred = argv.some((arg) => arg === "apply" || arg === "revert" || arg === "sync" || arg === "compare");
   const controller = new AbortController();
   let interrupted = false;
   let graceTimer: NodeJS.Timeout | null = null;
