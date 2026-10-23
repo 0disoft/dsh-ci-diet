@@ -227,4 +227,5 @@ export const hi: Record<MessageKey, string> = {
   "dsh.param.step": "चरण सूचकांक, CD006 और CD008 के लिए आवश्यक।",
   "dsh.param.minutes": "मिनटों में टाइमआउट, CD005 के लिए आवश्यक।",
   "dsh.param.planDigest": "कोई योजना न बन सके तो खाली।",
+  "dsh.preflight.notice": "CI Diet ने deployment से पहले बचत के उम्मीदवार पाए, इसलिए यह command नहीं चलाया। नीचे दिए items देखें और file बदलावों के लिए मानव approval लें। बिना बदलाव जारी रखने के लिए वही command फिर चलाएँ। यह सूचना हर session और हर workflow सामग्री पर एक बार दिखती है। बचत अभी मापी नहीं गई है।",
 };

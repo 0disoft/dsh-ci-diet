@@ -252,3 +252,23 @@ new record, not an edit to the rationale.
 - Reversal: dropping the client export removes the page and leaves the Plugins
   card and CLI untouched. A report screen is still a separate decision under
   ADR-16, not an extension of this page.
+
+## ADR-22: Offline cache plans and deployment preflight
+
+- Decision: enable CD006 by default for the narrowly validated npm workflow
+  shape described in [rules](rules.md). Extend the v2 rule vocabulary and
+  coverage table explicitly; retain the original design pack and compare all
+  non-extended fields. Cache plans need current workflow bytes and pinned root
+  manifests, not historical run durations or remote retention/protection data.
+- Savings remain unknown until comparable runs measure the cache's benefit.
+  Only dependency downloads are cached; installation and tests still execute.
+  Plans use the existing human approval, dependency checks, journal and revert.
+- Decision: enable an advisory deployment preflight in the DSH stateless bash
+  tool. A candidate pauses the first recognized command for that session and
+  source fingerprint; a retry is allowed. Users can disable the setting. The
+  hook never grants a permission another listener denied, changes a workflow,
+  or fetches remote history. Persistent shells and unrecognized command syntax
+  are outside its scope because their effective directories are not established.
+- Rationale: tools that are only called on request are easy to miss during a
+  coding-and-deployment session. A bounded reminder exposes an opportunity at
+  the decision point without making an optimization mandatory.

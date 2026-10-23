@@ -30,7 +30,9 @@ function live<T>(initial: T) {
 
 function harness(overrides: Partial<PluginSettingsValues> = {}) {
   const tools = new Map<string, Registered>();
+  const listeners = new Map<string, unknown>();
   const ctx = {
+    on(event: string, listener: unknown) { listeners.set(event, listener); },
     tools: {
       register(definition: Registered) {
         tools.set(definition.name, definition);
@@ -52,7 +54,7 @@ function harness(overrides: Partial<PluginSettingsValues> = {}) {
   }
   const stateDirRef = refs.stateDir as ReturnType<typeof live<string>>;
   apply(ctx as never, config as never);
-  return { tools, stateDir: stateDirRef.get(), stateDirRef, networkEnabled: refs.networkEnabled, refs };
+  return { tools, listeners, stateDir: stateDirRef.get(), stateDirRef, networkEnabled: refs.networkEnabled, refs };
 }
 
 const WORKFLOW = [
@@ -76,7 +78,8 @@ function workspace(): string {
 }
 
 test("registers the five model-facing tools", () => {
-  const { tools } = harness();
+  const { tools, listeners } = harness();
+  assert.ok(listeners.has("tools/pre-execute"));
   assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_prune", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
 });
 

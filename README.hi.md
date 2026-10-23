@@ -6,7 +6,9 @@
 
 CI Diet संभवतः बर्बाद हो रहे GitHub Actions काम को खोजता है, हर finding के पीछे का evidence सुरक्षित रखता है, और मनुष्य द्वारा समीक्षा के लिए छोटे workflow बदलावों का preview देता है।
 
-**केवल installation से runner minutes कम नहीं होते।** package install करना या LLM से code लिखने या deploy करने को कहना अपने आप tools नहीं चलाता और workflow नहीं बदलता। scan, sync, report, prune या plan के लिए साफ़ अनुरोध करना और प्रस्तावित बदलाव की समीक्षा करना ज़रूरी है। DSH plugin में स्वचालित pre-push या deploy hook नहीं है और approval, apply या revert tools नहीं हैं। Settings page केवल tool configuration रखता है; वह workflow को optimize नहीं करता। किसी finding से लागत कम होने की गारंटी नहीं है।
+**केवल installation से runner minutes कम नहीं होते।** समर्थित DSH deployment commands चलने से पहले बचत के उम्मीदवार अपने आप जाँचते हैं; workflow बदलाव समीक्षा और approval के बाद ही लागू होते हैं। DSH plugin में approval, apply या revert tools नहीं हैं, और preflight खुद files नहीं बदलता। Settings page केवल tool configuration रखता है; वह workflow को optimize नहीं करता। किसी finding से लागत कम होने की गारंटी नहीं है।
+
+`preflightEnabled` default में चालू है। `workdir` argument वाले समर्थित stateless DSH bash tool में literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy` या `npm|pnpm|bun run deploy` से ठीक पहले offline जाँच होती है। यह npm CD006, केवल-PR workflow में concurrency की कमी, और स्पष्ट download cache के बिना Bun frozen install को समीक्षा के लिए दिखाता है। उम्मीदवार मिलने पर पहली command नहीं चलती; model items देखकर वही command फिर चलाए तो अनुमति मिलती है। कोई network access या automatic file change नहीं होता, और plan apply के लिए मानव approval अभी भी ज़रूरी है। persistent shells और जटिल shell wrappers पहचाने नहीं जाते, इसलिए preflight उन्हें skip करता है। बचत अभी मापी नहीं गई है, इसलिए बचत का दावा नहीं है।
 
 ## यह क्या करता है
 

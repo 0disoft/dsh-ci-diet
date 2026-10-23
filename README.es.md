@@ -6,7 +6,9 @@
 
 CI Diet detecta trabajo de GitHub Actions que probablemente se desperdicia, conserva la evidencia de cada hallazgo y muestra una vista previa de pequeños cambios en los workflows para que una persona los revise.
 
-**La instalación por sí sola no ahorra minutos de runner.** Instalar el paquete o pedir a un LLM que escriba o despliegue código no llama a las herramientas ni edita un workflow. Debes pedir explícitamente un scan, sync, report, prune o plan y después revisar cualquier cambio propuesto. El plugin de DSH no tiene un hook automático antes de push o despliegue, ni herramientas de aprobación, aplicación o reversión. Su página de ajustes guarda la configuración de las herramientas; no optimiza un workflow. No hay garantía de que un hallazgo reduzca el coste.
+**La instalación por sí sola no ahorra minutos de runner.** Los comandos de despliegue DSH admitidos comprueban automáticamente si hay candidatos de ahorro antes de ejecutarse; los cambios de workflow solo se aplican tras revisión y aprobación. El plugin de DSH no tiene herramientas de aprobación, aplicación ni reversión, y preflight nunca modifica archivos. Su página de ajustes guarda la configuración de las herramientas; no optimiza un workflow. No hay garantía de que un hallazgo reduzca el coste.
+
+`preflightEnabled` está activado por defecto. Antes de un literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy` o `npm|pnpm|bun run deploy` en una herramienta bash DSH sin estado admitida (con argumento `workdir`), CI Diet hace una comprobación sin conexión. Señala para revisión los candidatos npm CD006, la falta de concurrency en un workflow solo de PR y una instalación Bun frozen sin caché de descargas explícita. Si hay candidatos, el primer comando no se ejecuta; tras revisar los elementos, el modelo puede reintentar el mismo comando. No hay acceso a la red ni cambios automáticos de archivos, y aplicar un plan sigue necesitando aprobación humana. Las shells persistentes y los wrappers de shell complejos no se identifican de forma fiable, así que preflight los omite. El ahorro sigue sin medirse, así que no se afirma ningún ahorro.
 
 ## Qué hace
 

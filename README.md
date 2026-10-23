@@ -6,7 +6,9 @@
 
 CI Diet finds GitHub Actions work that is likely wasted, preserves the evidence behind each finding, and previews small workflow edits for a human to review.
 
-**Installation alone does not save runner minutes.** Installing the package, or asking an LLM to write or deploy code, neither calls the tools nor edits a workflow. You must explicitly ask for a scan, sync, report, prune, or plan, then review any proposed change. The DSH plugin has no automatic pre-push or deploy hook and no approval, apply, or revert tools. Its Settings page stores tool configuration; it does not optimize a workflow. There is no guarantee that any finding will reduce cost.
+**Installation alone does not save runner minutes.** Supported DSH deploy commands are checked automatically for savings candidates before running; workflow changes are applied only after review and approval. The DSH plugin has no approval, apply, or revert tools, and preflight itself never changes files. Its Settings page stores tool configuration; it does not optimize a workflow. There is no guarantee that any finding will reduce cost.
+
+`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. There is no network access or automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
 ## What it does
 

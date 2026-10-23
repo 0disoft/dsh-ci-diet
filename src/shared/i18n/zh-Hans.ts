@@ -227,4 +227,5 @@ export const zhHans: Record<MessageKey, string> = {
   "dsh.param.step": "步骤索引，CD006 和 CD008 需要。",
   "dsh.param.minutes": "超时分钟数，CD005 需要。",
   "dsh.param.planDigest": "未能生成计划时为空。",
+  "dsh.preflight.notice": "CI Diet 在部署前发现了可节省候选项，因此没有执行本次命令。请查看下列项目；如需修改文件，请取得人工批准。若要在不修改的情况下继续，可以再次运行同一命令。此提示每会话、每份 workflow 内容只显示一次。节省量尚未测量。",
 };

@@ -15,6 +15,7 @@ export interface SettingField {
 }
 
 export const SETTINGS_FIELDS: readonly SettingField[] = [
+  { key: "preflightEnabled", group: "general", kind: "switch" },
   { key: "networkEnabled", group: "general", kind: "switch" },
   { key: "stateDir", group: "general", kind: "text" },
 

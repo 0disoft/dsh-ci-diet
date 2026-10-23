@@ -8,6 +8,7 @@ import type { Config } from "../contracts/schema.ts";
 
 /** Flat, live-editable settings exposed by the DSH configuration form. */
 export interface PluginSettingsValues {
+  readonly preflightEnabled: boolean;
   readonly networkEnabled: boolean;
   readonly stateDir: string;
   /** Enabled analysis rules in display order; the host schema refuses an empty list. */
@@ -39,6 +40,7 @@ export interface EngineSettings {
 /** Shipped defaults, shared by the DSH schema and the settings page. */
 export function defaultPluginSettings(): PluginSettingsValues {
   return {
+    preflightEnabled: true,
     networkEnabled: DEFAULT_CONFIG.networkEnabled,
     stateDir: "",
     rules: [...DEFAULT_ENABLED_RULES],

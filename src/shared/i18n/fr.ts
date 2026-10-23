@@ -227,4 +227,5 @@ export const fr: Record<MessageKey, string> = {
   "dsh.param.step": "Index de l’étape, requis pour CD006 et CD008.",
   "dsh.param.minutes": "Délai d’expiration en minutes, requis pour CD005.",
   "dsh.param.planDigest": "Vide lorsqu’aucun plan n’a pu être créé.",
+  "dsh.preflight.notice": "CI Diet a trouvé des candidats d’économie avant le déploiement et n’a pas exécuté cette commande. Examinez les éléments ci-dessous et obtenez une approbation humaine pour toute modification de fichier. Pour continuer sans changement, relancez la même commande. Cet avis s’affiche une fois par session et par contenu de workflow. L’économie n’a pas été mesurée.",
 };

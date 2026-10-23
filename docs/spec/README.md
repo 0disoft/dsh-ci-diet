@@ -10,14 +10,17 @@ Settings screen are available; the report and apply screens are still open. The
 machine-readable contracts in `contracts/` are the authority where prose and
 schema disagree.
 
-## Scope (v0.1)
+Development additions (not yet published): offline CD006 npm cache plans and
+a configurable, read-only deployment preflight in the DSH stateless bash tool.
+
+## Scope
 
 - GitHub.com only, one repository per Binding.
 - History comes from the read-only GitHub REST API through the `gh` CLI.
   No OAuth application, no write token, no server component.
-- Six deterministic rules: CD001, CD002, CD003, CD004, CD005, CD008.
-- Three rules may produce a patchable edit: CD001 (concurrency), CD005
-  (timeout-minutes), CD008 (retention-days). CD002, CD003, and CD004 are
+- Seven deterministic rules: CD001, CD002, CD003, CD004, CD005, CD006, CD008.
+- Four rules may produce a patchable edit: CD001 (concurrency), CD005
+  (timeout-minutes), CD006 (npm download cache), CD008 (retention-days). CD002, CD003, and CD004 are
   explanation-only in v0.1.
 - One plan edits one existing `.github/workflows/*.yml` or `*.yaml` file. The
   patch is applied to the working tree by the local CLI after an explicit human

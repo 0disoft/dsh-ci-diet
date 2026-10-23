@@ -227,4 +227,5 @@ export const ko: Record<MessageKey, string> = {
   "dsh.param.step": "단계 인덱스입니다. CD006과 CD008에 필요합니다.",
   "dsh.param.minutes": "타임아웃(분)입니다. CD005에 필요합니다.",
   "dsh.param.planDigest": "계획을 만들 수 없으면 비어 있습니다.",
+  "dsh.preflight.notice": "CI Diet가 배포 전에 절감 후보를 발견해 이번 명령을 실행하지 않았습니다. 아래 항목을 검토하고 파일 수정은 인간 승인을 받으세요. 변경 없이 계속하려면 같은 명령을 다시 실행할 수 있습니다. 이 안내는 세션별·워크플로 내용별 한 번만 표시됩니다. 절감량은 측정되지 않았습니다.",
 };

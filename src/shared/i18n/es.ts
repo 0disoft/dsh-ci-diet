@@ -227,4 +227,5 @@ export const es: Record<MessageKey, string> = {
   "dsh.param.step": "Índice del paso, obligatorio para CD006 y CD008.",
   "dsh.param.minutes": "Tiempo de espera en minutos, obligatorio para CD005.",
   "dsh.param.planDigest": "Vacío cuando no se pudo crear un plan.",
+  "dsh.preflight.notice": "CI Diet encontró candidatos de ahorro antes del despliegue y no ejecutó este comando. Revisa los elementos siguientes y obtén aprobación humana para cualquier cambio de archivo. Para continuar sin cambios, vuelve a ejecutar el mismo comando. Este aviso aparece una vez por sesión y por contenido de workflow. El ahorro no se ha medido.",
 };

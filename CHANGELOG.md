@@ -21,6 +21,15 @@ Keep a Changelog, and the project uses semantic versioning.
   `/rules/CD006`, where only `workflowDefinitions` must be complete. CD006 also
   appears in the Settings rule labels, CLI help, findings, six READMEs, and the
   rule and patch specifications.
+- A default-on `preflightEnabled` switch guards supported literal deploy
+  commands in a stateless DSH bash tool with a `workdir`: `git push`,
+  `npm|pnpm|bun publish`, `wrangler deploy`, and
+  `npm|pnpm|bun run deploy`. It runs an offline check for npm CD006, missing
+  PR-only concurrency, and a Bun frozen install without an explicit download
+  cache. While candidates exist the first command does not run; a retry after
+  review is allowed. Ordinary CLI runs have no hook, persistent shells and
+  complex wrappers are skipped, nothing connects to the network or edits files
+  automatically, human approval still gates apply, and savings stay unmeasured.
 
 ### Changed
 

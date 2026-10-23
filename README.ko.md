@@ -6,7 +6,9 @@
 
 CI Diet는 낭비 가능성이 있는 GitHub Actions 작업을 찾고, 각 발견의 근거를 보존하며, 사람이 검토할 작은 workflow 수정을 미리 보여줍니다.
 
-**설치만으로는 러너 시간이 줄지 않습니다.** 패키지를 설치하거나 LLM에게 코드 작성·배포를 요청하는 것만으로는 도구가 호출되거나 workflow가 바뀌지 않습니다. scan, sync, report, prune, plan을 직접 요청하고 제안된 변경을 검토해야 합니다. DSH 플러그인에는 자동 pre-push·배포 훅이 없고 승인·적용·되돌리기 도구도 없습니다. 설정 화면은 도구 설정을 저장할 뿐 workflow를 최적화하지 않습니다. 어떤 발견도 비용 절감을 보장하지 않습니다.
+**설치만으로는 러너 시간이 줄지 않습니다.** 지원하는 DSH 배포 명령은 실행 전에 절감 후보를 자동으로 점검합니다. workflow 변경은 검토와 승인을 거친 뒤에만 적용합니다. DSH 플러그인에는 승인·적용·되돌리기 도구가 없고, preflight 자체도 파일을 바꾸지 않습니다. 설정 화면은 도구 설정을 저장할 뿐 workflow를 최적화하지 않습니다. 어떤 발견도 비용 절감을 보장하지 않습니다.
+
+`preflightEnabled`는 기본 `true`입니다. `workdir` 인자가 있는 지원 대상 stateless DSH bash tool에서 literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, `npm|pnpm|bun run deploy` 직전에 오프라인 점검을 합니다. npm CD006, PR 전용 workflow의 concurrency 누락, 명시적 다운로드 캐시 없는 Bun frozen install을 검토용으로 알립니다. 후보가 있으면 첫 명령은 실행하지 않고, 모델이 항목을 검토한 뒤 같은 명령을 다시 실행하면 허용합니다. 네트워크 접근이나 파일 자동 변경은 없고 plan 적용에는 여전히 사람의 승인이 필요합니다. persistent shell과 복잡한 shell wrapper는 판별하지 못해 건너뜁니다. 실제 절감량은 측정 전이므로 절감을 주장하지 않습니다.
 
 ## 하는 일
 

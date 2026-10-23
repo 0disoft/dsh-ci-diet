@@ -27,14 +27,16 @@ import { parseWorkflow } from "../../core/workflow/parse.ts";
 import { localizedFinding } from "../../core/report/localize.ts";
 import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 import { createTranslator } from "../../shared/i18n/index.ts";
+import { registerPreflight } from "./preflight.ts";
 export const name = "ci-diet";
-export const inject = ["tools"];
+export const inject = { required: ["tools"], optional: ["workingDirectory"] };
 
 /**
  * Live settings. Every engine-facing value is volatile: the Settings page and
  * the Plugins page edit the same reference, and the next tool call reads it.
  */
 export interface Config {
+  preflightEnabled: Volatile<boolean>;
   networkEnabled: Volatile<boolean>;
   /** Reserved for applying plans from the Web UI; not a settings surface yet. */
   localApplyEnabled: boolean;
@@ -61,6 +63,7 @@ const SHIPPED = defaultPluginSettings();
 const RULE_SCHEMA = Schema.union(RULE_IDS.map((ruleId) => Schema.const(ruleId)));
 
 export const Config = Schema.object({
+  preflightEnabled: Schema.boolean().default(SHIPPED.preflightEnabled).volatile(),
   networkEnabled: Schema.boolean().default(SHIPPED.networkEnabled).volatile(),
   localApplyEnabled: Schema.boolean().default(false),
   stateDir: Schema.string().default(SHIPPED.stateDir).volatile(),
@@ -86,6 +89,7 @@ export const Config = Schema.object({
 /** Read every engine-facing setting from its live reference. */
 export function readPluginSettings(config: Config): PluginSettingsValues {
   return {
+    preflightEnabled: config.preflightEnabled.get(),
     networkEnabled: config.networkEnabled.get(),
     stateDir: config.stateDir.get(),
     rules: [...config.rules.get()],
@@ -202,6 +206,7 @@ export function apply(ctx: Context, config: Config) {
   // The registry captures this text at mount time; a live locale switch needs a reload.
   const locale = resolveRequestedLocale(null, process.env);
   const t = createTranslator(locale);
+  registerPreflight(ctx, () => ({ enabled: config.preflightEnabled.get(), rules: config.rules.get(), maxWorkflowBytes: config.storageWorkflowMaxBytes.get() }), () => t("dsh.preflight.notice"));
   ctx.tools.register(defineTool({
     name: "ci_diet_scan",
     description: t("dsh.scan.description"),

@@ -2,7 +2,9 @@
 
 CI Diet ships as one npm package with a command-line tool and a DeepSeek Harness (DSH) plugin. They share contracts and the default local state directory, but their first-use flows differ: CLI `scan` prints a report, while CLI `sync` saves one. The plugin's `ci_diet_scan` and `ci_diet_sync` both save reports.
 
-Installing the package does not invoke a scan, edit a workflow, or save runner minutes. A chat request to write or deploy code does not invoke CI Diet tools either. The plugin exposes only explicitly called scan, sync, report, prune, and plan tools. It has no automatic pre-push or deploy hook and no approval, apply, or revert tools. The Settings page changes tool configuration; it does not optimize a workflow.
+The plugin checks supported DSH deployment commands automatically for savings candidates. Its scan, sync, report, prune, and plan tools remain available on request; it has no approval, apply, or revert tools. Workflow changes require review and human approval through the CLI. Its default-on preflight checks supported deploy commands from a stateless DSH bash tool before running them; ordinary CLI runs have no hook. The Settings page changes tool configuration; it does not optimize a workflow.
+
+`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. There is no network access or automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
 ## Install and update
 
@@ -41,13 +43,13 @@ The Settings page edits the engine configuration read by DSH tools. Every engine
 
 | Group | Fields |
 | --- | --- |
-| Connection | `networkEnabled`, `stateDir` |
+| Connection | `networkEnabled`, `stateDir`, `preflightEnabled` |
 | Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD006`, `CD008`); at least one remains enabled |
 | History collection | `historyLookbackDays`, `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests`, `historyRequestTimeoutMs` |
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
 
-Network access defaults to false. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan or install a hook.
+Network access defaults to false. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan.
 
 ## Model tools
 

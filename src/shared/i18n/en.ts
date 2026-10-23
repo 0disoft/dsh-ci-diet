@@ -226,6 +226,7 @@ export const en = {
   "dsh.param.step": "Step index, required for CD006 and CD008.",
   "dsh.param.minutes": "Timeout in minutes, required for CD005.",
   "dsh.param.planDigest": "Empty when no plan could be built.",
+  "dsh.preflight.notice": "CI Diet found savings candidates before deployment and did not run this command. Review the items below and obtain human approval for any file changes. To continue unchanged, run the same command again. This notice appears once per session and per workflow content. Savings have not been measured.",
 } as const;
 
 export type MessageKey = keyof typeof en;

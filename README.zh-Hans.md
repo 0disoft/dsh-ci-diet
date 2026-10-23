@@ -6,7 +6,9 @@
 
 CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发现背后的证据，并预览供人审查的小型 workflow 修改。
 
-**只安装本工具不会节省 runner 分钟。** 安装软件包，或要求 LLM 编写、部署代码，都不会自动调用这些工具，也不会修改 workflow。你需要明确请求 scan、sync、report、prune 或 plan，然后审查提出的修改。DSH 插件没有自动的 pre-push 或部署钩子，也没有批准、apply 或 revert 工具。设置页面只保存工具配置，不会自行优化 workflow。任何发现都不能保证降低成本。
+**只安装本工具不会节省 runner 分钟。** 支持的 DSH 部署命令会在运行前自动检查节省候选项；workflow 修改只有在审查和批准后才会应用。DSH 插件没有批准、apply 或 revert 工具，preflight 本身不会修改文件。设置页面只保存工具配置，不会自行优化 workflow。任何发现都不能保证降低成本。
+
+`preflightEnabled` 默认为开启。在带 `workdir` 参数的受支持 stateless DSH bash tool 中，literal `git push`、`npm|pnpm|bun publish`、`wrangler deploy` 或 `npm|pnpm|bun run deploy` 执行前会做一次离线检查。它会把 npm CD006、仅 PR workflow 缺少 concurrency、以及未显式设置下载缓存的 Bun frozen install 作为候选项提示审查。存在候选项时，第一次命令不会执行；模型审查这些项目后重试同一命令即可放行。不会联网，也不会自动修改文件；应用 plan 仍需要人工批准。持久 shell 和复杂 shell wrapper 无法可靠识别，preflight 会跳过。节省量尚未测量，因此不声称节省。
 
 ## 功能
 
