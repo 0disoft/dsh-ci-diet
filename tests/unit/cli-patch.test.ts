@@ -12,6 +12,7 @@ import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import type { HistoryBundle, HistoryRun } from "../../src/core/history/model.ts";
 import { isolatedEnv } from "../helpers/test-env.ts";
+import { runCli as cli } from "../helpers/cli.ts";
 
 const NOW = "2026-10-20T00:00:00.000Z";
 const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
@@ -119,7 +120,7 @@ function seed(root: string, stateDir: string, workflowText = WORKFLOW): void {
   store.saveHistory(binding.bindingId, history);
 }
 
-function cli(
+function cliProcess(
   args: readonly string[],
   cwd: string,
 ): { status: number | null; stdout: string; stderr: string } {
@@ -132,7 +133,7 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   const stateDir = join(root, ".state");
   seed(root, stateDir);
 
-  const planned = cli(
+  const planned = cliProcess(
     [
       "plan",
       "--rule",
@@ -156,13 +157,13 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   assert.equal(plan.status.state, "draft");
   const confirmation = plan.planDigest.slice(-12);
 
-  const approved = cli(
+  const approved = cliProcess(
     ["approve", "--plan", plan.planId, "--confirm", confirmation, "--state-dir", stateDir],
     root,
   );
   assert.equal(approved.status, 0, approved.stderr);
 
-  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  const applied = cliProcess(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
   assert.equal(applied.status, 0, applied.stderr);
   const outcome = JSON.parse(applied.stdout) as {
     state: string;
@@ -173,23 +174,23 @@ test("CLI plan, approve, apply, and revert round-trip a concurrency patch", () =
   assert.match(patched, /concurrency:/);
   assert.match(patched, /cancel-in-progress: true/);
 
-  const reverted = cli(
+  const reverted = cliProcess(
     ["revert", "--change", outcome.change.changeId, "--state-dir", stateDir, "--json"],
     root,
   );
   assert.equal(reverted.status, 0, reverted.stderr);
   assert.equal(readFileSync(file, "utf8"), WORKFLOW);
 
-  const changes = cli(["changes", "--state-dir", stateDir], root);
+  const changes = cliProcess(["changes", "--state-dir", stateDir], root);
   assert.equal(changes.status, 0);
   assert.match(changes.stdout, /REVERTED/);
 });
 
-test("CLI shows the proposed lines and re-shows a saved plan", () => {
+test("CLI shows the proposed lines and re-shows a saved plan", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe"],
     root,
   );
@@ -199,79 +200,79 @@ test("CLI shows the proposed lines and re-shows a saved plan", () => {
   const planId = /Plan (\S+) created/.exec(planned.stdout)?.[1];
   assert.ok(planId);
 
-  const shown = cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
+  const shown = await cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
   assert.equal(shown.status, 0, shown.stderr);
   assert.match(shown.stdout, /Proposed change:/);
   assert.match(shown.stdout, /^\+ concurrency:$/m);
 
-  const missing = cli(["plans", "--plan", "p_missing", "--state-dir", stateDir], root);
+  const missing = await cli(["plans", "--plan", "p_missing", "--state-dir", stateDir], root);
   assert.equal(missing.status, 1);
   assert.match(missing.stderr, /No stored plan p_missing/);
 });
 
-test("CLI hides a saved plan diff after the workflow changes", () => {
+test("CLI hides a saved plan diff after the workflow changes", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const planId = (JSON.parse(planned.stdout) as { planId: string }).planId;
   writeFileSync(file, WORKFLOW + "# edited by a human\n");
-  const shown = cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
+  const shown = await cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
   assert.equal(shown.status, 3, shown.stderr);
   assert.match(shown.stdout, /changed since this plan was created/);
   assert.doesNotMatch(shown.stdout, /Proposed change:/);
 });
 
-test("CLI hides a saved plan diff after the workflow is deleted", () => {
+test("CLI hides a saved plan diff after the workflow is deleted", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const planId = (JSON.parse(planned.stdout) as { planId: string }).planId;
   rmSync(file);
-  const shown = cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
+  const shown = await cli(["plans", "--plan", planId, "--state-dir", stateDir], root);
   assert.equal(shown.status, 3, shown.stderr);
   assert.match(shown.stdout, /no longer available/);
   assert.doesNotMatch(shown.stdout, /Proposed change:/);
-  const json = cli(["plans", "--plan", planId, "--state-dir", stateDir, "--json"], root);
+  const json = await cli(["plans", "--plan", planId, "--state-dir", stateDir, "--json"], root);
   assert.equal(json.status, 3, json.stderr);
   assert.equal((JSON.parse(json.stdout) as { planId: string }).planId, planId);
 });
 
-test("CLI enforces apply.allowedRules for plan and apply", () => {
+test("CLI enforces apply.allowedRules for plan and apply", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
   writeFileSync(join(root, "ci.json"), JSON.stringify({ apply: { allowedRules: ["CD005"] } }), "utf8");
 
-  const refusedPlan = cli(
+  const refusedPlan = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--config", "ci.json", "--state-dir", stateDir, "--claims", "ci-only,replace-safe"],
     root,
   );
   assert.equal(refusedPlan.status, 1);
   assert.match(refusedPlan.stderr, /not allowed by apply\.allowedRules/);
 
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
-  const approved = cli(
+  const approved = await cli(
     ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir],
     root,
   );
   assert.equal(approved.status, 0, approved.stderr);
 
-  const applied = cli(
+  const applied = await cli(
     ["apply", "--plan", plan.planId, "--cwd", root, "--config", "ci.json", "--state-dir", stateDir],
     root,
   );
@@ -279,9 +280,9 @@ test("CLI enforces apply.allowedRules for plan and apply", () => {
   assert.match(applied.stdout + applied.stderr, /RULE_NOT_ALLOWED/);
   assert.equal(readFileSync(file, "utf8"), WORKFLOW);
 });
-test("CLI plan refuses without observed coverage", () => {
+test("CLI plan refuses without observed coverage", async () => {
   const { root } = makeRepo();
-  const result = cli(
+  const result = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", join(root, ".state")],
     root,
   );
@@ -289,11 +290,11 @@ test("CLI plan refuses without observed coverage", () => {
   assert.match(result.stderr, /sync --network/);
 });
 
-test("CLI approve rejects a wrong confirmation", () => {
+test("CLI approve rejects a wrong confirmation", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     [
       "plan",
       "--rule",
@@ -310,55 +311,55 @@ test("CLI approve rejects a wrong confirmation", () => {
   );
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string };
-  const result = cli(
+  const result = await cli(
     ["approve", "--plan", plan.planId, "--confirm", "000000000000", "--state-dir", stateDir],
     root,
   );
   assert.equal(result.status, 5, result.stderr);
 });
 
-test("CLI reports successful committed actions with a warning when the event log is unavailable", () => {
+test("CLI reports successful committed actions with a warning when the event log is unavailable", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
   // A directory at the log filename causes a real append failure without blocking receipts.
   mkdirSync(join(stateDir, "events", "events.jsonl"));
-  const approved = cli(
+  const approved = await cli(
     ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir, "--json"], root,
   );
   assert.equal(PatchStore.open(stateDir).readPlan(plan.planId)?.plan.status.state, "approved");
   assert.equal(approved.status, 0, approved.stderr);
   assert.match(approved.stderr, /EVENT_LOG_UNAVAILABLE/);
   assert.equal((JSON.parse(approved.stdout) as { status: { state: string } }).status.state, "approved");
-  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  const applied = await cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
   assert.equal(applied.status, 0, applied.stderr);
   assert.match(applied.stderr, /EVENT_LOG_UNAVAILABLE/);
   const change = JSON.parse(applied.stdout) as { state: string; change: { changeId: string } };
   assert.equal(change.state, "applied");
   assert.notEqual(readFileSync(file, "utf8"), WORKFLOW);
-  const reverted = cli(["revert", "--change", change.change.changeId, "--state-dir", stateDir, "--json"], root);
+  const reverted = await cli(["revert", "--change", change.change.changeId, "--state-dir", stateDir, "--json"], root);
   assert.equal(reverted.status, 0, reverted.stderr);
   assert.match(reverted.stderr, /EVENT_LOG_UNAVAILABLE/);
   assert.equal((JSON.parse(reverted.stdout) as { state: string }).state, "REVERTED");
   assert.equal(readFileSync(file, "utf8"), WORKFLOW);
 });
 
-test("CLI apply retains refusal exit code and JSON when the event log is unavailable", (t) => {
+test("CLI apply retains refusal exit code and JSON when the event log is unavailable", async (t) => {
   const { root, file } = makeRepo();
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"], root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
-  const approved = cli(["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir], root);
+  const approved = await cli(["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir], root);
   assert.equal(approved.status, 0, approved.stderr);
   const nonceFile = join(stateDir, "plans", plan.planId + ".nonce.json");
   const nonce = readFileSync(nonceFile, "utf8");
@@ -367,7 +368,7 @@ test("CLI apply retains refusal exit code and JSON when the event log is unavail
   const eventFile = join(stateDir, "events", "events.jsonl");
   rmSync(eventFile);
   mkdirSync(eventFile);
-  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  const applied = await cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
   assert.equal(applied.status, 3, applied.stderr);
   assert.match(applied.stderr, /EVENT_LOG_UNAVAILABLE/);
   assert.deepEqual(JSON.parse(applied.stdout), { state: "not_applied", reasons: ["SOURCE_HASH_MISMATCH"], change: null });
@@ -376,17 +377,17 @@ test("CLI apply retains refusal exit code and JSON when the event log is unavail
   assert.equal(PatchStore.open(stateDir).listChanges().length, 0);
 });
 
-test("CLI apply rejects a corrupt approved plan without consuming approval or writing workflows", () => {
+test("CLI apply rejects a corrupt approved plan without consuming approval or writing workflows", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
   assert.equal(planned.status, 0, planned.stderr);
   const plan = JSON.parse(planned.stdout) as { planId: string; planDigest: string };
-  const approved = cli(
+  const approved = await cli(
     ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir],
     root,
   );
@@ -398,7 +399,7 @@ test("CLI apply rejects a corrupt approved plan without consuming approval or wr
   corrupt.payload.workflowPath = 17;
   writeFileSync(planFile, JSON.stringify(corrupt));
 
-  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
+  const applied = await cli(["apply", "--plan", plan.planId, "--state-dir", stateDir, "--json"], root);
   assert.equal(applied.status, 2, applied.stderr);
   assert.ok(applied.stderr.includes(planFile), applied.stderr);
   assert.equal(applied.stdout, "");
@@ -406,14 +407,14 @@ test("CLI apply rejects a corrupt approved plan without consuming approval or wr
   assert.equal(readFileSync(nonceFile, "utf8"), nonce);
   assert.equal(PatchStore.open(stateDir).listChanges().length, 0);
 });
-test("CLI plan scopes reports to the repository at the current root", () => {
+test("CLI plan scopes reports to the repository at the current root", async () => {
   const first = makeRepo();
   const second = makeRepo();
   const stateDir = join(first.root, ".state");
   seed(first.root, stateDir);
   seed(second.root, stateDir);
 
-  const planned = cli(
+  const planned = await cli(
     [
       "plan",
       "--rule",
@@ -434,13 +435,13 @@ test("CLI plan scopes reports to the repository at the current root", () => {
   );
 });
 
-test("CLI plan refuses to reuse another repository's report", () => {
+test("CLI plan refuses to reuse another repository's report", async () => {
   const first = makeRepo();
   const second = makeRepo();
   const stateDir = join(first.root, ".state");
   seed(second.root, stateDir);
 
-  const planned = cli(
+  const planned = await cli(
     [
       "plan",
       "--rule",
@@ -458,7 +459,7 @@ test("CLI plan refuses to reuse another repository's report", () => {
   assert.match(planned.stderr, /sync/i);
 });
 
-test("CLI plan uses the newest binding when an older association remains at the same root", () => {
+test("CLI plan uses the newest binding when an older association remains at the same root", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
@@ -472,7 +473,7 @@ test("CLI plan uses the newest binding when an older association remains at the 
     repositoryFullName: "owner/previous",
     createdAt: "2026-10-19T00:00:00Z",
   });
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
@@ -482,12 +483,12 @@ test("CLI plan uses the newest binding when an older association remains at the 
   assert.equal(plan.payload.bindingId, current.bindingId);
 });
 
-test("CLI plan refuses findings for workflow bytes that changed", () => {
+test("CLI plan refuses findings for workflow bytes that changed", async () => {
   const { root, file } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
   writeFileSync(file, WORKFLOW + "# changed\n", "utf8");
-  const planned = cli(
+  const planned = await cli(
     [
       "plan",
       "--rule",
@@ -505,7 +506,7 @@ test("CLI plan refuses findings for workflow bytes that changed", () => {
   assert.match(planned.stderr, /WORKFLOW_HASH_MISMATCH/);
 });
 
-test("CLI plan records unresolved dependencies as blockers and apply refuses", () => {
+test("CLI plan records unresolved dependencies as blockers and apply refuses", async () => {
   const workflowText = [
     "name: pr",
     "on:",
@@ -521,7 +522,7 @@ test("CLI plan records unresolved dependencies as blockers and apply refuses", (
   const stateDir = join(root, ".state");
   seed(root, stateDir, workflowText);
 
-  const planned = cli(
+  const planned = await cli(
     [
       "plan",
       "--rule",
@@ -547,7 +548,7 @@ test("CLI plan records unresolved dependencies as blockers and apply refuses", (
     plan.payload.blockers.join(","),
   );
 
-  const approved = cli(
+  const approved = await cli(
     [
       "approve",
       "--plan",
@@ -561,16 +562,16 @@ test("CLI plan records unresolved dependencies as blockers and apply refuses", (
   );
   assert.equal(approved.status, 0, approved.stderr);
 
-  const applied = cli(["apply", "--plan", plan.planId, "--state-dir", stateDir], root);
+  const applied = await cli(["apply", "--plan", plan.planId, "--state-dir", stateDir], root);
   assert.equal(applied.status, 3, applied.stderr);
   assert.match(applied.stdout, /BLOCKERS_PRESENT/);
 });
 
-test("CLI approve exits 3 with PLAN_EXPIRED when the plan expired", () => {
+test("CLI approve exits 3 with PLAN_EXPIRED when the plan expired", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
-  const planned = cli(
+  const planned = await cli(
     ["plan", "--rule", "CD001", "--cwd", root, "--state-dir", stateDir, "--claims", "ci-only,replace-safe", "--json"],
     root,
   );
@@ -580,7 +581,7 @@ test("CLI approve exits 3 with PLAN_EXPIRED when the plan expired", () => {
   const stored = JSON.parse(readFileSync(planFile, "utf8")) as { payload: { expiresAt: string } };
   stored.payload.expiresAt = "2000-01-01T00:00:00.000Z";
   writeFileSync(planFile, JSON.stringify(stored));
-  const approved = cli(
+  const approved = await cli(
     ["approve", "--plan", plan.planId, "--confirm", plan.planDigest.slice(-12), "--state-dir", stateDir, "--lang", "en"],
     root,
   );
@@ -588,31 +589,31 @@ test("CLI approve exits 3 with PLAN_EXPIRED when the plan expired", () => {
   assert.match(approved.stderr, /PLAN_EXPIRED/);
 });
 
-test("CLI plan bounds --minutes to the timeout edit range", () => {
+test("CLI plan bounds --minutes to the timeout edit range", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
-  const rejected = cli(["plan", "--rule", "CD005", "--minutes", "361", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
+  const rejected = await cli(["plan", "--rule", "CD005", "--minutes", "361", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
   assert.equal(rejected.status, 1);
   assert.match(rejected.stderr, /Invalid value for --minutes/);
-  const accepted = cli(["plan", "--rule", "CD005", "--minutes", "360", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
+  const accepted = await cli(["plan", "--rule", "CD005", "--minutes", "360", "--cwd", root, "--state-dir", stateDir, "--lang", "en"], root);
   assert.doesNotMatch(accepted.stderr, /Invalid value for --minutes/);
 });
 
-test("CLI sync bounds --days to the config contract", () => {
+test("CLI sync bounds --days to the config contract", async () => {
   const { root } = makeRepo();
-  const rejected = cli(["sync", "--network", "--repo", "owner/repo", "--days", "31", "--cwd", root, "--lang", "en"], root);
+  const rejected = await cli(["sync", "--network", "--repo", "owner/repo", "--days", "31", "--cwd", root, "--lang", "en"], root);
   assert.equal(rejected.status, 1);
   assert.match(rejected.stderr, /Invalid value for --days/);
-  const accepted = cli(["sync", "--repo", "owner/repo", "--days", "30", "--cwd", root, "--lang", "en"], root);
+  const accepted = await cli(["sync", "--repo", "owner/repo", "--days", "30", "--cwd", root, "--lang", "en"], root);
   assert.doesNotMatch(accepted.stderr, /Invalid value for --days/);
 });
 
-test("CLI diagnose explains attribution for stored history", () => {
+test("CLI diagnose explains attribution for stored history", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
 
-  const result = cli(["diagnose", "--cwd", root, "--state-dir", stateDir, "--json"], root);
+  const result = await cli(["diagnose", "--cwd", root, "--state-dir", stateDir, "--json"], root);
   assert.equal(result.status, 0, result.stderr);
   const payload = JSON.parse(result.stdout) as {
     repository: string;
@@ -632,19 +633,19 @@ test("CLI diagnose explains attribution for stored history", () => {
   assert.equal(payload.workflows[0]?.path, ".github/workflows/pr.yml");
 });
 
-test("CLI diagnose asks for a sync when history is missing", () => {
+test("CLI diagnose asks for a sync when history is missing", async () => {
   const { root } = makeRepo();
-  const result = cli(["diagnose", "--cwd", root, "--state-dir", join(root, ".state")], root);
+  const result = await cli(["diagnose", "--cwd", root, "--state-dir", join(root, ".state")], root);
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Run ci-diet sync --network first/);
 });
-test("CLI plan explains a requested workflow skipped by the configured size limit", () => {
+test("CLI plan explains a requested workflow skipped by the configured size limit", async () => {
   const { root } = makeRepo();
   const stateDir = join(root, ".state");
   seed(root, stateDir);
   writeFileSync(join(root, ".github", "workflows", "large.yml"), "#".repeat(300), "utf8");
   writeFileSync(join(root, "config.json"), JSON.stringify({ storage: { workflowMaxBytes: 256 } }), "utf8");
-  const result = cli(
+  const result = await cli(
     ["plan", "--rule", "CD005", "--workflow", ".github/workflows/large.yml", "--config", "config.json",
       "--cwd", root, "--state-dir", stateDir, "--lang", "en"],
     root,

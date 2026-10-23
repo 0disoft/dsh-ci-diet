@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,26 +9,15 @@ import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { PatchStore } from "../../src/core/patch/store.ts";
 import { escapeHtml, renderHtmlReport } from "../../src/core/report/html.ts";
 import type { AnalysisReport } from "../../src/core/contracts/schema.ts";
-import { isolatedEnv } from "../helpers/test-env.ts";
+import { runCli } from "../helpers/cli.ts";
 import { localizedFinding } from "../../src/core/report/localize.ts";
 import { LOCALES } from "../../src/shared/i18n/index.ts";
 
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const cliPath = join(repoRoot, "src", "cli", "index.ts");
 let workspace = "";
 let scanRoot = "";
 let stateDir = "";
 let report: AnalysisReport;
-
-function runCli(args: readonly string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    env: isolatedEnv(),
-  });
-  if (result.error !== undefined) throw result.error;
-  return { status: result.status ?? -1, stdout: result.stdout, stderr: result.stderr };
-}
 
 before(() => {
   workspace = mkdtempSync(join(tmpdir(), "ci-diet-report-"));
@@ -54,7 +42,7 @@ after(() => {
 });
 
 describe("html report", () => {
-  it("escapes dynamic text", () => {
+  it("escapes dynamic text", async () => {
     assert.equal(escapeHtml('a<b>&"c"'), "a&lt;b&gt;&amp;&quot;c&quot;");
     const hostile: AnalysisReport = {
       ...report,
@@ -68,7 +56,7 @@ describe("html report", () => {
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
   });
 
-  it("renders a self-contained page", () => {
+  it("renders a self-contained page", async () => {
     const html = renderHtmlReport(report);
     assert.match(html, /^<!doctype html>/);
     assert.match(html, /<style>/);
@@ -80,8 +68,8 @@ describe("html report", () => {
 });
 
 describe("ci-diet report", () => {
-  it("prints the latest report as JSON", () => {
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
+  it("prints the latest report as JSON", async () => {
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
     assert.equal(result.status, 0);
     const parsed = JSON.parse(result.stdout) as { reportId: string; schemaVersion: number };
     assert.equal(parsed.schemaVersion, 2);
@@ -89,7 +77,7 @@ describe("ci-diet report", () => {
   });
 
 
-  it("scopes the latest report to the repository at the current root", () => {
+  it("scopes the latest report to the repository at the current root", async () => {
     const otherRoot = join(workspace, "other");
     mkdirSync(otherRoot, { recursive: true });
     const store = PatchStore.open(stateDir);
@@ -102,58 +90,58 @@ describe("ci-diet report", () => {
       generatedAt: "2026-10-21T00:00:00Z",
     });
     assert.equal(store.latestReport()?.bindingId, other.bindingId);
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
     assert.equal(result.status, 0, result.stderr);
     assert.equal((JSON.parse(result.stdout) as { reportId: string }).reportId, report.reportId);
   });
-  it("prints a human summary", () => {
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--lang", "en"]);
+  it("prints a human summary", async () => {
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--lang", "en"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Findings: 2/);
     assert.match(result.stdout, /Runner seconds/);
   });
 
-  it("prints HTML with --format html", () => {
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html"]);
+  it("prints HTML with --format html", async () => {
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html"]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /^<!doctype html>/);
     assert.match(result.stdout, /CD004|CD008/);
   });
 
-  it("writes HTML to --out", () => {
+  it("writes HTML to --out", async () => {
     const target = join(workspace, "out", "report.html");
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html", "--out", target]);
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html", "--out", target]);
     assert.equal(result.status, 0);
     assert.match(result.stdout, /Report written to/);
   });
 
-  it("fails without a stored report", () => {
-    const result = runCli(["report", "--state-dir", join(workspace, "empty")]);
+  it("fails without a stored report", async () => {
+    const result = await runCli(["report", "--state-dir", join(workspace, "empty")]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /No stored report/);
   });
 
-  it("rejects an unknown format", () => {
-    const result = runCli(["report", "--state-dir", stateDir, "--format", "pdf"]);
+  it("rejects an unknown format", async () => {
+    const result = await runCli(["report", "--state-dir", stateDir, "--format", "pdf"]);
     assert.equal(result.status, 1);
     assert.match(result.stderr, /Invalid value for --format/);
   });
 });
 
 describe("ci-diet prune", () => {
-  it("removes expired reports but keeps fresh ones", () => {
-    const result = runCli(["prune", "--state-dir", stateDir, "--json"]);
+  it("removes expired reports but keeps fresh ones", async () => {
+    const result = await runCli(["prune", "--state-dir", stateDir, "--json"]);
     assert.equal(result.status, 0);
     const parsed = JSON.parse(result.stdout) as { removedReports: number; removedPlans: number };
     assert.equal(parsed.removedReports, 1);
     assert.equal(parsed.removedPlans, 0);
-    const after = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
+    const after = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--json"]);
     assert.equal(after.status, 0);
     assert.equal((JSON.parse(after.stdout) as { reportId: string }).reportId, report.reportId);
   });
 });
 describe("localized rendering", () => {
-  it("renders each shipped language with its own lang attribute", () => {
+  it("renders each shipped language with its own lang attribute", async () => {
     const englishFinding = localizedFinding(report.findings[0]!, "en").title;
     const english = renderHtmlReport(report, { locale: "en" });
     for (const locale of LOCALES) {
@@ -167,7 +155,7 @@ describe("localized rendering", () => {
     assert.match(english, /<html lang="en">/);
   });
 
-  it("keeps machine codes and numbers untranslated", () => {
+  it("keeps machine codes and numbers untranslated", async () => {
     for (const locale of LOCALES) {
       const html = renderHtmlReport(report, { locale });
       assert.ok(html.includes("MATRIX_EDIT_NOT_SUPPORTED"), "blocker code in " + locale);
@@ -176,9 +164,9 @@ describe("localized rendering", () => {
     }
   });
 
-  it("prints human findings in every shipped language", () => {
+  it("prints human findings in every shipped language", async () => {
     for (const locale of LOCALES) {
-      const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--lang", locale]);
+      const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--lang", locale]);
       assert.equal(result.status, 0, "exit status for " + locale);
       const title = localizedFinding(report.findings[0]!, locale).title;
       assert.ok(result.stdout.includes(title), "finding title in " + locale + " output: " + result.stdout);
@@ -186,9 +174,9 @@ describe("localized rendering", () => {
     }
   });
 
-  it("writes HTML in the requested language", () => {
+  it("writes HTML in the requested language", async () => {
     const target = join(workspace, "out", "report-ko.html");
-    const result = runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html", "--lang", "ko", "--out", target]);
+    const result = await runCli(["report", "--cwd", scanRoot, "--state-dir", stateDir, "--format", "html", "--lang", "ko", "--out", target]);
     assert.equal(result.status, 0);
     const html = readFileSync(target, "utf8");
     assert.match(html, /<html lang="ko">/);
