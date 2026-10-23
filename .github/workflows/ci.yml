@@ -26,15 +26,10 @@ jobs:
           node-version: 22.19.0
 
       - uses: oven-sh/setup-bun@v2
-        id: bun
         with:
           bun-version: latest
-      - name: Cache Bun dependency downloads
-        uses: actions/cache@v4
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-
+      # Run 40016328106 spent 4s restoring/saving this cache while install
+      # itself took <1s. Keep installation reproducible without that overhead.
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run lint
