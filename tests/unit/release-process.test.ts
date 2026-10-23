@@ -256,5 +256,10 @@ test("publish workflow publishes on v* tags with OIDC and no token", () => {
   assert.match(runs, /npm install --global npm@\^11\.15\.0/);
   assert.match(runs, /scripts\/check-release-tag\.mjs/);
   assert.match(runs, /npm publish --provenance --access public/);
+  assert.match(runs, /npm publish --provenance --access public --ignore-scripts/);
+  const buildIndex = steps.findIndex((step) => step.run === "bun run build");
+  const smokeIndex = steps.findIndex((step) => step.run === "bun run smoke:node");
+  const publishIndex = steps.findIndex((step) => String(step.run).startsWith("npm publish"));
+  assert.ok(buildIndex >= 0 && buildIndex < smokeIndex && smokeIndex < publishIndex, "publishing without prepack requires a prior build and smoke test");
   assert.match(runs, /npm view "dsh-ci-diet@\$version" version/);
 });

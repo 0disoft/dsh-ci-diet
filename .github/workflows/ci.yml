@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -22,8 +26,15 @@ jobs:
           node-version: 22.19.0
 
       - uses: oven-sh/setup-bun@v2
+        id: bun
         with:
           bun-version: latest
+      - name: Cache Bun dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun run lint

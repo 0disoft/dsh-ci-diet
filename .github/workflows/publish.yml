@@ -20,6 +20,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
+        id: bun
         with:
           bun-version: latest
 
@@ -37,6 +38,13 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
+
+      - name: Cache Bun dependency downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -59,4 +67,6 @@ jobs:
           echo "publishing dsh-ci-diet@$version"
 
       - name: Publish with OIDC provenance
-        run: npm publish --provenance --access public
+        # The build above already produced and smoke-tested the package. Avoid
+        # running prepack's identical build a second time during publishing.
+        run: npm publish --provenance --access public --ignore-scripts
