@@ -123,6 +123,10 @@ export function allowedPaths(edits: readonly ByteEdit[]): PathSeg[][] {
       continue;
     }
     const stepIndex = stepIndexIn(edit);
+    if (edit.ruleId === "CD006" && stepIndex !== null) {
+      paths.push(["jobs", jobKey, "steps", stepIndex, "with", "cache"], ["jobs", jobKey, "steps", stepIndex, "with", "cache-dependency-path"]);
+      continue;
+    }
     if (stepIndex !== null)
       paths.push(["jobs", jobKey, "steps", stepIndex, "with", "retention-days"]);
   }

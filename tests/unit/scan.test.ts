@@ -129,7 +129,7 @@ test("skips disabled rules and history rules without history", () => {
 
   const full = scan();
   // CD003 and CD005 stay off by default (ADR-13), so only CD001/CD002 appear.
-  assert.deepEqual(full.report.ruleResults.map((result) => result.ruleId), ["CD001", "CD002", "CD004", "CD008"]);
+  assert.deepEqual(full.report.ruleResults.map((result) => result.ruleId), ["CD001", "CD002", "CD004", "CD006", "CD008"]);
   for (const result of full.report.ruleResults.filter((entry) => entry.ruleId === "CD001" || entry.ruleId === "CD002")) {
     assert.equal(result.outcome, "skipped");
     assert.ok(result.reasons.length > 0);

@@ -21,6 +21,7 @@
     "allowedRules": [
       "CD001",
       "CD005",
+      "CD006",
       "CD008"
     ],
     "approvalTtlSeconds": 600,

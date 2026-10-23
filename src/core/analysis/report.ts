@@ -84,6 +84,7 @@ export function buildHistoryReport(input: HistoryReportInput): HistoryReportResu
   const evaluations = evaluateRules(
     {
       identity,
+      workspaceRoot: input.binding.workspaceRoot,
       coverage,
       workflows: input.workflows,
       generatedAt: input.generatedAt,

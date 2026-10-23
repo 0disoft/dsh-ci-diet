@@ -8,7 +8,7 @@ import { isStale } from "../support/clock.ts";
 export { POLICY_MAX_AGE_SECONDS } from "../policy/constants.ts";
 
 /** Rules whose findings can ever produce a patch plan in v0.1. */
-export const PATCH_RULES = ["CD001", "CD005", "CD008"] as const;
+export const PATCH_RULES = ["CD001", "CD005", "CD006", "CD008"] as const;
 export type PatchRule = (typeof PATCH_RULES)[number];
 
 export function isPatchRule(value: string): value is PatchRule {
@@ -45,6 +45,7 @@ const CLAIM_LIFTS: Record<PatchRule, Readonly<Record<string, "ci-only" | "replac
     REQUIRED_CHECK_OWNERSHIP_UNKNOWN: "replace-safe",
   },
   CD005: {},
+  CD006: {},
   CD008: {},
 };
 

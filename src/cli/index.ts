@@ -563,23 +563,27 @@ function pickWorkflowPath(options: Options, available: readonly string[]): strin
 async function planCommand(options: Options, locale: Locale): Promise<number> {
   const t = createTranslator(locale);
   const stateDir = stateDirOf(options);
-  const store = existsSync(stateDir) ? openStore(stateDir, locale, options.config.storage) : null;
+  const store = options.rule === "CD006" ? openStore(stateDir, locale, options.config.storage) : existsSync(stateDir) ? openStore(stateDir, locale, options.config.storage) : null;
   if (store === null) {
     writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
   const plannedAt = now();
+  const cacheScan = options.rule === "CD006"
+    ? runStaticScan({ workspaceRoot: options.cwd, enabledRules: ["CD006"], maxWorkflowBytes: options.config.storage.workflowMaxBytes, generatedAt: plannedAt.toISOString() })
+    : null;
   const root = realpathSync(options.cwd);
   const existing = store.findBindingByRoot(root);
   const current = existing ?? createLocalBinding(root, plannedAt.toISOString()).binding;
-  const report = store.latestReportForBinding(current.bindingId);
+  const report = cacheScan?.report ?? store.latestReportForBinding(current.bindingId);
   if (report === null) {
     writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
-  const binding = store.readBinding(report.bindingId) ?? current;
+  const binding = cacheScan?.binding ?? store.readBinding(report.bindingId) ?? current;
+  if (cacheScan !== null) store.saveBinding(binding);
   const rule = options.rule;
-  if (rule !== "CD001" && rule !== "CD005" && rule !== "CD008") {
+  if (rule !== "CD001" && rule !== "CD005" && rule !== "CD006" && rule !== "CD008") {
     writeErr(t("cli.plan.ruleRequired") + "\n");
     return EXIT_USAGE;
   }
@@ -604,7 +608,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   }
 
   const historyJson: HistoryBundle | null = store.readLatestHistory(binding.bindingId);
-  if (historyJson === null) {
+  if (historyJson === null && rule !== "CD006") {
     writeErr(t("cli.plan.syncRequired") + "\n");
     return EXIT_USAGE;
   }
@@ -612,7 +616,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   const request: PlanRequest = {
     rule,
     jobKey: options.job,
-    stepIndex: rule === "CD008" ? options.step : null,
+    stepIndex: (rule === "CD008" || rule === "CD006") ? options.step : null,
     minutes: options.minutes,
     retentionDays: PROPOSED_RETENTION_DAYS,
   };
@@ -644,7 +648,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
     rule,
     allowedRules: options.config.apply.allowedRules,
     jobKey: options.job,
-    stepIndex: rule === "CD008" ? options.step : null,
+    stepIndex: (rule === "CD008" || rule === "CD006") ? options.step : null,
     minutes: options.minutes,
     finding: chosenFinding,
     coverage: report.coverage,
@@ -681,7 +685,7 @@ async function planCommand(options: Options, locale: Locale): Promise<number> {
   }
   store.saveAttestation(requested.attestation);
   const plan = requested.plan;
-  const meta: PlanMeta = { coverageWriteAllowed: true, reportId: report.reportId };
+  const meta: PlanMeta = { coverageWriteAllowed: true, reportId: cacheScan === null ? report.reportId : null };
   store.savePlan(plan, meta);
 
   const lines: string[] = [];

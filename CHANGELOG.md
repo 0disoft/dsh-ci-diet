@@ -5,6 +5,23 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+### Added
+
+- CD006 detects a narrow npm shape: a root `actions/checkout` with no user
+  `with` options, exactly one `actions/setup-node@v3` or `@v4` step without npm
+  caching, then exactly `npm ci`. The plan adds only `cache: npm` and
+  `cache-dependency-path: package-lock.json`; Node and action versions,
+  `npm ci`, tests, and local cache steps stay unchanged. The rule is enabled by
+  default and needs no run history. `ci-diet plan --rule CD006` runs the static
+  scan and saves the plan without `sync`, while the plugin preview still reads
+  a saved scan. Cache benefit stays unknown until comparable cold and warm runs
+  are measured, and every change still needs human approval.
+- The v2 contract keeps its `schemaVersion` and extends the rule enums and
+  default `apply.allowedRules` with CD006. Coverage policy gains
+  `/rules/CD006`, where only `workflowDefinitions` must be complete. CD006 also
+  appears in the Settings rule labels, CLI help, findings, six READMEs, and the
+  rule and patch specifications.
+
 ### Changed
 
 - Reworked the six README editions and plugin guide around current first-use

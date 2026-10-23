@@ -11,6 +11,7 @@ applied to changed bytes.
 | --- | --- | --- |
 | CD001 | Add a top-level `concurrency` block | `on` is exactly `pull_request`, no side effects, complete protection data, no required check owned by this workflow |
 | CD005 | Insert or reduce a job's integer `timeout-minutes` | Sufficient identical cohort, protection for long successful samples, job Attestation |
+| CD006 | Add `cache: npm` and `cache-dependency-path: package-lock.json` to one setup-node step | Root checkout → `actions/setup-node@v3`/`@v4` → exactly `npm ci`, committed valid root manifests, no existing cache inputs |
 | CD008 | Reduce `retention-days` on a named upload step | Temporary purpose and consumer period attested, effective maximum confirmed |
 
 `on`, `if`, `needs`, `matrix`, `permissions`, `env`, `uses`, `run`,
@@ -88,6 +89,7 @@ the current file and refuses the request when any of these no longer match:
 | Finding measured another job or step | `FINDING_NOT_FOUND` | Choose the job the finding actually measured |
 | Finding did not record a target | `TARGET_NOT_RECORDED` | Reanalyze before planning |
 | CD005 minutes are absent or not a cohort recommendation | `MINUTES_REQUIRED` / `MINUTES_NOT_FROM_EVIDENCE` | Use a value the cohort produced |
+| CD006 job or step is not the setup-node step in the required order | `STEP_NOT_FOUND` / `NPM_CACHE_PREREQUISITES_MISSING` | Choose the job and setup-node step the finding measured |
 | CD008 step is missing or does not upload an artifact | `STEP_NOT_FOUND` / `STEP_NOT_UPLOAD_ARTIFACT` | Pick the upload step |
 | CD008 retention is not the proposed 7 days | `RETENTION_NOT_FROM_EVIDENCE` | Use the proposed value |
 | History needed for the evidence is absent | `HISTORY_NOT_SYNCED` | Sync, then plan |
@@ -96,6 +98,21 @@ A CD005 recommendation belongs to one job. Reusing a 20-sample cohort from a
 `build` job to add a timeout to a `deploy` job is impossible because the target
 job is part of the finding identity; an untested job has no recommendation at
 all. The same selection runs in the CLI and in `ci_diet_plan`.
+
+CD006 is the one plan that needs no run history. The CLI `plan --rule CD006`
+runs a fresh static scan in memory and saves the binding, attestation, and plan;
+it does not replace the latest saved report, so an earlier `sync` report stays
+intact. Its `--step` is the zero-based index of the setup-node step, with
+checkout immediately before it and `npm ci` immediately after it. The root
+`package.json` and `package-lock.json` are part of the finding identity and are
+hashed again when planning, so the plan pins the manifest bytes current at that
+moment. If either manifest changes after planning or approval, apply refuses
+with `DEPENDENCY_HASH_MISMATCH`. The only allowed edit adds the two `with`
+inputs. Node and action versions, `npm ci`, tests, and a separate or local cache
+step are not edited, and the rule never proposes them. The cache benefit
+remains unmeasured until comparable cold and warm runs exist, so the plan
+carries no time or money saving claim. Approval, apply, and revert use the same
+transaction and human approval rules as the other rules.
 
 ## Plan state and dependencies
 

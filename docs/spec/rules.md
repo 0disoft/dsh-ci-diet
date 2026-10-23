@@ -58,6 +58,7 @@ conditions.
 | CD003 | subset / skip | subset / skip | subset / skip | degrade / degrade | full / full |
 | CD004 | degrade / degrade | degrade / degrade | full / full | full / full | full / full |
 | CD005 | subset / skip | subset / degrade | full / full | full / full | full / full |
+| CD006 | full / full | degrade / skip | full / full | full / full | full / full |
 | CD008 | full / full | full / full | full / full | full / full | degrade / degrade |
 
 `examples/coverage-vectors.json` holds the generated vectors, including four
@@ -202,6 +203,37 @@ default.
 Normal successful runtime reduction is `not_applicable`. Historical excess is
 computed only when an abnormal long run's termination cause is known; simply
 being slow is not a hang.
+
+## CD006: npm download cache
+
+CD006 reads workflow text and needs no run history. It targets a job only when
+the workflow and job keep the repository root as their working directory, the
+step immediately before setup-node is `actions/checkout` without user `with`
+options, exactly one `actions/setup-node@v3` or `@v4` step (major, major.minor,
+or major.minor.patch) follows it, and the step immediately after it runs exactly
+`npm ci`. The job must not use a reusable workflow, a local action, any `uses`
+value that names a cache action, an existing `cache`, `cache-dependency-path`,
+or `package-manager-cache` input, or a flow-style step mapping. The root
+`package.json` and `package-lock.json` must be committed regular files, parse
+as JSON, be no larger than 4 MiB, and use lockfile version 1, 2, or 3; symlinks
+are rejected.
+
+The edit inserts only `cache: npm` and `cache-dependency-path: package-lock.json`
+into the setup-node `with` mapping. Node and action versions, `npm ci`, tests,
+permissions, and every other workflow field stay unchanged. Local cache actions,
+separate cache steps, and dynamic cache paths are outside the rule and are never
+proposed.
+
+Evidence is `static` and bound to the workflow hash plus the hashes of the two
+root manifests. Cache benefit is unknown until comparable cold and warm runs
+exist, so `standaloneRunnerSeconds` is unknown with reason
+`CACHE_BENEFIT_UNMEASURED`; a finding or plan never claims saved runner minutes
+or money. A plan still needs explicit human approval and uses the normal apply
+and revert flow. CLI `plan --rule CD006` performs this static scan directly and
+saves a plan without a prior history sync. Only the `workflowDefinitions` axis
+must be complete: a partial axis degrades the rule, an unavailable axis skips
+it, and the other four axes do not restrict it. A missing, unreadable, or
+invalid root manifest produces no CD006 finding.
 
 ## CD008: artifact retention
 

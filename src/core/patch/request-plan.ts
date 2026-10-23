@@ -9,7 +9,8 @@ import { composeCoverage } from "../analysis/coverage.ts";
 import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "./plan.ts";
 import { createAttestation } from "./attestation.ts";
 import { collectDependencies } from "./dependencies.ts";
-import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit } from "./edits.ts";
+import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit, planNpmCacheEdit } from "./edits.ts";
+import { npmCacheDependencies, npmCacheTargets } from "../rules/npm-cache.ts";
 
 /** Why a requested patch plan could not be built. Callers map these to their own surface. */
 export type RequestPlanBlocker =
@@ -88,6 +89,13 @@ function requestedEdit(input: RequestedPlanInput): { edits: readonly ByteEdit[];
   if (job === undefined || input.stepIndex === null) return failed("STEP_REQUIRED", ["JOB_AND_STEP_REQUIRED"]);
   const step = job.steps[input.stepIndex];
   if (step === undefined) return failed("STEP_REQUIRED", ["STEP_NOT_FOUND"]);
+  if (input.rule === "CD006") {
+    if (!npmCacheTargets(input.workflow).some((t) => t.job.key === job.key && t.step.index === step.index)
+      || npmCacheDependencies(input.binding.workspaceRoot) === null) return failed("EDIT_NOT_APPLICABLE", ["NPM_CACHE_PREREQUISITES_MISSING"]);
+    const result = planNpmCacheEdit(input.text, job, step);
+    if (result.edit === null) return failed("EDIT_NOT_APPLICABLE", [result.error?.detail ?? "EDIT_NOT_APPLICABLE"]);
+    return { edits: [result.edit], scope: "step", jobKey: job.key, stepKey: "steps[" + step.index + "]", expected: {} };
+  }
   const days = input.retentionDays ?? PROPOSED_RETENTION_DAYS;
   const result = planRetentionEdit(input.text, job, step, days);
   if (result.edit === null) return failed("EDIT_NOT_APPLICABLE", [result.error?.detail ?? "EDIT_NOT_APPLICABLE"]);
@@ -105,7 +113,7 @@ export function buildRequestedPlan(input: RequestedPlanInput): RequestedPlanResu
   }
   const edit = requestedEdit(input);
   if ("ok" in edit) return edit;
-  if (input.history === null) {
+  if (input.history === null && input.rule !== "CD006") {
     const composition = composeCoverage(input.coverage, input.rule, { currentDefinitionParsed: true, editedJobEvidenceComplete: true });
     return failed("HISTORY_REQUIRED", ["HISTORY_REQUIRED", "COVERAGE_" + composition.level.toUpperCase()], edit.edits);
   }
@@ -143,8 +151,8 @@ export function buildRequestedPlan(input: RequestedPlanInput): RequestedPlanResu
 
   const policies = buildPolicySnapshots({
     binding: input.binding,
-    protection: input.history.protection,
-    retention: input.history.retention,
+    protection: input.history?.protection ?? null,
+    retention: input.history?.retention ?? null,
     now: input.now,
   });
   try {

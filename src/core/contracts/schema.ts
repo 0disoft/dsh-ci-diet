@@ -33,7 +33,7 @@ export type Config = {
 };
   "apply": {
   "maxFilesPerPlan": 1;
-  "allowedRules": ("CD001" | "CD005" | "CD008")[];
+  "allowedRules": ("CD001" | "CD005" | "CD006" | "CD008")[];
   "approvalTtlSeconds": 600;
   "policyMaxAgeSeconds": 600;
   "attestationMaxAgeDays": 30;
@@ -178,7 +178,7 @@ export type OperationProgress = {
 export type Finding = {
   "findingId": string;
   "fingerprint": string;
-  "ruleId": "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008";
+  "ruleId": "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD006" | "CD008";
   "ruleVersion": string;
   "title": string;
   "renderedText": string;
@@ -199,7 +199,7 @@ export type Finding = {
   "standaloneRunnerSeconds": SecondsMetric;
 };
 export type RuleResult = {
-  "ruleId": "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008";
+  "ruleId": "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD006" | "CD008";
   "ruleVersion": string;
   "inputHash": string;
   "outcome": "finding" | "candidate" | "no_finding" | "skipped";
@@ -267,7 +267,7 @@ export type ByteEdit = {
   "endByte": number;
   "replacementUtf8": string;
   "semanticPath": string;
-  "ruleId": "CD001" | "CD005" | "CD008";
+  "ruleId": "CD001" | "CD005" | "CD006" | "CD008";
 };
 export type PolicySnapshot = {
   "kind": "protection" | "retention";
@@ -284,7 +284,7 @@ export type PatchPayload = {
   "rootIdentityHash": string;
   "workflowPath": string;
   "engineVersion": string;
-  "ruleIds": ("CD001" | "CD005" | "CD008")[];
+  "ruleIds": ("CD001" | "CD005" | "CD006" | "CD008")[];
   "sourceHash": string;
   "resultHash": string;
   "dependencyHash": string;
@@ -381,8 +381,8 @@ export type ReleaseScope = {
   "provenance": "synthetic" | "observed";
   "releaseVersion": string;
   "a0Status": "not_run" | "passed" | "partial" | "failed";
-  "enabledRules": ("CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008")[];
-  "patchVerifiedRules": ("CD001" | "CD005" | "CD008")[];
+  "enabledRules": ("CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD006" | "CD008")[];
+  "patchVerifiedRules": ("CD001" | "CD005" | "CD006" | "CD008")[];
   "evidenceRefs": string[];
 };
 export type LocalEvent = {

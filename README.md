@@ -19,9 +19,10 @@ The static scan reads workflow YAML in a target checkout. The optional history s
 | CD003 | Heavy checks for docs-only changes | explanation only; off by default |
 | CD004 | Oversized matrices | explanation only |
 | CD005 | Jobs without `timeout-minutes` | timeout edit; off by default |
+| CD006 | `actions/setup-node@v3` or `@v4` jobs that run `npm ci` without npm caching | two setup-node inputs; on by default |
 | CD008 | Long artifact retention | retention edit |
 
-CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. Cache hygiene appears only as advisory diagnostics: the frozen contract has no cache rule, so cache hints never become findings or patches.
+CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. CD006 is a default static rule for one narrow npm shape: it adds setup-node's download cache while `npm ci` and every test still run. A cache can reduce downloads after it warms up; no time or money saving is claimed until cold and warm runs are compared.
 
 ## Install and upgrade
 
@@ -70,6 +71,17 @@ A useful chat request makes the sequence and review boundary explicit. Replace t
 
 The plugin preview does not save a plan. Its `nextCommand` re-creates the plan through the CLI so that the plan is durable and can enter the human approval flow.
 
+## Offline npm cache plan (CD006)
+
+CD006 needs no run history. It matches a job at the repository root where `actions/checkout` has no user `with` options, exactly one `actions/setup-node@v3` or `@v4` step follows it without caching, and the next step's `run` is exactly `npm ci`. The root `package.json` and `package-lock.json` must be committed, regular JSON files. The plan adds only `cache: npm` and `cache-dependency-path: package-lock.json` to setup-node; it does not change Node, action versions, `npm ci`, tests, or local caching.
+
+```
+ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
+ci-diet plans --cwd . --plan PLAN_ID
+```
+
+`--step` is the zero-based index of the setup-node step; this example assumes checkout is step 0 and setup-node is step 1. CLI `plan` performs this static scan in memory and saves the plan without a prior `sync`; it leaves the latest saved report untouched. The plugin `ci_diet_plan` still needs a saved report, so run `ci_diet_scan` first. Approve and apply through the existing commands below. The plan and its attestation are saved during planning; no workflow file changes until a person approves the plan and runs apply.
+
 ## CLI command reference
 
 ```
@@ -102,7 +114,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Replace `PLAN_ID` with the id printed by the plan, `CONFIRMATION` with its 12-character digest tail, and `CHANGE_ID` with the id printed by apply. Every value is a literal argument; do not type angle brackets. `approve` creates a single-use approval, `apply` rewrites only the planned byte range in one workflow file, and `revert` restores that change’s backup. Review the resulting diff and run the repository’s checks as needed. CI Diet does not commit, push, deploy, run workflows, change branch protection, or delete artifacts.
 
-For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as human attestations. They state the operator’s review of cancellation semantics; they are not bypass switches. CD005 needs a measured `--job` and `--minutes`, and CD008 needs `--job`, a zero-based numeric `--step` array index for the target step, and artifact claims. The numeric step is not a step-name upload token.
+For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as human attestations. They state the operator’s review of cancellation semantics; they are not bypass switches. CD005 needs a measured `--job` and `--minutes`, and CD008 needs `--job`, a zero-based numeric `--step` array index for the target step, and artifact claims. CD006 needs `--job` and the zero-based `--step` index of the setup-node step; it has no claims. In both step rules, the numeric step is an array index, not a step-name token.
 
 ## State and limitations
 

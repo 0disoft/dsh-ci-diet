@@ -122,6 +122,7 @@ export function runStaticScan(options: StaticScanOptions): StaticScanResult {
   const ruleEvaluations = evaluateRules(
     {
       identity,
+      workspaceRoot: discovery.root,
       coverage,
       workflows,
       generatedAt,

@@ -421,7 +421,7 @@ export function apply(ctx: Context, config: Config) {
     name: "ci_diet_plan",
     description: t("dsh.plan.description"),
     parameters: {
-      rule: { type: "string", enum: ["CD001", "CD005", "CD008"], required: true, description: t("dsh.param.rule") },
+      rule: { type: "string", enum: ["CD001", "CD005", "CD006", "CD008"], required: true, description: t("dsh.param.rule") },
       workflow: { type: "string", description: t("dsh.param.workflow") },
       job: { type: "string", description: t("dsh.param.job") },
       step: { type: "number", description: t("dsh.param.step") },
@@ -486,7 +486,7 @@ export function apply(ctx: Context, config: Config) {
       const request: PlanRequest = {
         rule,
         jobKey: args.job ?? null,
-        stepIndex: rule === "CD008" ? (args.step ?? null) : null,
+        stepIndex: (rule === "CD008" || rule === "CD006") ? (args.step ?? null) : null,
         minutes: args.minutes ?? null,
         retentionDays: PROPOSED_RETENTION_DAYS,
       };

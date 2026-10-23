@@ -22,6 +22,7 @@ export function axisOf(coverage: Coverage, axis: keyof CoverageAxes): Dimension 
 }
 
 export interface RuleContext {
+  readonly workspaceRoot?: string;
   readonly identity: RuleIdentity;
   readonly coverage: Coverage;
   readonly workflows: readonly WorkflowDefinition[];

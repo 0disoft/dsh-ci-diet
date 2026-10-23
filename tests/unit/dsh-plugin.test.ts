@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
@@ -104,9 +105,25 @@ test("exposes every engine-facing setting as live", () => {
 test("defaults match the contract and rule defaults", () => {
   const settings = engineSettingsOf(defaultPluginSettings());
   assert.deepEqual(settings.config, DEFAULT_CONFIG);
-  assert.deepEqual(settings.enabledRules, ["CD001", "CD002", "CD004", "CD008"]);
+  assert.deepEqual(settings.enabledRules, ["CD001", "CD002", "CD004", "CD006", "CD008"]);
   assert.equal(settings.config.storage.storeMaxBytes, 268435456);
   assert.equal(settings.config.billing, undefined);
+});
+
+test("ci_diet_plan previews the npm cache patch with network disabled and no history", async () => {
+  const { tools } = harness();
+  const root = workspace();
+  const workflow = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n      - run: npm ci\n";
+  writeFileSync(join(root, ".github/workflows/ci.yml"), workflow);
+  writeFileSync(join(root, "package.json"), "{}");
+  writeFileSync(join(root, "package-lock.json"), '{"lockfileVersion":3}');
+  for (const args of [["init", "--quiet"], ["add", "--", "package.json", "package-lock.json"]]) execFileSync("git", args, { cwd: root, stdio: "pipe", windowsHide: true, timeout: 5000 });
+  const exec = { signal: new AbortController().signal };
+  await tools.get("ci_diet_scan")!.execute({ cwd: root }, exec);
+  const result = await tools.get("ci_diet_plan")!.execute({ rule: "CD006", cwd: root, job: "test", step: 1 }, exec) as { writeAllowed: boolean; blockers: string[]; nextCommand: string };
+  assert.equal(result.writeAllowed, true, JSON.stringify(result));
+  assert.deepEqual(result.blockers, []);
+  assert.match(result.nextCommand, /--rule CD006/);
 });
 
 test("rejects an out-of-contract lookback and zero rules", () => {

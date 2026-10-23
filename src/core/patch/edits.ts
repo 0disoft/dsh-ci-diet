@@ -262,6 +262,34 @@ export function applyEdits(text: string, edits: readonly ByteEdit[]): AppliedEdi
   return { text: resultText, hash: "sha256:" + sha256Hex(resultText) };
 }
 
+/** Add only the two setup-node inputs; never insert steps or skip npm ci. */
+export function planNpmCacheEdit(text: string, job: WorkflowJob, step: WorkflowStep): EditResult {
+  if (step.flow || step.withFlow || step.withEntries.some((e) => ["cache", "cache-dependency-path", "package-manager-cache"].includes(e.key))) {
+    return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "cache settings already exist or use flow syntax" } };
+  }
+  const buffer = bufferOf(text);
+  const newline = newlineStyle(text);
+  const indent = stepKeyIndent(buffer, step);
+  // Insert before the first existing with key, avoiding multiline scalar tails.
+  const first = step.withEntries[0];
+  let end: number;
+  let replacement: string;
+  if (step.withPresent) {
+    if (first === undefined) return { edit: null, error: { code: "EDIT_AMBIGUOUS", detail: "empty with mapping" } };
+    end = lineStartOf(buffer, first.keyRange.startByte);
+    const keyIndent = indentAt(buffer, first.keyRange.startByte);
+    replacement = keyIndent + "cache: npm" + newline + keyIndent + "cache-dependency-path: package-lock.json" + newline;
+  } else {
+    if (step.usesRange === null) return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "setup step has no uses line" } };
+    end = lineEndOf(buffer, step.usesRange.endByte);
+    // lineEndOf points after the CR on Windows; leave the original CRLF intact.
+    if (buffer[end - 1] === 0x0d) end -= 1;
+    replacement = newline + indent + "with:" + newline + indent + "  cache: npm" + newline + indent + "  cache-dependency-path: package-lock.json";
+  }
+  return { edit: { kind: step.withPresent ? "insertScalar" : "insertParentMapping", startByte: end, endByte: end,
+    replacementUtf8: replacement, semanticPath: "jobs." + job.key + ".steps[" + step.index + "].with.cache", ruleId: "CD006" }, error: null };
+}
+
 export function semanticCheck(
   original: WorkflowDefinition,
   resultText: string,
@@ -286,6 +314,14 @@ export function semanticCheck(
   if (job === undefined) return "EDIT_RESULT_INVALID: edited job disappeared";
   if (edit.ruleId === "CD005") {
     if (job.timeoutMinutes !== expected.minutes) return "EDIT_RESULT_INVALID: timeout minutes mismatch";
+    return null;
+  }
+  if (edit.ruleId === "CD006") {
+    const index = /^jobs\.[^.]+\.steps\[(\d+)\]\.with\.cache$/.exec(edit.semanticPath)?.[1];
+    const step = index === undefined ? undefined : job.steps[Number(index)];
+    if (!/^actions\/setup-node@v[34](?:\.\d+){0,2}$/.test(step?.uses ?? "")) return "EDIT_RESULT_INVALID: unsupported cache action";
+    if (step?.withEntries.find((e) => e.key === "cache")?.literal !== "npm"
+      || step.withEntries.find((e) => e.key === "cache-dependency-path")?.literal !== "package-lock.json") return "EDIT_RESULT_INVALID: npm cache inputs mismatch";
     return null;
   }
   const stepPath = /^jobs\.[^.]+\.steps\[(\d+)\]\.with\.retention-days$/.exec(edit.semanticPath);

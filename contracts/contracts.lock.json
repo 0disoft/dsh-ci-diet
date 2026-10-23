@@ -1,8 +1,8 @@
 {
   "pack": "ci-diet-design-v0.2.1",
   "files": {
-    "contracts/ci-diet.schema.json": "cbad5ef1b581ae9b7465f0eae483ef60f8f1e34c9e0c795998b8b0a18b807c8c",
-    "contracts/coverage-policy.json": "2b7aa50f81c7760dcba64c913332cb44ec5f1bf433290324fcf866c73614bdac",
+    "contracts/ci-diet.schema.json": "809983cdf5a6e868781ac56800c4b982963d7a24730a1e7f4dc3c82999124b04",
+    "contracts/coverage-policy.json": "f4ceccc8234ccaebdd7378e157190a02721e5671d2de9a10f4542e4973fcbf8c",
     "contracts/example-validation-map.json": "1c1a7b086e6fd5105e14820e3bc6571f6a159e0fd142d664d28f742153718146",
     "contracts/pricing-2026-10-20.json": "7192ea47d918cf2b9718a75b3a193d4e62b21b79f9f842898d89fc7b9504db09",
     "examples/README.md": "659f890daf000c8cfa97c124ae52e49a58b1a29f76b014f860df77cc1548f65e",
@@ -11,7 +11,7 @@
     "examples/attestation.json": "648a7a0983bd1734bd40604b24dfb241effbe42ae0c748b06e354265506c823e",
     "examples/binding.json": "6047e7aafd39181488d2c592a85423f57f5a1294b1c6feb8049b98deb2a8ed78",
     "examples/coverage-vectors.json": "37f01418ffeb808dcb28dcaeff97f6fec4437ee830b84b99c5c77af0427568fd",
-    "examples/default-config.json": "47e536dc04d9353262ed8c669901322f1e7957c9bab52ef72aa86df2871f3c2b",
+    "examples/default-config.json": "b07aaefbc16c4df48329d1b0b4dfe58d6addbb4e60c489297fe0bdf2a4c0ce8c",
     "examples/finding-evaluation.json": "43ee6a3072cc671880a5afcf9aab5a712f5c3f2b80c97e75d7261cfaa299a366",
     "examples/partial-progress.json": "23bb0759ddfdd67402897cd0d069e437c9c062d135b809ed0bcb3731dd4dc94d",
     "examples/patch-plan.json": "7d55082540d65ef854047576503582160054a8f336270cd658b7ba6e0fde8ac2",

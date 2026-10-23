@@ -3,7 +3,7 @@ export type SettingGroupId = "general" | "rules" | "history" | "storage" | "bill
 export type SettingKind = "switch" | "number" | "text" | "rules";
 
 /** Analysis rules a human can enable, in contract order. */
-export const RULE_CHOICES = ["CD001", "CD002", "CD003", "CD004", "CD005", "CD008"] as const;
+export const RULE_CHOICES = ["CD001", "CD002", "CD003", "CD004", "CD005", "CD006", "CD008"] as const;
 
 export interface SettingField {
   readonly key: string;

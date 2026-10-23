@@ -42,7 +42,7 @@ The Settings page edits the engine configuration read by DSH tools. Every engine
 | Group | Fields |
 | --- | --- |
 | Connection | `networkEnabled`, `stateDir` |
-| Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD008`); at least one remains enabled |
+| Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD006`, `CD008`); at least one remains enabled |
 | History collection | `historyLookbackDays`, `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests`, `historyRequestTimeoutMs` |
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
 | Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
@@ -67,7 +67,7 @@ Network access defaults to false. Static scans and reports work offline. History
 
 `ci_diet_prune` removes reports, plans, and cache entries according to live storage settings, then reports freed bytes and quota state. It never deletes applied-change backups. Removing those requires the listing token from the CLI.
 
-`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, numeric `step`, `minutes`, and `claims`. Numeric `step` is the zero-based index in the workflow's step array, not a label such as `upload`. The tool returns edits, coverage, blockers, a plan digest, and `nextCommand`; it does not create or save a durable plan and never approves or applies anything. `nextCommand` reruns CLI `ci-diet plan` with the same absolute cwd and state directory so a human can inspect and save the plan there. `ci-only` and `replace-safe` are human attestations for eligible PR-only CD001 changes, not bypass switches.
+`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, numeric `step`, `minutes`, and `claims`. CD006 and CD008 require `job` and `step`. Numeric `step` is the zero-based index in the workflow's step array, not a label such as `upload`; for CD006 it indexes the setup-node step. The tool returns edits, coverage, blockers, a plan digest, and `nextCommand`; it does not create or save a durable plan and never approves or applies anything. It reads a saved report, so run `ci_diet_scan` first for an offline CD006 preview. `nextCommand` reruns CLI `ci-diet plan` with the same absolute cwd and state directory so a human can inspect and save the plan there. `ci-only` and `replace-safe` are human attestations for eligible PR-only CD001 changes, not bypass switches.
 
 ## Command line
 
@@ -77,6 +77,7 @@ ci-diet scan --cwd . --json --out static-report.json
 ci-diet sync --cwd . --network --repo OWNER/REPO --days 7
 ci-diet plan --cwd . --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
 ci-diet plan --cwd . --rule CD005 --workflow .github/workflows/ci.yml --job build --minutes 20
+ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
 ci-diet plan --cwd . --rule CD008 --workflow .github/workflows/ci.yml --job build --step 0 --claims artifact-purpose:temporary,consumer-min-days:7
 ci-diet plans --cwd . --plan PLAN_ID
 ci-diet approve --cwd . --plan PLAN_ID --confirm CONFIRMATION
@@ -91,11 +92,13 @@ ci-diet prune
 ci-diet report --cwd . --lang ko
 ```
 
-Replace `PLAN_ID` with the id printed by `plan`, `CONFIRMATION` with the final 12 characters of the plan digest, and `CHANGE_ID` with the id printed by `apply`. `OWNER/REPO` is a literal argument shape, not a shell redirection. The CD008 `--step 0` command is valid only when the target retention step is actually step index zero; use the correct zero-based numeric index for another step.
+Replace `PLAN_ID` with the id printed by `plan`, `CONFIRMATION` with the final 12 characters of the plan digest, and `CHANGE_ID` with the id printed by `apply`. `OWNER/REPO` is a literal argument shape, not a shell redirection. The CD006 `--step 1` example assumes checkout at index 0 and setup-node at index 1. The CD008 `--step 0` command is valid only when the target retention step is actually step index zero; use the correct zero-based numeric index for another step.
 
 CLI `scan` prints a report or writes it to `--out`; it does not add the report to the state store. CLI `sync` stores history and a report. `report`, `plan`, approve, apply, revert, list, and prune operations rely on the state store.
 
-`plan` requires a matching saved report and eligibility. Missing workflow or argument errors can exit `1`; stale evidence, incomplete coverage, a changed source, and other refused writes exit `3`. It prints a real plan id and confirmation and saves the plan. `plans --plan` reopens it. If the workspace or workflow has disappeared, or workflow bytes no longer match the saved source hash, the saved-plan view hides the diff, preserves the plan JSON, asks for a replan, and exits `3`.
+For CD001, CD005, and CD008, `plan` requires a matching saved report and eligibility. Missing workflow or argument errors can exit `1`; stale evidence, incomplete coverage, a changed source, and other refused writes exit `3`. It prints a real plan id and confirmation and saves the plan. `plans --plan` reopens it. If the workspace or workflow has disappeared, or workflow bytes no longer match the saved source hash, the saved-plan view hides the diff, preserves the plan JSON, asks for a replan, and exits `3`.
+
+CD006 is the exception to the sync requirement: `plan --rule CD006` runs a fresh static scan in memory and saves the binding, attestation, and plan without replacing the latest saved report. The narrow target uses root-level `actions/checkout` without user `with` options, one `actions/setup-node@v3` or `@v4` step without caching, and the immediately following `npm ci`. The plan adds only `cache: npm` and `cache-dependency-path: package-lock.json`; Node and action versions, `npm ci`, tests, and local cache steps stay unchanged. The manifest hashes are fixed at planning, so a later manifest change makes apply refuse with `DEPENDENCY_HASH_MISMATCH`. The benefit of a warm cache is unmeasured, so the plan makes no time or money saving claim.
 
 `approve` consumes the 12-character confirmation tail and creates a one-use approval. `apply` verifies the digest, approval nonce, policies, dependencies, source bytes, command, backup, and lock before rewriting one file's planned byte range. `revert` restores the backup for the printed change id. None of these commands commits, pushes, deploys, runs a workflow, changes branch protection, or deletes artifacts.
 
@@ -103,15 +106,16 @@ All commands accept `--config FILE`, which merges a partial JSON configuration o
 
 ## Plan requirements and blockers
 
-A plan requires a patch-eligible finding in the latest saved report for the same binding. It refuses when evidence no longer matches, coverage does not permit a write, or a required policy snapshot is stale.
+Except for CD006, a plan requires a patch-eligible finding in the latest saved report for the same binding. It refuses when evidence no longer matches, coverage does not permit a write, or a required policy snapshot is stale. CD006 plans from its fresh in-memory static scan and a targeted job and step.
 
 | Rule | Human claims | Other evidence |
 | --- | --- | --- |
 | CD001 | `ci-only`, `replace-safe` | PR-only trigger, no existing concurrency, no deploy job, fresh branch-protection policy |
 | CD005 | none | A qualifying cohort, measured timeout recommendation, no existing timeout |
+| CD006 | none | Root checkout → setup-node v3/v4 → `npm ci`, committed valid root manifests, no existing cache inputs; no history |
 | CD008 | artifact purpose and consumer minimum days | Artifact retention evidence above the proposed value and a fresh retention policy |
 
-CD005 caps abnormal runs and does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 are disabled by default until their quality gates pass. Cache hints are advisory only because the frozen contract has no cache rule.
+CD005 caps abnormal runs and does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 are disabled by default until their quality gates pass. CD006 is enabled by default, edits only the two setup-node cache inputs, and does not claim a saving before cold and warm runs are compared.
 
 ## Exit codes
 

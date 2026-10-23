@@ -188,6 +188,33 @@
         "partial": "degrade",
         "unavailable": "degrade"
       }
+    },
+    "CD006": {
+      "history": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "workflowDefinitions": {
+        "complete": "full",
+        "partial": "degrade",
+        "unavailable": "skip"
+      },
+      "changedFiles": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "protectionRules": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      },
+      "retentionPolicy": {
+        "complete": "full",
+        "partial": "full",
+        "unavailable": "full"
+      }
     }
   }
 }

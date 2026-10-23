@@ -19,9 +19,10 @@ CI Diet는 낭비 가능성이 있는 GitHub Actions 작업을 찾고, 각 발�
 | CD003 | 문서만 바뀐 변경의 무거운 검사 | 설명만, 기본 꺼짐 |
 | CD004 | 과대한 매트릭스 | 설명만 |
 | CD005 | `timeout-minutes`가 없는 job | timeout 편집, 기본 꺼짐 |
+| CD006 | npm 캐시 없이 `npm ci`를 실행하는 `actions/setup-node@v3` 또는 `@v4` job | setup-node 입력 두 개, 기본 켜짐 |
 | CD008 | 긴 artifact 보존 기간 | 보존 기간 편집 |
 
-CD001은 겹쳐서 대체된 PR 실행에 도움을 줍니다. CD005는 비정상 실행의 상한을 두는 규칙이며 정상 job 실행 시간 자체를 줄이지 않습니다. CD008은 artifact 저장 보존 기간을 바꾸며 러너 분과는 관계가 없습니다. CD003과 CD005는 품질 기준을 통과할 때까지 기본으로 꺼져 있습니다. 캐시 위생은 점검용 진단으로만 나옵니다. 동결된 계약에 캐시 규칙 ID가 없으므로 캐시 힌트는 발견이나 패치가 되지 않습니다.
+CD001은 겹쳐서 대체된 PR 실행에 도움을 줍니다. CD005는 비정상 실행의 상한을 두는 규칙이며 정상 job 실행 시간 자체를 줄이지 않습니다. CD008은 artifact 저장 보존 기간을 바꾸며 러너 분과는 관계가 없습니다. CD003과 CD005는 품질 기준을 통과할 때까지 기본으로 꺼져 있습니다. CD006은 좁은 npm 형태를 위한 기본 정적 규칙입니다. setup-node 다운로드 캐시를 켜고 `npm ci`와 모든 테스트는 그대로 실행합니다. 캐시가 데워지면 다운로드가 줄 수 있지만, cold와 warm 실행을 비교하기 전에는 시간이나 금액 절감을 주장하지 않습니다.
 
 ## 설치와 업그레이드
 
@@ -70,6 +71,17 @@ DSH 플러그인의 네트워크 접근은 기본으로 꺼져 있습니다. **�
 
 플러그인 미리보기는 plan을 저장하지 않습니다. 응답의 `nextCommand`는 plan을 CLI로 다시 만들어 같은 상태 저장소에 보관하고 사람의 승인 단계로 넘깁니다.
 
+## 오프라인 npm 캐시 plan (CD006)
+
+CD006은 실행 이력이 필요 없습니다. 저장소 루트 job에서 `actions/checkout`에 사용자 `with` 옵션이 없고, 바로 뒤에 캐시를 쓰지 않는 `actions/setup-node@v3` 또는 `@v4` 단계가 하나 있으며, 그다음 단계의 `run`이 정확히 `npm ci`일 때 찾습니다. 루트의 `package.json`과 `package-lock.json`은 커밋된 일반 JSON 파일이어야 합니다. plan은 setup-node에 `cache: npm`과 `cache-dependency-path: package-lock.json`만 넣습니다. Node, action 버전, `npm ci`, 테스트, 로컬 캐시는 바꾸지 않습니다.
+
+```
+ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
+ci-diet plans --cwd . --plan PLAN_ID
+```
+
+`--step`은 setup-node 단계의 0부터 시작하는 인덱스입니다. 예시는 checkout이 0, setup-node가 1인 경우입니다. CLI `plan`은 이 정적 스캔을 메모리에서 실행하고 `sync` 없이 plan을 저장하며, 최신 저장 보고서는 그대로 둡니다. 플러그인 `ci_diet_plan`은 저장된 보고서가 필요하므로 먼저 `ci_diet_scan`을 실행합니다. 승인과 적용은 아래 기존 명령을 그대로 씁니다. plan과 attestation은 계획 단계에서 저장되고, workflow 파일은 사람이 plan을 승인하고 apply를 실행하기 전에는 바뀌지 않습니다.
+
 ## CLI 명령 참고
 
 ```
@@ -102,7 +114,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 `PLAN_ID`에는 plan이 출력한 id, `CONFIRMATION`에는 digest 마지막 12자, `CHANGE_ID`에는 apply가 출력한 id를 넣습니다. 모든 값은 그대로 바꿔 넣는 인자이며 꺾쇠괄호를 직접 입력하지 않습니다. `approve`는 1회용 승인을 만들고, `apply`는 workflow 파일 하나의 계획된 바이트 범위만 고치며, `revert`는 그 변경의 백업을 복원합니다. 결과 diff를 검토하고 필요하면 저장소 검사를 실행합니다. CI Diet는 커밋, 푸시, 배포, workflow 실행, 브랜치 보호 변경, artifact 삭제를 하지 않습니다.
 
-대상이 PR 전용 CI인 CD001 예시의 `ci-only`와 `replace-safe`는 사람의 attestation입니다. 취소 의미를 운영자가 검토했다는 진술이며 우회 스위치가 아닙니다. CD005에는 측정된 `--job`과 `--minutes`가 필요하고, CD008에는 `--job`, 대상 step의 0부터 시작하는 숫자 `--step` 배열 인덱스, artifact claims가 필요합니다. 숫자 step은 `upload` 같은 step 이름 토큰이 아닙니다.
+대상이 PR 전용 CI인 CD001 예시의 `ci-only`와 `replace-safe`는 사람의 attestation입니다. 취소 의미를 운영자가 검토했다는 진술이며 우회 스위치가 아닙니다. CD005에는 측정된 `--job`과 `--minutes`가 필요하고, CD008에는 `--job`, 대상 step의 0부터 시작하는 숫자 `--step` 배열 인덱스, artifact claims가 필요합니다. CD006에는 `--job`과 setup-node step의 0부터 시작하는 `--step` 인덱스가 필요하며 claims는 없습니다. 두 step 규칙의 숫자 step은 step 이름 토큰이 아니라 배열 인덱스입니다.
 
 ## 상태와 한계
 

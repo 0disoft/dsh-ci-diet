@@ -19,9 +19,10 @@ CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发�
 | CD003 | 仅文档变更仍执行重型检查 | 仅解释，默认关闭 |
 | CD004 | 过大的矩阵 | 仅解释 |
 | CD005 | 缺少 `timeout-minutes` 的 job | timeout 编辑，默认关闭 |
+| CD006 | 未启用 npm 缓存却运行 `npm ci` 的 `actions/setup-node@v3` 或 `@v4` job | 两个 setup-node 输入，默认开启 |
 | CD008 | 过长的 artifact 保留时间 | 保留时间编辑 |
 
-CD001 针对因出现较新提交而重叠、已被取代的 PR 运行。CD005 为异常运行设置上限，不会缩短正常 job 的运行时间。CD008 改变 artifact 的存储保留时间，与 runner 分钟无关。CD003 和 CD005 在通过质量门槛前默认关闭。缓存卫生只作为建议性诊断；冻结契约没有缓存规则，因此缓存提示不会变成发现或补丁。
+CD001 针对因出现较新提交而重叠、已被取代的 PR 运行。CD005 为异常运行设置上限，不会缩短正常 job 的运行时间。CD008 改变 artifact 的存储保留时间，与 runner 分钟无关。CD003 和 CD005 在通过质量门槛前默认关闭。CD006 是面向一种狭窄 npm 形态的默认静态规则：它为 setup-node 打开下载缓存，`npm ci` 和所有测试仍会运行。缓存预热后可能减少下载，但在比较冷缓存和热缓存运行之前，不声称节省时间或费用。
 
 ## 安装与升级
 
@@ -70,6 +71,17 @@ ci-diet report --cwd . --format html --out report.html
 
 插件预览不会保存 plan。响应中的 `nextCommand` 会通过 CLI 重新创建 plan，使其持久保存并进入人工批准流程。
 
+## 离线 npm 缓存 plan（CD006）
+
+CD006 不需要运行历史。它匹配仓库根目录下的 job：`actions/checkout` 没有用户 `with` 选项，紧接其后恰好有一个未启用缓存的 `actions/setup-node@v3` 或 `@v4` 步骤，再下一步的 `run` 正好是 `npm ci`。根目录的 `package.json` 和 `package-lock.json` 必须是已提交的普通 JSON 文件。plan 只向 setup-node 添加 `cache: npm` 和 `cache-dependency-path: package-lock.json`，不改变 Node、action 版本、`npm ci`、测试或本地缓存。
+
+```
+ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
+ci-diet plans --cwd . --plan PLAN_ID
+```
+
+`--step` 是 setup-node 步骤从 0 开始的索引；示例假设 checkout 是 0、setup-node 是 1。CLI `plan` 在内存中执行这次静态扫描，无需先 `sync` 就能保存 plan，并保留最新已保存的报告。插件 `ci_diet_plan` 仍需要已保存的报告，所以先运行 `ci_diet_scan`。审批和适用沿用下面的现有命令。plan 和 attestation 会在规划阶段保存；人工批准 plan 并运行 apply 之前，不会修改任何 workflow 文件。
+
 ## CLI 命令参考
 
 ```
@@ -102,7 +114,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 把 `PLAN_ID` 换成 plan 输出的 id，把 `CONFIRMATION` 换成 digest 的最后 12 个字符，把 `CHANGE_ID` 换成 apply 输出的 id。每个值都作为字面参数传入，不要输入尖括号。`approve` 创建一次性批准，`apply` 只改写一个 workflow 文件中计划好的字节范围，`revert` 恢复该变更的备份。检查结果 diff，并按需运行仓库检查。CI Diet 不会提交、推送、部署、运行 workflow、修改分支保护或删除 artifact。
 
-对于符合条件的仅 PR CI，CD001 示例中的 `ci-only` 和 `replace-safe` 是人工 attestation。它们表示操作者已经审查取消运行的语义，不是绕过开关。CD005 需要测量得到的 `--job` 和 `--minutes`；CD008 需要 `--job`、目标 step 从 0 开始的数字 `--step` 数组索引以及 artifact claims。数字 step 不是名为 upload 的 step 令牌。
+对于符合条件的仅 PR CI，CD001 示例中的 `ci-only` 和 `replace-safe` 是人工 attestation。它们表示操作者已经审查取消运行的语义，不是绕过开关。CD005 需要测量得到的 `--job` 和 `--minutes`；CD008 需要 `--job`、目标 step 从 0 开始的数字 `--step` 数组索引以及 artifact claims。CD006 需要 `--job` 和 setup-node 步骤从 0 开始的 `--step` 索引，不需要 claims。两个步骤规则中的数字 step 都是数组索引，不是步骤名称令牌。
 
 ## 状态与限制
 

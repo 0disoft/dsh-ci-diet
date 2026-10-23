@@ -1,3 +1,4 @@
+import { npmCacheDependencies, npmCacheTargets } from "../rules/npm-cache.ts";
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
@@ -420,6 +421,11 @@ export function collectDependencies(
     return { dependencies: [], unresolved: ["<workspace>"] };
   }
   const sink = createDependencySink(realRoot);
+  if (npmCacheTargets(workflow).length > 0) {
+    const manifests = npmCacheDependencies(realRoot);
+    if (manifests === null) sink.unresolved("npm cache manifest or lockfile missing");
+    else for (const manifest of manifests) { if (!sink.add("", manifest.ref)) sink.miss("", manifest.ref); }
+  }
   for (const job of workflow.jobs) {
     for (const step of job.steps) {
       if (step.uses !== null && step.uses.startsWith("./")) {

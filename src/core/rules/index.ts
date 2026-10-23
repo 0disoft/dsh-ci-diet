@@ -5,6 +5,7 @@ import { cd002 } from "./cd002.ts";
 import { cd003 } from "./cd003.ts";
 import { cd004 } from "./cd004.ts";
 import { cd005 } from "./cd005.ts";
+import { cd006 } from "./cd006.ts";
 import { cd008 } from "./cd008.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
 
@@ -15,13 +16,13 @@ import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
  * sample is widened. CD004 needs no history and has no write path, so it
  * stays on as a review-only candidate.
  */
-export const DEFAULT_ENABLED_RULES: readonly RuleId[] = ["CD001", "CD002", "CD004", "CD008"];
+export const DEFAULT_ENABLED_RULES: readonly RuleId[] = ["CD001", "CD002", "CD004", "CD006", "CD008"];
 
 /** Rules whose evidence is GitHub run history rather than workflow text. */
 export const HISTORY_RULES: readonly RuleId[] = ["CD001", "CD002", "CD003", "CD005"];
 
 /** Every implemented rule, keyed by its contract id. */
-export const RULES: readonly DetectionRule[] = [cd001, cd002, cd003, cd004, cd005, cd008];
+export const RULES: readonly DetectionRule[] = [cd001, cd002, cd003, cd004, cd005, cd006, cd008];
 
 export function evaluateRules(context: RuleContext, enabledRules: readonly RuleId[] = DEFAULT_ENABLED_RULES): RuleEvaluation[] {
   const enabled = new Set(enabledRules);

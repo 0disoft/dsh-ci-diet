@@ -19,9 +19,10 @@ El scan estático lee el YAML de los workflows en un checkout de destino. La sin
 | CD003 | Comprobaciones pesadas para cambios que solo afectan a la documentación | solo explicación; desactivada por defecto |
 | CD004 | Matrices de gran tamaño | solo explicación |
 | CD005 | Jobs sin `timeout-minutes` | modificación del timeout; desactivada por defecto |
+| CD006 | Jobs `actions/setup-node@v3` o `@v4` que ejecutan `npm ci` sin caché de npm | dos entradas de setup-node; activada por defecto |
 | CD008 | Retención prolongada de artefactos | modificación de la retención |
 
-CD001 ayuda a tratar las ejecuciones de PR solapadas que han quedado obsoletas. CD005 limita las ejecuciones anómalas; no reduce el tiempo de ejecución normal de un job. CD008 cambia la retención del almacenamiento de artefactos, no los minutos de runner. CD003 y CD005 permanecen desactivadas hasta que superen sus controles de calidad. La higiene de la caché solo aparece como diagnóstico orientativo: el contrato congelado no tiene ninguna regla de caché, así que las sugerencias sobre caché nunca se convierten en hallazgos ni parches.
+CD001 ayuda a tratar las ejecuciones de PR solapadas que han quedado obsoletas. CD005 limita las ejecuciones anómalas; no reduce el tiempo de ejecución normal de un job. CD008 cambia la retención del almacenamiento de artefactos, no los minutos de runner. CD003 y CD005 permanecen desactivadas hasta que superen sus controles de calidad. CD006 es una regla estática activada por defecto para una forma estrecha de npm: añade la caché de descargas de setup-node mientras `npm ci` y todas las pruebas se siguen ejecutando. La caché puede reducir descargas cuando está caliente; no se afirma ningún ahorro de tiempo ni de dinero hasta comparar ejecuciones en frío y en caliente.
 
 ## Instalación y actualización
 
@@ -70,6 +71,17 @@ Una solicitud útil en el chat deja explícitos la secuencia y el límite de rev
 
 La vista previa del plugin no guarda un plan. Su `nextCommand` vuelve a crear el plan mediante la CLI para que el plan sea duradero y pueda entrar en el flujo de aprobación humana.
 
+## Plan sin conexión de caché npm (CD006)
+
+CD006 no necesita historial de ejecuciones. Detecta un job en la raíz del repositorio donde `actions/checkout` no tiene opciones `with` del usuario, le sigue exactamente un paso `actions/setup-node@v3` o `@v4` sin caché y el `run` del paso siguiente es exactamente `npm ci`. `package.json` y `package-lock.json` de la raíz deben estar versionados como archivos JSON normales. El plan solo añade `cache: npm` y `cache-dependency-path: package-lock.json` a setup-node; no cambia Node, las versiones de las acciones, `npm ci`, las pruebas ni el almacenamiento local.
+
+```
+ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
+ci-diet plans --cwd . --plan PLAN_ID
+```
+
+`--step` es el índice basado en cero del paso setup-node; el ejemplo supone que checkout es 0 y setup-node es 1. La CLI `plan` ejecuta este escaneo estático en memoria y guarda el plan sin un `sync` previo; deja intacto el informe guardado más reciente. La herramienta de plugin `ci_diet_plan` sigue necesitando un informe guardado, así que ejecuta `ci_diet_scan` primero. La aprobación y la aplicación usan los comandos existentes de abajo. El plan y su attestation se guardan durante la planificación; ningún archivo de workflow cambia hasta que una persona aprueba el plan y ejecuta apply.
+
 ## Referencia de comandos de la CLI
 
 ```
@@ -102,7 +114,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Sustituye `PLAN_ID` por el ID que imprime el plan, `CONFIRMATION` por sus últimos 12 caracteres del digest y `CHANGE_ID` por el ID que imprime apply. Cada valor es un argumento literal; no escribas los corchetes angulares. `approve` crea una aprobación de un solo uso, `apply` reescribe únicamente el rango de bytes planificado en un archivo de workflow y `revert` restaura la copia de seguridad de ese cambio. Revisa el diff resultante y ejecuta las comprobaciones del repositorio según sea necesario. CI Diet no hace commits, push ni despliegues, no ejecuta workflows, no cambia la protección de ramas ni elimina artefactos.
 
-Para una CI apta que solo se ejecuta en PRs, el ejemplo de CD001 usa `ci-only` y `replace-safe` como declaraciones humanas. Indican que la persona operadora ha revisado la semántica de cancelación; no son interruptores de omisión. CD005 necesita un `--job` y un `--minutes` medidos, y CD008 necesita `--job`, un índice numérico basado en cero del array `--step` para el paso objetivo y declaraciones sobre artefactos. El paso numérico no es un token de carga con el nombre del paso.
+Para una CI apta que solo se ejecuta en PRs, el ejemplo de CD001 usa `ci-only` y `replace-safe` como declaraciones humanas. Indican que la persona operadora ha revisado la semántica de cancelación; no son interruptores de omisión. CD005 necesita un `--job` y un `--minutes` medidos, y CD008 necesita `--job`, un índice numérico basado en cero del array `--step` para el paso objetivo y declaraciones sobre artefactos. CD006 necesita `--job` y el índice basado en cero `--step` del paso setup-node; no usa declaraciones. En ambas reglas de paso, el número es un índice del array y no un token con el nombre del paso.
 
 ## Estado y limitaciones
 

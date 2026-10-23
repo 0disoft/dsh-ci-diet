@@ -42,7 +42,8 @@ const LOCALIZED = new Map([
 // Pointers added by this repository on purpose. The repository must have the
 // pointer and the pack must not, so the extension shows up in review.
 const EXTENDED = new Map([
-  ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message", "/$defs/Config/properties/billing"]]
+  ["contracts/ci-diet.schema.json", ["/$defs/Finding/properties/message", "/$defs/Config/properties/billing"]],
+  ["contracts/coverage-policy.json", ["/rules/CD006"]]
 ]);
 
 // Enum values added by this repository on purpose, with the same rule: the
@@ -51,8 +52,16 @@ const EXTENDED = new Map([
 // stays byte-for-byte identical to the pack.
 const EXTENDED_VALUES = new Map([
   ["contracts/ci-diet.schema.json", [
-    { pointer: "/$defs/AppliedChange/properties/state/enum", value: "REVERTING" }
-  ]]
+    { pointer: "/$defs/AppliedChange/properties/state/enum", value: "REVERTING" },
+    {"pointer":"/$defs/Config/properties/apply/properties/allowedRules/items/enum","value":"CD006"},
+    {"pointer":"/$defs/Finding/properties/ruleId/enum","value":"CD006"},
+    {"pointer":"/$defs/RuleResult/properties/ruleId/enum","value":"CD006"},
+    {"pointer":"/$defs/ByteEdit/properties/ruleId/enum","value":"CD006"},
+    {"pointer":"/$defs/PatchPayload/properties/ruleIds/items/enum","value":"CD006"},
+    {"pointer":"/$defs/ReleaseScope/properties/enabledRules/items/enum","value":"CD006"},
+    {"pointer":"/$defs/ReleaseScope/properties/patchVerifiedRules/items/enum","value":"CD006"}
+  ]],
+  ["examples/default-config.json", [{ pointer: "/apply/allowedRules", value: "CD006" }]]
 ]);
 
 // Translated markdown: compare existence and parseability only.
@@ -259,10 +268,10 @@ const compareTree = (area) => {
     if (PROSE_ONLY.has(rel)) continue;
     const repoBytes = dig(rel, "repo");
     const packBytes = dig(rel, "pack");
-    if (rel.endsWith(".json") && EXTENDED.has(rel)) {
+    if (rel.endsWith(".json") && (EXTENDED.has(rel) || EXTENDED_VALUES.has(rel) || LOCALIZED.has(rel))) {
       const repoCopy = JSON.parse(repoBytes.toString("utf8"));
       const packCopy = JSON.parse(packBytes.toString("utf8"));
-      for (const pointer of EXTENDED.get(rel)) {
+      for (const pointer of EXTENDED.get(rel) ?? []) {
         if (!dropPointer(repoCopy, pointer)) errors.push(rel + pointer + ": extended pointer missing in this repository");
         if (dropPointer(packCopy, pointer)) errors.push(rel + pointer + ": unexpectedly present in the design pack");
       }
@@ -270,15 +279,7 @@ const compareTree = (area) => {
         if (!dropEnumValue(repoCopy, pointer, value)) errors.push(rel + pointer + ": extended value " + value + " missing in this repository");
         if (dropEnumValue(packCopy, pointer, value)) errors.push(rel + pointer + ": value " + value + " unexpectedly present in the design pack");
       }
-      const drift = [];
-      diff(repoCopy, packCopy, rel, drift);
-      errors.push(...drift);
-      continue;
-    }
-    if (rel.endsWith(".json") && LOCALIZED.has(rel)) {
-      const repoCopy = JSON.parse(repoBytes.toString("utf8"));
-      const packCopy = JSON.parse(packBytes.toString("utf8"));
-      for (const pointer of LOCALIZED.get(rel)) {
+      for (const pointer of LOCALIZED.get(rel) ?? []) {
         if (!dropPointer(repoCopy, pointer)) errors.push(rel + pointer + ": localized pointer missing in this repository");
         if (!dropPointer(packCopy, pointer)) errors.push(rel + pointer + ": localized pointer missing in the design pack");
       }

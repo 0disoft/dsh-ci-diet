@@ -1,8 +1,8 @@
 /** Domain vocabulary shared by the analysis pipeline and the frozen contracts. */
 
-export type RuleId = "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD008";
+export type RuleId = "CD001" | "CD002" | "CD003" | "CD004" | "CD005" | "CD006" | "CD008";
 
-export const RULE_IDS: readonly RuleId[] = ["CD001", "CD002", "CD003", "CD004", "CD005", "CD008"];
+export const RULE_IDS: readonly RuleId[] = ["CD001", "CD002", "CD003", "CD004", "CD005", "CD006", "CD008"];
 
 export type AxisName =
   | "history"

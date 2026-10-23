@@ -70,7 +70,7 @@ function scopeCovers(attestation: Attestation, plan: PatchPlan): boolean {
     if (attestation.scope === "workflow") return false;
     const jobKey = /^jobs\.([^.]+)\./.exec(edit.semanticPath)?.[1];
     if (jobKey === undefined || attestation.jobKey !== jobKey) return false;
-    if (edit.ruleId === "CD008") {
+    if (edit.ruleId === "CD008" || edit.ruleId === "CD006") {
       const stepIndex = /^jobs\.[^.]+\.steps\[(\d+)\]/.exec(edit.semanticPath)?.[1];
       if (stepIndex === undefined) return false;
       const expectedStepKey = "steps[" + stepIndex + "]";
