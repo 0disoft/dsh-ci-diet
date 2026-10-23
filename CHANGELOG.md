@@ -39,6 +39,13 @@ Keep a Changelog, and the project uses semantic versioning.
   the limits of the DSH plugin tools. Commands and version claims now match
   `0.3.1` and the supported DSH range.
 
+### Fixed
+
+- `ci_diet_scan`, `ci_diet_sync`, and `ci_diet_plan` now use the session
+  working directory when `cwd` is omitted instead of the DSH Host launch
+  directory. A scan started from the Web UI no longer reports zero workflows
+  from the home directory.
+
 ## 0.3.1 (2026-10-23)
 
 ### Added

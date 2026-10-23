@@ -202,6 +202,23 @@ function metricRows(metrics: Record<string, { status: string; value: number | st
   });
 }
 
+interface ToolRootExec { readonly agent?: unknown }
+
+/** The session directory when the model omitted `cwd`, never the Host launch directory. */
+function toolRoot(ctx: Context, exec: ToolRootExec, requested: string | undefined): string {
+  if (requested !== undefined) return requested;
+  const service = (ctx as { get?: (name: string) => unknown }).get?.call(ctx, "workingDirectory") as { get(session: unknown): string } | undefined;
+  const session = exec.agent === undefined ? undefined : (exec.agent as { session?: unknown }).session;
+  if (session !== undefined && service !== undefined) {
+    try {
+      return service.get(session);
+    } catch {
+      return process.cwd();
+    }
+  }
+  return process.cwd();
+}
+
 export function apply(ctx: Context, config: Config) {
   // The registry captures this text at mount time; a live locale switch needs a reload.
   const locale = resolveRequestedLocale(null, process.env);
@@ -238,7 +255,7 @@ export function apply(ctx: Context, config: Config) {
     async execute(args, exec) {
       exec.signal.throwIfAborted();
       const settings = engineSettingsOf(readPluginSettings(config));
-      const root = args.cwd ?? process.cwd();
+      const root = toolRoot(ctx, exec, args.cwd);
       const rules = (args.rules as readonly RuleId[] | undefined) ?? settings.enabledRules;
       const scan = runStaticScan({ workspaceRoot: root, enabledRules: rules, maxWorkflowBytes: settings.config.storage.workflowMaxBytes });
       if (!existsSync(root)) throw new Error("workspace does not exist: " + root);
@@ -288,7 +305,7 @@ export function apply(ctx: Context, config: Config) {
       exec.signal.throwIfAborted();
       const settings = engineSettingsOf(readPluginSettings(config));
       if (!settings.networkEnabled) throw new Error("network access is disabled; enable networkEnabled in the ci-diet settings");
-      const root = args.cwd ?? process.cwd();
+      const root = toolRoot(ctx, exec, args.cwd);
       const discovery = discoverWorkflows(root, { maxBytes: settings.config.storage.workflowMaxBytes });
       const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
       let owner: string;
@@ -465,7 +482,7 @@ export function apply(ctx: Context, config: Config) {
       const stateDir = stateDirOf(config);
       const store = PatchStore.open(stateDir, settings.config.storage);
       const now = new Date();
-      const root = realpathSync(args.cwd ?? process.cwd());
+      const root = realpathSync(toolRoot(ctx, exec, args.cwd));
       const existing = store.findBindingByRoot(root);
       const current = existing ?? createLocalBinding(root, now.toISOString()).binding;
       const report = store.latestReportForBinding(current.bindingId);

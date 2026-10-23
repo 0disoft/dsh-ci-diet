@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +14,7 @@ interface Registered {
   readonly name: string;
   readonly description: string;
   readonly parameters: Record<string, { description?: string }>;
-  execute(args: Record<string, unknown>, exec: { signal: AbortSignal }): Promise<unknown>;
+  execute(args: Record<string, unknown>, exec: { signal: AbortSignal; agent?: unknown }): Promise<unknown>;
 }
 
 /** A mutable stand-in for the stable reference the DSH settings service updates. */
@@ -28,10 +28,11 @@ function live<T>(initial: T) {
   };
 }
 
-function harness(overrides: Partial<PluginSettingsValues> = {}) {
+function harness(overrides: Partial<PluginSettingsValues> = {}, sessionCwd?: string) {
   const tools = new Map<string, Registered>();
   const listeners = new Map<string, unknown>();
   const ctx = {
+    get(name: string) { return name === "workingDirectory" && sessionCwd !== undefined ? { get: () => sessionCwd } : undefined; },
     on(event: string, listener: unknown) { listeners.set(event, listener); },
     tools: {
       register(definition: Registered) {
@@ -54,7 +55,7 @@ function harness(overrides: Partial<PluginSettingsValues> = {}) {
   }
   const stateDirRef = refs.stateDir as ReturnType<typeof live<string>>;
   apply(ctx as never, config as never);
-  return { tools, listeners, stateDir: stateDirRef.get(), stateDirRef, networkEnabled: refs.networkEnabled, refs };
+  return { tools, listeners, stateDir: stateDirRef.get(), stateDirRef, networkEnabled: refs.networkEnabled, refs, ctx };
 }
 
 const WORKFLOW = [
@@ -81,6 +82,17 @@ test("registers the five model-facing tools", () => {
   const { tools, listeners } = harness();
   assert.ok(listeners.has("tools/pre-execute"));
   assert.deepEqual([...tools.keys()].sort(), ["ci_diet_plan", "ci_diet_prune", "ci_diet_report", "ci_diet_scan", "ci_diet_sync"]);
+});
+
+test("ci_diet_scan uses the session directory when cwd is omitted", async () => {
+  const root = workspace();
+  const { tools } = harness({}, root);
+  const result = await tools.get("ci_diet_scan")!.execute({}, {
+    signal: new AbortController().signal,
+    agent: { session: { id: "session-1" } },
+  }) as { root: string; workflowsParsed: number };
+  assert.equal(result.root, realpathSync(root));
+  assert.equal(result.workflowsParsed, 1);
 });
 
 test("ci_diet_prune applies the configured retention limits", async () => {
