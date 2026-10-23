@@ -7,6 +7,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Added
 
+- DSH's **CI Diet review** settings page shows workspace reports, coverage,
+  metrics and source-validated plan diffs. Human digest approval, local apply
+  and confirmed recovery use the existing single-use approval and backup engine.
+  Local writes default off; model tools cannot approve, apply or revert.
+  The page and settings switch support all six UI languages.
+
 - `ci-diet compare --before-run ID --after-run ID --network` reads successful
   Actions runs and emits JSON or a standalone HTML evidence report. It includes
   attempt-specific job/step durations and added cache steps, rejects incomplete

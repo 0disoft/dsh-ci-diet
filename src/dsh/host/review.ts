@@ -13,7 +13,8 @@ import { localizedFinding } from "../../core/report/localize.ts";
 import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 
 /** This transport belongs to the browser owner, never the model tool registry. */
-export const REVIEW_ENDPOINT = "ciDiet/review";
+export const REVIEW_CHANNEL = "/api";
+export const REVIEW_ENDPOINT = "ci-diet-review";
 interface ReviewSettings { readonly engine: EngineSettings; readonly localApplyEnabled: boolean }
 interface ReviewRequest { action: "load" | "approve" | "apply" | "revert"; sessionId: string; id?: string; confirmation?: string }
 
@@ -43,7 +44,8 @@ export class ReviewService {
     let diff: ReturnType<typeof renderEditDiff> = [];
     try {
       const file = resolveWorkflowFile(binding, plan.payload.workflowPath);
-      if (statSync(file).size > settings.engine.config.storage.workflowMaxBytes) throw new Error("WORKFLOW_TOO_LARGE");
+      const maxBytes = settings.engine.config.storage.workflowMaxBytes;
+      if (maxBytes > 0 && statSync(file).size > maxBytes) throw new Error("WORKFLOW_TOO_LARGE");
       const source = readFileSync(file, "utf8");
       sourceValid = sourceHashOf(source) === plan.payload.sourceHash;
       if (sourceValid) diff = renderEditDiff(source, plan.payload.edits);
@@ -116,30 +118,41 @@ export class ReviewService {
 
 interface Connection {
   readonly browserPeer: { readonly id: string };
-  readonly rpc: { intercept(channel: "/api", matches: (endpoint: string) => boolean,
-    handler: (endpoint: string, payload: unknown, signal: AbortSignal, peer: { id: string; principal: { kind: string } }) => Promise<unknown>): () => Promise<void> };
+  admit(request: Request): { peer: { id: string; principal: { kind: string } } } | { rejection: number };
+  readonly fetch: { register(route: { path: string; methods: string[]; requestBody: "buffered"; fetch(request: Request): Promise<Response> }): () => Promise<void> };
 }
 
 export function registerReview(ctx: Context, settings: () => ReviewSettings): void {
   // CLI-only / older hosts keep their tools even when the browser carrier is absent.
   if (typeof ctx.inject !== "function") return;
-  ctx.inject(["connection", "sessions", "workingDirectory"], (scope) => {
+  ctx.inject(["connection", "sessions", "webServer"], (scope) => {
     const connection = scope.get("connection") as Connection;
     const sessions = scope.get("sessions") as { get(id: string): unknown };
-    const directories = scope.get("workingDirectory") as { get(session: unknown): string };
     const service = new ReviewService((id) => {
-      const session = sessions.get(id);
+      const session = sessions.get(id) as { header?: { cwd?: string } } | undefined;
       if (session === undefined) throw new Error("SESSION_NOT_FOUND");
-      return directories.get(session);
+      const directories = scope.get("workingDirectory") as { get(session: unknown): string } | undefined;
+      const root = directories?.get(session) ?? session.header?.cwd;
+      if (root === undefined) throw new Error("SESSION_WORKSPACE_UNAVAILABLE");
+      return root;
     }, settings);
-    scope.effect(() => connection.rpc.intercept("/api", (endpoint) => endpoint === REVIEW_ENDPOINT, async (_endpoint, payload, signal, peer) => {
-      // An owner principal alone is insufficient: API/agent Peers cannot mint
-      // human-ui approval. Only the Host's authenticated browser Peer may call.
-      if (peer.principal.kind !== "owner" || peer.id !== connection.browserPeer.id) {
-        return { ok: false, error: { code: "FORBIDDEN", message: "BROWSER_OWNER_REQUIRED", details: {} } };
+    // /api has one Gateway-owned RPC interceptor. Exact extension routes use
+    // the public Fetch registry and retain Connection's Host/Origin/auth fence.
+    scope.effect(() => connection.fetch.register({ path: REVIEW_CHANNEL + "/" + REVIEW_ENDPOINT, methods: ["POST"], requestBody: "buffered", async fetch(request) {
+      const admission = connection.admit(request);
+      if ("rejection" in admission || admission.peer.principal.kind !== "owner" || admission.peer.id !== connection.browserPeer.id) {
+        return new Response("BROWSER_OWNER_REQUIRED", { status: 403 });
       }
-      try { return { ok: true, value: await service.execute(payload, "dsh-browser-owner", signal) }; }
-      catch (error) { return { ok: false, error: { code: "CI_DIET_REVIEW", message: error instanceof Error ? error.message : String(error), details: {} } }; }
-    }));
+      if (request.headers.get("content-type")?.split(";", 1)[0] !== "application/json") return new Response("INVALID_REQUEST", { status: 415 });
+      let envelope: { type?: unknown; rpcId?: unknown; method?: unknown; payload?: unknown };
+      try { envelope = await request.json() as typeof envelope; }
+      catch { return new Response("INVALID_REQUEST", { status: 400 }); }
+      if (envelope === null || typeof envelope !== "object" || envelope.type !== "client-request" || envelope.method !== REVIEW_ENDPOINT
+        || typeof envelope.rpcId !== "string" || envelope.rpcId.length === 0 || envelope.rpcId.length > 256) return new Response("INVALID_REQUEST", { status: 400 });
+      let result: unknown;
+      try { result = { ok: true, value: await service.execute(envelope.payload, "dsh-browser-owner", request.signal) }; }
+      catch (error) { result = { ok: false, error: { code: "CI_DIET_REVIEW", message: error instanceof Error ? error.message : String(error), details: {} } }; }
+      return Response.json({ type: "server-response", rpcId: envelope.rpcId, result });
+    } }));
   });
 }

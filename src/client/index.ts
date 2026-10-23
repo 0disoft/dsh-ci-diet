@@ -289,7 +289,7 @@ interface ClientContext {
   } | undefined;
   readonly configForms: { get(namespace: string): ConfigForm };
   readonly connection: { readonly rpc: { call(channel: string, endpoint: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }> } };
-  readonly sessions: { readonly list: { getSnapshot(): { current: string | undefined }; subscribe(listener: () => void): () => void } };
+  readonly uiSession: { readonly adapter: { readonly current: { getSnapshot(): { key: string | undefined }; subscribe(listener: () => void): () => void } } };
   effect?(run: () => unknown): unknown;
 }
 
@@ -303,7 +303,7 @@ function registerLanguages(locale: ClientContext["locale"]): void {
 }
 
 const plugin = {
-  inject: ["slots", "locale", "configForms", "connection", "sessions"],
+  inject: ["slots", "locale", "configForms", "connection", "uiSession"],
   apply(ctx: ClientContext): void {
     const t = ctx.locale === undefined ? translateWith(EN) : ctx.locale.bind(NS);
     if (ctx.locale !== undefined && ctx.effect !== undefined) {
@@ -334,8 +334,8 @@ const plugin = {
       connection: ctx.connection,
       locale: ctx.locale,
       useSessionId: () => React.useSyncExternalStore(
-        (listener) => ctx.sessions.list.subscribe(listener),
-        () => ctx.sessions.list.getSnapshot().current,
+        (listener) => ctx.uiSession.adapter.current.subscribe(listener),
+        () => ctx.uiSession.adapter.current.getSnapshot().key,
       ),
     };
     const registerReview = () => ctx.slots.inject("settings.section", () => ctx.slots.register({

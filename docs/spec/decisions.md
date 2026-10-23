@@ -278,9 +278,9 @@ new record, not an edit to the rationale.
 - Scope: how report, plan, approval, apply, and revert state reaches a DSH Web
   page, and where human intent is checked.
 - Decision: add the **Settings → CI Diet Reports** section. It reads the current
-  DSH session from the observable `ctx.sessions.list` and calls the public
-  `ctx.connection.rpc.call("/api", "ciDiet/review", payload)` channel with
-  `load`, `approve`, `apply`, or `revert`. The connection's `browserPeer` owner
+  DSH session from the public `ctx.uiSession.adapter.current` scope binding and calls the public
+  `ctx.connection.rpc.call("/api", "ci-diet-review", payload)` channel with
+  `load`, `approve`, `apply`, or `revert`. An exact authenticated Fetch route receives the RPC envelope, leaving the Gateway interceptor intact. The connection's `browserPeer` owner
   check is the authorization boundary. The page uses no private Typert
   descriptor. This supersedes ADR-16's deferral for these report and review
   screens; its static HTML report remains supported.

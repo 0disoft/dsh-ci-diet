@@ -124,6 +124,8 @@ function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
       },
     },
     configForms: { get: () => form },
+    uiSession: { adapter: { current: { getSnapshot: () => ({ key: "current-dsh-session" }), subscribe: () => () => {} } } },
+    connection: { rpc: { call: async () => ({ ok: true, value: null }) } },
     effect(run: () => unknown) { return run(); },
   };
   plugin.apply(ctx);
@@ -133,7 +135,7 @@ function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
 test("the client bundle registers settings and browser review sections", () => {
   const loaded = loadBundle();
   assert.equal(loaded.id, "dsh-ci-diet");
-  assert.deepEqual(Array.from(loaded.plugin.inject), ["slots", "locale", "configForms", "connection", "sessions"]);
+  assert.deepEqual(Array.from(loaded.plugin.inject), ["slots", "locale", "configForms", "connection", "uiSession"]);
   assert.equal(loaded.sections.length, 2);
   const options = loaded.sections[0]!.options;
   assert.equal(options.name, "settings.section");
@@ -160,6 +162,12 @@ test("review dictionaries have the same complete nonempty key set", () => {
   }
 });
 
+test("review reads current session from the public UI scope adapter", () => {
+  const loaded = loadBundle(fakeReact().react);
+  const injected = (loaded.sections[1]!.options.inject as () => { ctx: { useSessionId(): string | undefined } })();
+  assert.equal(injected.ctx.useSessionId(), "current-dsh-session");
+});
+
 function reviewHarness(call: (payload: Record<string, unknown>) => Promise<unknown>) {
   const fake = fakeReact();
   let effectIndex = 0;
@@ -175,7 +183,7 @@ function reviewHarness(call: (payload: Record<string, unknown>) => Promise<unkno
   const component = loadBundle(fake.react).sections[1]!.component;
   let session = "session-one";
   const ctx = { useSessionId: () => session, connection: { rpc: { call: async (_channel: string, endpoint: string, payload: Record<string, unknown>) => {
-    assert.equal(endpoint, "ciDiet/review"); return { ok: true, value: await call(payload) };
+    assert.equal(endpoint, "ci-diet-review"); return { ok: true, value: await call(payload) };
   } } } };
   return {
     render() { effectIndex = 0; return renderPage(fake.react, component, { ctx }); },

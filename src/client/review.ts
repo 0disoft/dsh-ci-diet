@@ -364,7 +364,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
     if (generationRef.current !== generation) return;
     setRefreshing(true);
     try {
-      const response = await ctx.connection.rpc.call("/api", "ciDiet/review", {
+      const response = await ctx.connection.rpc.call("/api", "ci-diet-review", {
         action: "load",
         sessionId: currentSession,
       });
@@ -430,7 +430,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
       const payload: Record<string, unknown> = { action, sessionId };
       if (id !== undefined) payload.id = id;
       if (confirmation !== undefined) payload.confirmation = confirmation;
-      const response = await ctx.connection.rpc.call("/api", "ciDiet/review", payload);
+      const response = await ctx.connection.rpc.call("/api", "ci-diet-review", payload);
       if (generationRef.current !== generation) return;
       if (!response.ok) {
         preserveError = true;

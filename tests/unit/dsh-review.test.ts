@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { ReviewService, registerReview, REVIEW_ENDPOINT } from "../../src/dsh/host/review.ts";
+import { ReviewService, registerReview, REVIEW_CHANNEL, REVIEW_ENDPOINT } from "../../src/dsh/host/review.ts";
 import { defaultPluginSettings, engineSettingsOf } from "../../src/core/config/plugin-settings.ts";
 import { PatchStore } from "../../src/core/patch/store.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
@@ -109,21 +109,27 @@ test("review keeps approval TTL enforcement in the existing apply engine", async
   assert.equal(readFileSync(f.file, "utf8"), SOURCE);
 });
 
+test("review respects zero as a disabled workflow size limit", async (t) => {
+  const f = fixture(t);
+  const engine = engineSettingsOf({ ...defaultPluginSettings(), stateDir: f.stateDir, storageWorkflowMaxBytes: 0 });
+  const service = new ReviewService(() => f.root, () => ({ engine, localApplyEnabled: true }));
+  const result = await service.execute({ action: "load", sessionId: "session" }, "browser", new AbortController().signal) as { plans: { sourceValid: boolean }[] };
+  assert.equal(result.plans[0]!.sourceValid, true);
+});
+
 test("browser route rejects owner API peers and never registers a model tool", async (t) => {
   const f = fixture(t);
-  let handler: (...args: unknown[]) => Promise<unknown>;
-  const connection = { browserPeer: { id: "browser" }, rpc: {
-    intercept(channel: string, matches: (endpoint: string) => boolean, fn: typeof handler) {
-      assert.equal(channel, "/api"); assert.equal(matches(REVIEW_ENDPOINT), true); assert.equal(matches("other"), false);
-      handler = fn; return async () => {};
+  let handler: (request: Request) => Promise<Response>;
+  const connection = { browserPeer: { id: "browser" },
+    admit(request: Request) { return { peer: { id: request.headers.get("test-peer") ?? "browser", principal: { kind: "owner" } } }; },
+    fetch: { register(route: {path: string; fetch: typeof handler}) {
+      assert.equal(route.path, REVIEW_CHANNEL + "/" + REVIEW_ENDPOINT); handler = route.fetch; return async () => {};
     } } };
-  const scope = { get(key: string) { return key === "connection" ? connection : key === "sessions" ? { get: () => ({}) } : { get: () => f.root }; }, effect(fn: () => unknown) { fn(); } };
+  const scope = { get(key: string) { return key === "connection" ? connection : key === "sessions" ? { get: () => ({ header: { cwd: f.root } }) } : undefined; }, effect(fn: () => unknown) { fn(); } };
   registerReview({ inject(_deps: unknown, fn: (ctx: unknown) => void) { fn(scope); } } as never,
     () => ({ engine: f.engine, localApplyEnabled: true }));
-  const result = await handler!(REVIEW_ENDPOINT, { action: "load", sessionId: "session" }, new AbortController().signal,
-    { id: "api-owner", principal: { kind: "owner" } });
-  assert.match(JSON.stringify(result), /BROWSER_OWNER_REQUIRED/);
-  const allowed = await handler!(REVIEW_ENDPOINT, { action: "load", sessionId: "session" }, new AbortController().signal,
-    { id: "browser", principal: { kind: "owner" } });
-  assert.equal((allowed as { ok: boolean }).ok, true);
+  const request = (peer: string) => new Request("http://localhost/api/ci-diet-review", {method:"POST",headers:{"content-type":"application/json","test-peer":peer},body:JSON.stringify({type:"client-request",rpcId:"test",method:REVIEW_ENDPOINT,payload:{action:"load",sessionId:"session"}})});
+  const denied = await handler!(request("api-owner")); assert.equal(denied.status,403);
+  const allowed = await handler!(request("browser"));
+  assert.equal((await allowed.json() as {result:{ok:boolean}}).result.ok,true);
 });
