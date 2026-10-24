@@ -93,6 +93,18 @@ function totalCount(body: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
 
+/** Missing or malformed lists are collection failures, never confirmed empty evidence. */
+function pageOf<T>(response: GhResponse, key: string | null): Page<T> {
+  const body = response.body;
+  const items: unknown = key === null ? body
+    : body !== null && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)[key] : undefined;
+  if (!Array.isArray(items)) {
+    throw new GitHubError("NETWORK_ERROR", "GitHub returned an invalid " + (key ?? "pull-files") + " list", response.status);
+  }
+  return { items: items as T[], hasNext: nextLink(response.headers.link), totalCount: key === null ? null : totalCount(body) };
+}
+
 /** Typed reads over the allowlisted transport; every method returns raw API data. */
 export class GitHubClient {
   readonly owner: string;
@@ -122,8 +134,7 @@ export class GitHubClient {
       { path: this.base + "/actions/workflows", query: { page: String(page), per_page: String(perPage) } },
       "discovery",
     );
-    const body = response.body as { workflows?: GitHubWorkflow[]; total_count?: number } | null;
-    return { items: body?.workflows ?? [], hasNext: nextLink(response.headers.link), totalCount: totalCount(body) };
+    return pageOf<GitHubWorkflow>(response, "workflows");
   }
 
   async runs(
@@ -138,8 +149,7 @@ export class GitHubClient {
       { path: this.base + "/actions/runs", query },
       "discovery",
     );
-    const body = response.body as { workflow_runs?: GitHubRun[]; total_count?: number } | null;
-    return { items: body?.workflow_runs ?? [], hasNext: nextLink(response.headers.link), totalCount: totalCount(body) };
+    return pageOf<GitHubRun>(response, "workflow_runs");
   }
 
   async attemptJobs(runId: number, attempt: number, page: number, perPage: number): Promise<Page<GitHubJob>> {
@@ -150,8 +160,7 @@ export class GitHubClient {
       },
       "jobs",
     );
-    const body = response.body as { jobs?: GitHubJob[]; total_count?: number } | null;
-    return { items: body?.jobs ?? [], hasNext: nextLink(response.headers.link), totalCount: totalCount(body) };
+    return pageOf<GitHubJob>(response, "jobs");
   }
 
   async artifacts(page: number, perPage: number): Promise<Page<GitHubArtifact>> {
@@ -159,8 +168,7 @@ export class GitHubClient {
       { path: this.base + "/actions/artifacts", query: { page: String(page), per_page: String(perPage) } },
       "policyAndFiles",
     );
-    const body = response.body as { artifacts?: GitHubArtifact[]; total_count?: number } | null;
-    return { items: body?.artifacts ?? [], hasNext: nextLink(response.headers.link), totalCount: totalCount(body) };
+    return pageOf<GitHubArtifact>(response, "artifacts");
   }
 
   async retentionPolicy(): Promise<RetentionPolicy> {
@@ -197,8 +205,7 @@ export class GitHubClient {
       { path: this.base + "/pulls/" + number + "/files", query: { page: String(page), per_page: String(perPage) } },
       "policyAndFiles",
     );
-    const items = Array.isArray(response.body) ? (response.body as GitHubPullFile[]) : [];
-    return { items, hasNext: nextLink(response.headers.link), totalCount: null };
+    return pageOf<GitHubPullFile>(response, null);
   }
 
   async branchRules(branch: string): Promise<unknown[]> {

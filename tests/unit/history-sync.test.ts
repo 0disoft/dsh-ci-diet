@@ -95,6 +95,27 @@ function config() {
   return { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: 7, maxRuns: 100 } };
 }
 
+for (const resource of ["jobs", "pull-files"]) {
+  test("malformed " + resource + " cannot become complete empty evidence", async () => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    transport.get = async (request, family) => {
+      if ((resource === "jobs" && /\/attempts\/\d+\/jobs$/.test(request.path))
+        || (resource === "pull-files" && request.path.endsWith("/pulls/5/files"))) {
+        return response({ message: "unexpected successful response" });
+      }
+      if (request.path.endsWith("/pulls/5/files")) return response([]);
+      return original(request, family);
+    };
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+    const dimension = resource === "jobs" ? history.coverage.history : history.coverage.changedFiles;
+    assert.equal(dimension.status, "partial");
+    const missing = history.missingScopes.find((scope) => scope.resource === (resource === "jobs" ? "actions.runs.jobs" : "pulls.files"));
+    assert.match(missing?.reason ?? "", /NETWORK_ERROR/);
+    if (resource === "pull-files") assert.equal(history.pulls.get(5)?.files, null);
+  });
+}
+
 for (const kind of ["not-found", "null", "object", "empty"] as const) {
   test("preserves branch protection evidence for a branch-rules " + kind + " response", async () => {
     const transport = fakeTransport();

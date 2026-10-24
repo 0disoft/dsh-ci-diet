@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Validate GitHub list response containers for workflows, runs, jobs, artifacts,
+  and pull-request files through one page decoder. Missing or non-array lists
+  now raise a collection error instead of becoming confirmed empty evidence;
+  job/file collection failures retain partial coverage and resumable reasons.
+
 - Remove ownerless claim and writer-lease directories only while atomically
   empty. A creator publishing its owner between inspection and cleanup is no
   longer deleted by stale recovery or failed owner-file creation, preserving

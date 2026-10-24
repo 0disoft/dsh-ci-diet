@@ -58,6 +58,39 @@ describe("read-only endpoint allowlist", () => {
 
 
 describe("github client", () => {
+  const lists = [
+    { key: "workflows", read: (client: GitHubClient) => client.workflows(1, 100) },
+    { key: "workflow_runs", read: (client: GitHubClient) => client.runs({ page: 1, perPage: 100 }) },
+    { key: "jobs", read: (client: GitHubClient) => client.attemptJobs(42, 1, 1, 100) },
+    { key: "artifacts", read: (client: GitHubClient) => client.artifacts(1, 100) },
+    { key: null, read: (client: GitHubClient) => client.pullFiles(5, 1, 100) },
+  ];
+  for (const list of lists) {
+    const name = list.key ?? "pull files";
+    it("rejects malformed " + name + " lists instead of reporting zero items", async () => {
+      for (const body of [null, { message: "private-response-marker" }, list.key === null ? "invalid" : { [list.key]: {} }]) {
+        const { runner, calls } = runnerFrom(httpResponse(200, body));
+        const client = new GitHubClient(new GhTransport({ budget: budget(), runner, retries: 0 }), "owner", "repo");
+        await assert.rejects(list.read(client), (error: unknown) => {
+          assert.ok(error instanceof GitHubError);
+          assert.equal(error.code, "NETWORK_ERROR");
+          assert.doesNotMatch(error.message, /private-response-marker/);
+          return true;
+        });
+        assert.equal(calls.length, 1);
+      }
+    });
+    it("preserves valid empty " + name + " lists and pagination", async () => {
+      const body = list.key === null ? [] : { [list.key]: [], total_count: 0 };
+      const { runner } = runnerFrom(httpResponse(200, body, { link: '<https://api.github.com/next>; rel="next"' }));
+      const client = new GitHubClient(new GhTransport({ budget: budget(), runner }), "owner", "repo");
+      const page = await list.read(client);
+      assert.deepEqual(page.items, []);
+      assert.equal(page.hasNext, true);
+      assert.equal(page.totalCount, list.key === null ? null : 0);
+    });
+  }
+
   it("preserves an unreadable branch-rules response instead of reporting zero rules", async () => {
     const { runner, calls } = runnerFrom(httpResponse(404, { message: "Not Found" }));
     const transport = new GhTransport({ budget: budget(), runner, retries: 0 });

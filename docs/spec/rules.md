@@ -1,5 +1,11 @@
 # Detection rules
 
+GitHub list response containers must contain the expected array. A missing or
+non-array list is a collection error, even with HTTP 200; it is not evidence of
+zero jobs or zero changed files. Job and PR-file collection failures keep their
+coverage partial and record the missing scope. Confirmed empty arrays remain
+valid and retain the server's pagination metadata.
+
 ## Rule outcomes
 
 Every rule returns a `RuleResult` with one `outcome`:
