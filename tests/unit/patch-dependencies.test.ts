@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import fs from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -78,10 +80,51 @@ test("a file that exceeds the dependency cap inside a local action is unresolved
   assert.ok(collection.dependencies.some((entry) => entry.ref.endsWith("action.yml")));
 });
 
-for (const kind of ["complete", "oversized", "linked-directory", "linked-file"] as const) {
-  const incomplete = kind !== "complete";
+test("reused local actions are scanned once and remain fully resolved", (t) => {
+  const text = BINARY_WORKFLOW + "\n" + "      - uses: ./.github/actions/binary/.\n".repeat(19);
+  const space = workspace(text);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  const action = join(space.root, ".github", "actions", "binary");
+  mkdirSync(action, { recursive: true });
+  writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: run.js\n");
+  writeFileSync(join(action, "run.js"), "console.log('run')\n");
+  const canonical = realpathSync(action);
+  const read = fs.readdirSync;
+  let scans = 0;
+  const mocked = t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
+    if (args[0] === canonical) scans += 1;
+    return read(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const collection = collectDependencies(space.root, parseWorkflow(space.path, text));
+    t.diagnostic("local action directory scans: " + scans + " for 20 references");
+    assert.deepEqual(collection.unresolved, [], "reused files are resolved, not missing");
+    assert.equal(scans, 1);
+    assert.equal(collection.dependencies.length, 2);
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test("overlapping local action directories count already-pinned files as resolved", (t) => {
+  const space = workspace(BINARY_WORKFLOW + "\n      - uses: ./.github/actions/binary/nested\n");
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  const action = join(space.root, ".github", "actions", "binary");
+  mkdirSync(join(action, "nested"), { recursive: true });
+  writeFileSync(join(action, "action.yml"), "name: parent\n");
+  writeFileSync(join(action, "nested", "action.yml"), "name: nested\n");
+  const collection = collectDependencies(space.root, parseWorkflow(space.path, space.text));
+  assert.deepEqual(collection.unresolved, []);
+  assert.equal(collection.dependencies.length, 2);
+});
+
+for (const kind of ["complete", "repeated", "repeated-changed", "oversized", "linked-directory", "linked-file"] as const) {
+  const incomplete = kind !== "complete" && kind !== "repeated";
   test("apply checks local-action dependency completeness: " + kind, async (t) => {
-    const space = workspace(BINARY_WORKFLOW);
+    const repeated = kind !== "complete";
+    const space = workspace(BINARY_WORKFLOW + (repeated ? "\n      - uses: ./.github/actions/binary\n" : ""));
     t.after(() => rmSync(space.root, { recursive: true, force: true }));
     const action = join(space.root, ".github", "actions", "binary");
     mkdirSync(action, { recursive: true });
@@ -126,6 +169,7 @@ for (const kind of ["complete", "oversized", "linked-directory", "linked-file"] 
     store.savePlan(built.plan, { coverageWriteAllowed: true, reportId: null });
     const approval = approvePlan({ store, planId: built.plan.planId, confirmation: approvalConfirmation(built.plan),
       subjectId: "tester", channel: "human-cli", now: NOW });
+    if (kind === "repeated-changed") writeFileSync(join(action, "run.js"), "console.log('changed after approval')\n");
     if (kind === "oversized") {
       writeFileSync(join(action, "blob.bin"), Buffer.alloc(2 * 1024 * 1024 + 1));
       const after = collectDependencies(space.root, workflow);

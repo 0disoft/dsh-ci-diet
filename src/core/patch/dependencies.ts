@@ -197,6 +197,7 @@ interface DependencySink {
 function createDependencySink(realRoot: string): DependencySink {
   const found = new Map<string, string>();
   const unresolved = new Set<string>();
+  const scannedActions = new Set<string>();
   const add = (base: string, candidate: string): boolean => {
     const real = resolveFile(realRoot, base, candidate);
     if (real === null) return false;
@@ -218,6 +219,10 @@ function createDependencySink(realRoot: string): DependencySink {
       miss(base, candidate);
       return;
     }
+    // The sink lasts for one collection. Reuse both pinned files and unresolved
+    // results for aliases of an action already scanned in this collection.
+    if (scannedActions.has(dir)) return;
+    scannedActions.add(dir);
     const dirDisplay = toPosix(relative(realRoot, dir)) || ".";
     const stack: string[] = [dir];
     let collected = 0;
@@ -258,7 +263,11 @@ function createDependencySink(realRoot: string): DependencySink {
         if (!entry.isFile()) continue;
         const real = join(current, entry.name);
         const relativePath = toPosix(relative(realRoot, real));
-        if (found.has(relativePath)) continue;
+        if (found.has(relativePath)) {
+          // A script or another action may already have pinned this file.
+          collected += 1;
+          continue;
+        }
         let size: number;
         try {
           size = statSync(real).size;

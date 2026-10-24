@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Reusing a local action, or referencing nested action directories, no longer
+  marks already-pinned files as unresolved and blocks valid patches. Each
+  canonical action directory is scanned once per dependency collection; apply
+  still collects fresh hashes and rejects changed or incomplete dependencies.
+
 - DSH review loads read and hash each workflow once per request instead of once
   per stored plan. Missing or unreadable sources still block every affected
   plan; reloading, approving and applying always check fresh source bytes.
