@@ -347,7 +347,7 @@ for (const command of ['node "task.js', 'node task".js"', 'node "task".js', 'nod
     writeFileSync(join(space.root, "task.js"), "// decoy\n");
     const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
     assert.deepEqual(collected.dependencies, []);
-    assert.deepEqual(collected.unresolved, ["jobs.build.steps[0] (unsupported shell quoting or expansion)"]);
+    assert.deepEqual(collected.unresolved, ["jobs.build.steps[0] (unsupported shell syntax)"]);
   });
 }
 

@@ -152,13 +152,14 @@ function hashFile(realPath: string): string | null {
 }
 
 /** Static shell words: delimiters inside quotes belong to the same argument.
- * Ambiguous concatenation, expansion and escapes must never pin a prefix file.
+ * Ambiguous words and unsupported cwd isolation must never pin a decoy file.
  */
 function commandSegments(run: string): string[][] | null {
   const segments: string[][] = [];
   let words: string[] = [], word = "";
   let quote: string | null = null;
   let started = false, closedQuote = false;
+  let isolatedCommands = false;
   const finishWord = (): void => {
     if (started) words.push(word);
     word = "";
@@ -178,7 +179,15 @@ function commandSegments(run: string): string[][] | null {
       else word += char;
       continue;
     }
-    if (char === "\n" || char === ";" || char === "|" || char === "&") { finishCommand(); continue; }
+    // Grouped commands need a shell AST; never treat their cwd as linear.
+    if (char === "(" || char === ")") return null;
+    if (char === "|" || char === "&") {
+      if (run[i + 1] === char) i += 1; // && and || keep the current shell.
+      else isolatedCommands = true; // Pipelines/background jobs may isolate cd.
+      finishCommand();
+      continue;
+    }
+    if (char === "\n" || char === ";") { finishCommand(); continue; }
     if (/\s/.test(char)) { finishWord(); continue; }
     if (char === "#" && !started) {
       while (i + 1 < run.length && run[i + 1] !== "\n") i += 1;
@@ -196,6 +205,7 @@ function commandSegments(run: string): string[][] | null {
   }
   if (quote !== null) return null;
   finishCommand();
+  if (isolatedCommands && segments.some((words) => words[0] === "cd")) return null;
   return segments;
 }
 
@@ -448,7 +458,7 @@ function collectRunScript(
   }
   const segments = commandSegments(step.run);
   if (segments === null) {
-    sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (unsupported shell quoting or expansion)");
+    sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (unsupported shell syntax)");
     return;
   }
   let working = base;
