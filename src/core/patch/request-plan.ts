@@ -118,6 +118,22 @@ export function buildRequestedPlan(input: RequestedPlanInput): RequestedPlanResu
     return failed("HISTORY_REQUIRED", ["HISTORY_REQUIRED", "COVERAGE_" + composition.level.toUpperCase()], edit.edits);
   }
 
+  // Reject cheap preconditions before reading and hashing repository files.
+  const eligibility = evaluatePatchEligibility({
+    rule: input.rule,
+    finding: input.finding,
+    coverage: input.coverage,
+    claims: input.claims,
+    history: input.history,
+    currentDefinitionParsed: true,
+    editedJobEvidenceComplete: true,
+    ...(input.policyMaxAgeSeconds !== undefined ? { policyMaxAgeSeconds: input.policyMaxAgeSeconds } : {}),
+    now: input.now,
+  });
+  if (!eligibility.allowed) {
+    return { ...failed("NOT_ELIGIBLE", eligibility.reasons, edit.edits), coverageLevel: eligibility.coverageLevel };
+  }
+
   const dependencyReport = collectDependencies(input.binding.workspaceRoot, input.workflow);
   const attestation = createAttestation({
     bindingId: input.binding.bindingId,
@@ -133,21 +149,6 @@ export function buildRequestedPlan(input: RequestedPlanInput): RequestedPlanResu
     ...(input.attestationTtlSeconds !== undefined ? { ttlSeconds: input.attestationTtlSeconds } : {}),
     now: input.now,
   });
-
-  const eligibility = evaluatePatchEligibility({
-    rule: input.rule,
-    finding: input.finding,
-    coverage: input.coverage,
-    claims: attestation.claims,
-    history: input.history,
-    currentDefinitionParsed: true,
-    editedJobEvidenceComplete: true,
-    ...(input.policyMaxAgeSeconds !== undefined ? { policyMaxAgeSeconds: input.policyMaxAgeSeconds } : {}),
-    now: input.now,
-  });
-  if (!eligibility.allowed) {
-    return { ...failed("NOT_ELIGIBLE", eligibility.reasons, edit.edits), coverageLevel: eligibility.coverageLevel };
-  }
 
   const policies = buildPolicySnapshots({
     binding: input.binding,

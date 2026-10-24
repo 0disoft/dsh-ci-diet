@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import fs from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -7,7 +9,8 @@ import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import { claimsFromTokens } from "../../src/core/patch/eligibility.ts";
-import { buildRequestedPlan } from "../../src/core/patch/request-plan.ts";
+import { buildRequestedPlan, type RequestedPlanInput } from "../../src/core/patch/request-plan.ts";
+import { dependencyHashOf } from "../../src/core/patch/plan.ts";
 import type { Coverage, Finding, RepositoryBinding } from "../../src/core/contracts/schema.ts";
 import type { HistoryBundle } from "../../src/core/history/model.ts";
 
@@ -206,4 +209,66 @@ describe("requested plan builder", () => {
     assert.equal(result.blocker, "NOT_ELIGIBLE");
     assert.ok(result.reasons.includes("CLAIM_CI_ONLY_MISSING"));
   });
+});
+
+it("rejects ineligible requests before reading local action files, but still pins eligible dependencies", (t) => {
+  const { root, binding } = workspace();
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const directory = join(root, ".github", "actions", "local");
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "action.yml"), "name: local\nruns:\n  using: node20\n  main: dep-0.js\n");
+  for (let i = 0; i < 32; i += 1) writeFileSync(join(directory, "dep-" + i + ".js"), Buffer.alloc(64 * 1024, 32));
+  const prefix = realpathSync(directory);
+  const text = WORKFLOW + "      - uses: ./.github/actions/local\n";
+  const workflow = parseWorkflow(PATH, text);
+  const input: RequestedPlanInput = {
+    binding, workflow, text, rule: "CD001", allowedRules: ["CD001"],
+    jobKey: null, stepIndex: null, minutes: null,
+    finding: finding("CD001", workflow.sha256), coverage: coverage(),
+    claims: claimsFromTokens(["ci-only", "replace-safe"]), history: history(),
+    evidenceRef: "test:early-eligibility", issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+  };
+  let reads = 0, bytes = 0;
+  const read = fs.readFileSync;
+  const mocked = t.mock.method(fs, "readFileSync", (...args: Parameters<typeof fs.readFileSync>) => {
+    const result = read(...args);
+    if (String(args[0]).startsWith(prefix + "/") || String(args[0]).startsWith(prefix + "\\")) {
+      reads += 1;
+      bytes += Buffer.byteLength(result);
+    }
+    return result;
+  });
+  syncBuiltinESMExports();
+  try {
+    const fresh = history();
+    const stale = { ...fresh, protection: { ...fresh.protection!, fetchedAt: "2026-10-19T00:00:00Z" } };
+    const refused = [
+      buildRequestedPlan({ ...input, claims: claimsFromTokens([]) }),
+      buildRequestedPlan({ ...input, finding: { ...input.finding, patchability: "blocked" } }),
+      buildRequestedPlan({ ...input, history: stale }),
+    ];
+    for (const result of refused) {
+      assert.equal(result.ok, false);
+      if (!result.ok) {
+        assert.equal(result.blocker, "NOT_ELIGIBLE");
+        assert.equal(result.edits.length, 1);
+        assert.equal(result.coverageLevel, "full");
+      }
+    }
+    assert.ok(!refused[0]!.ok && refused[0]!.reasons.includes("CLAIM_CI_ONLY_MISSING"));
+    assert.ok(!refused[1]!.ok && refused[1]!.reasons.includes("FINDING_BLOCKED"));
+    assert.ok(!refused[2]!.ok && refused[2]!.reasons.includes("POLICY_STALE"));
+    t.diagnostic("ineligible local-action reads: " + reads + "; bytes: " + bytes);
+    assert.equal(reads, 0, "ineligible plans must not scan dependency contents");
+    const allowed = buildRequestedPlan(input);
+    assert.equal(allowed.ok, true);
+    if (allowed.ok) {
+      assert.equal(reads, 33, "eligible plans must still read every action file");
+      assert.equal(allowed.plan.payload.dependencies.length, 33);
+      assert.equal(allowed.attestation.dependencyHash, dependencyHashOf(allowed.plan.payload.dependencies));
+    }
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
