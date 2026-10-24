@@ -27,6 +27,16 @@ function indexSteps(steps: JobObservation["steps"]) {
   return index;
 }
 
+/** Null prevents duplicate identities from being attributed to any one job. */
+function indexJobs(jobs: readonly JobObservation[], keys: readonly string[]) {
+  const index = new Map<string, JobObservation | null>();
+  jobs.forEach((job, position) => {
+    const identity = keys[position]!;
+    index.set(identity, index.has(identity) ? null : job);
+  });
+  return index;
+}
+
 export function compareRuns(before: RunObservation, after: RunObservation) {
   const blockers: string[] = [];
   for (const field of ["repository", "workflow", "branch", "event"] as const) {
@@ -36,22 +46,18 @@ export function compareRuns(before: RunObservation, after: RunObservation) {
   const key = (job: JobObservation) => JSON.stringify([job.name, [...job.labels].sort()]);
   const beforeKeys = before.jobs.map(key);
   const afterKeys = after.jobs.map(key);
-  if (new Set(beforeKeys).size !== beforeKeys.length || new Set(afterKeys).size !== afterKeys.length) blockers.push("AMBIGUOUS_JOB_NAMES");
+  const beforeByKey = indexJobs(before.jobs, beforeKeys);
+  const afterByKey = indexJobs(after.jobs, afterKeys);
+  if (beforeByKey.size !== beforeKeys.length || afterByKey.size !== afterKeys.length) blockers.push("AMBIGUOUS_JOB_NAMES");
   if (JSON.stringify([...beforeKeys].sort()) !== JSON.stringify([...afterKeys].sort())) blockers.push("DIFFERENT_JOBS_OR_RUNNERS");
-  const afterByKey = new Map<string, JobObservation>();
-  after.jobs.forEach((job, index) => {
-    const identity = afterKeys[index]!;
-    // Keep the first diagnostic match, as find did. Duplicate identities still
-    // block the aggregate via AMBIGUOUS_JOB_NAMES above.
-    if (!afterByKey.has(identity)) afterByKey.set(identity, job);
-  });
   if (before.jobs.length === 0 || after.jobs.length === 0) blockers.push("NO_JOBS");
   const total = (run: RunObservation) => run.jobs.reduce((sum, job) => sum + job.seconds, 0);
   const beforeSeconds = total(before), afterSeconds = total(after);
   const warnings = ["SINGLE_PAIR_NOT_CAUSAL_PROOF", "RUNNER_IMAGE_AND_CACHE_STATE_UNVERIFIED"];
   if (before.sha !== after.sha) warnings.push("SOURCE_CHANGED_REVIEW_DIFF_AND_TEST_SCOPE");
   const jobs = before.jobs.map((job, index) => {
-    const match = afterByKey.get(beforeKeys[index]!);
+    const identity = beforeKeys[index]!;
+    const match = beforeByKey.get(identity) === null ? null : afterByKey.get(identity);
     const beforeSteps = indexSteps(job.steps);
     const afterSteps = indexSteps(match?.steps ?? []);
     return { name: job.name, beforeSeconds: job.seconds, afterSeconds: match?.seconds ?? null,

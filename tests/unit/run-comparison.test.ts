@@ -64,9 +64,38 @@ test("indexed comparison preserves runner identity, ambiguous steps, added-step 
   const ambiguous = compareRuns(left, { ...right, jobs: [...right.jobs, { ...right.jobs[1]!, seconds: 999 }] });
   assert.equal(ambiguous.comparable, false);
   assert.equal(ambiguous.observedReductionSeconds, null);
-  assert.equal(ambiguous.jobs[0]!.afterSeconds, 15, "ambiguous diagnostics retain the original first match");
+  assert.equal(ambiguous.jobs[0]!.afterSeconds, null, "duplicate identities cannot select the first match");
   const missing = compareRuns(left, { ...right, jobs: right.jobs.slice(0, 1) });
   assert.equal(missing.jobs[0]!.afterSeconds, null);
+});
+
+test("duplicate job identities on either side never yield attributed job or step differences", () => {
+  const uniqueBefore = { ...before.jobs[0]!, name: "unique" };
+  const uniqueAfter = { ...after.jobs[0]!, name: "unique" };
+  for (const [beforeCount, afterCount] of [[2, 1], [3, 1], [1, 2], [1, 3], [2, 2], [3, 3]] as const) {
+    const left = { ...before, jobs: [
+      ...Array.from({ length: beforeCount }, () => before.jobs[0]!), uniqueBefore,
+    ] };
+    const right = { ...after, jobs: [
+      ...Array.from({ length: afterCount }, () => after.jobs[0]!), uniqueAfter,
+    ] };
+    const result = compareRuns(left, right);
+    assert.ok(result.blockers.includes("AMBIGUOUS_JOB_NAMES"));
+    assert.equal(result.observedReductionSeconds, null);
+    for (const job of result.jobs.slice(0, beforeCount)) {
+      assert.equal(job.afterSeconds, null);
+      assert.deepEqual(job.addedSteps, []);
+      for (const step of job.steps) {
+        assert.equal(step.afterSeconds, null);
+        assert.equal(step.observedReductionSeconds, null);
+      }
+    }
+    const unique = result.jobs.at(-1)!;
+    assert.equal(unique.afterSeconds, 40, "unambiguous diagnostics remain available");
+    assert.equal(unique.steps[0]!.observedReductionSeconds, 20);
+    assert.deepEqual(unique.addedSteps, [{ name: "cache", seconds: 4 }]);
+    assert.match(renderRunComparison(result, "en"), /<th>check<\/th><td>60<\/td><td>unknown<\/td>/);
+  }
 });
 
 test("comparison reads job identities and step names in proportion to input size", (t) => {

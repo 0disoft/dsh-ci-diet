@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Run comparison now attributes job and step differences only when the job's
+  name and runner labels are unique in both runs. Ambiguous rows show unknown
+  after-times instead of reusing a first match, including in HTML reports.
+
 - Plan previews preserve the original line after a line-start insertion and no
   longer invent an extra blank added line. CD006 cache diffs retain existing
   setup-node inputs; insertion prefixes without a newline show a replacement.
