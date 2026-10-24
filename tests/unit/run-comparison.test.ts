@@ -40,6 +40,53 @@ test("different scope, ambiguous jobs and identical attempts suppress an aggrega
   assert.equal(duplicateSteps.jobs[0]!.steps[0]!.afterSeconds, null);
 });
 
+test("indexed comparison preserves runner identity, ambiguous steps, added-step order and input order", () => {
+  const left = { ...before, jobs: [
+    { name: "same", labels: ["linux", "x64"], seconds: 20, steps: [
+      { name: "duplicate", seconds: 1 }, { name: "duplicate", seconds: 2 }, { name: "__proto__", seconds: 3 }, { name: "missing", seconds: 4 },
+    ] },
+    { name: "same", labels: ["windows"], seconds: 30, steps: [{ name: "test", seconds: 20 }] },
+  ] };
+  const right = { ...after, jobs: [
+    { name: "same", labels: ["windows"], seconds: 25, steps: [{ name: "test", seconds: 10 }, { name: "test", seconds: 12 }] },
+    { name: "same", labels: ["x64", "linux"], seconds: 15, steps: [
+      { name: "new", seconds: 1 }, { name: "duplicate", seconds: 1 }, { name: "__proto__", seconds: 2 }, { name: "new", seconds: 2 },
+    ] },
+  ] };
+  const original = JSON.stringify([left, right]);
+  const result = compareRuns(left, right);
+  assert.equal(result.comparable, true);
+  assert.deepEqual(result.jobs.map((job) => job.afterSeconds), [15, 25]);
+  assert.deepEqual(result.jobs[0]!.steps.map((step) => step.afterSeconds), [null, null, 2, null]);
+  assert.equal(result.jobs[1]!.steps[0]!.afterSeconds, null);
+  assert.deepEqual(result.jobs[0]!.addedSteps, [{ name: "new", seconds: 1 }, { name: "new", seconds: 2 }]);
+  assert.equal(JSON.stringify([left, right]), original, "comparison must not mutate either observation");
+  const ambiguous = compareRuns(left, { ...right, jobs: [...right.jobs, { ...right.jobs[1]!, seconds: 999 }] });
+  assert.equal(ambiguous.comparable, false);
+  assert.equal(ambiguous.observedReductionSeconds, null);
+  assert.equal(ambiguous.jobs[0]!.afterSeconds, 15, "ambiguous diagnostics retain the original first match");
+  const missing = compareRuns(left, { ...right, jobs: right.jobs.slice(0, 1) });
+  assert.equal(missing.jobs[0]!.afterSeconds, null);
+});
+
+test("comparison reads job identities and step names in proportion to input size", (t) => {
+  const jobCount = 100, stepCount = 100;
+  let labelReads = 0, stepNameReads = 0;
+  const jobs = Array.from({ length: jobCount }, (_, job) => ({ name: "job-" + job,
+    get labels() { labelReads += 1; return ["ubuntu-latest", "x64"]; }, seconds: 300,
+    steps: Array.from({ length: stepCount }, (_, step) => ({
+      get name() { stepNameReads += 1; return "step-" + step; }, seconds: 1,
+    })),
+  }));
+  const result = compareRuns({ ...before, jobs }, { ...after, jobs: [...jobs].reverse() });
+  assert.equal(result.comparable, true);
+  assert.equal(result.jobs.length, jobCount);
+  assert.equal(result.jobs[0]!.steps.length, stepCount);
+  t.diagnostic(JSON.stringify({ labelReads, stepNameReads }));
+  assert.ok(labelReads <= 2 * jobCount, "each job identity is read once per observation");
+  assert.ok(stepNameReads <= 6 * jobCount * stepCount, "step matching must not rescan whole step lists");
+});
+
 function api(options: { failed?: boolean; partial?: boolean; changedAttempt?: boolean; missingTime?: boolean } = {}): { runner: GhRunner; calls: string[][] } {
   const calls: string[][] = [];
   const runner: GhRunner = async (args) => {
