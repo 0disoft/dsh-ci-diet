@@ -2,8 +2,8 @@ import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
 import type { EngineSettings } from "../../core/config/plugin-settings.ts";
-import type { PatchPlan, RepositoryBinding } from "../../core/contracts/schema.ts";
-import { PatchStore } from "../../core/patch/store.ts";
+import type { RepositoryBinding } from "../../core/contracts/schema.ts";
+import { PatchStore, type StoredPlan } from "../../core/patch/store.ts";
 import { approvePlan } from "../../core/patch/approval.ts";
 import { applyPlan, resolveWorkflowFile, revertChange } from "../../core/patch/apply.ts";
 import { renderEditDiff } from "../../core/patch/diff.ts";
@@ -59,7 +59,9 @@ export class ReviewService {
     this.settings = settings;
   }
 
-  private preview(store: PatchStore, plan: PatchPlan, settings: ReviewSettings, now: Date, readSource: ReturnType<typeof workflowSourceReader>, usedPlans?: ReadonlySet<string>) {
+  private preview(store: PatchStore, stored: StoredPlan, settings: ReviewSettings, now: Date, readSource: ReturnType<typeof workflowSourceReader>, usedPlans?: ReadonlySet<string>) {
+    // Reuse the validated plan and metadata read together by this request.
+    const { plan, meta } = stored;
     const blockers = [...plan.payload.blockers];
     let sourceValid = false;
     let diff: ReturnType<typeof renderEditDiff> = [];
@@ -73,7 +75,7 @@ export class ReviewService {
       blockers.push("SOURCE_UNAVAILABLE");
     }
     if (now.getTime() >= Date.parse(plan.payload.expiresAt)) blockers.push("PLAN_EXPIRED");
-    if (!store.readPlan(plan.planId)?.meta.coverageWriteAllowed) blockers.push("COVERAGE_INSUFFICIENT_FOR_WRITE");
+    if (!meta.coverageWriteAllowed) blockers.push("COVERAGE_INSUFFICIENT_FOR_WRITE");
     if (plan.provenance !== "observed") blockers.push("SYNTHETIC_PLAN");
     if (plan.payload.ruleIds.some((id) => !settings.engine.config.apply.allowedRules.includes(id))) blockers.push("RULE_NOT_ALLOWED");
     if ((usedPlans ?? new Set(store.listChanges().filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId))).has(plan.planId)) blockers.push("PLAN_ALREADY_USED");
@@ -105,7 +107,7 @@ export class ReviewService {
           return { ...finding, title: localized.title, renderedText: localized.text };
         }) },
         plans: binding === null ? [] : reader.listPlans().filter(({ plan }) => plan.payload.bindingId === binding.bindingId)
-          .map(({ plan }) => this.preview(reader, plan, settings, new Date(), readSource!, usedPlans)),
+          .map((stored) => this.preview(reader, stored, settings, new Date(), readSource!, usedPlans)),
         changes: changes
           .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state })) };
     }
@@ -120,7 +122,7 @@ export class ReviewService {
     }
     const stored = reader.readPlan(id);
     if (stored === null || stored.plan.payload.bindingId !== binding.bindingId) throw new Error("PLAN_NOT_FOUND");
-    const preview = this.preview(reader, stored.plan, settings, new Date(), workflowSourceReader(binding, settings.engine.config.storage.workflowMaxBytes));
+    const preview = this.preview(reader, stored, settings, new Date(), workflowSourceReader(binding, settings.engine.config.storage.workflowMaxBytes));
     if (preview.blockers.length > 0) throw new Error(preview.blockers.join(", "));
     const store = PatchStore.open(stateDir, settings.engine.config.storage);
     if (request.action === "approve") {

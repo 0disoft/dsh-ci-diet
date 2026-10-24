@@ -99,18 +99,29 @@ test("review reads each workflow once per load and refreshes before approval", a
     f.store.savePlan({ ...f.plan, payload, planDigest, planId: "p_" + planDigest.slice(7, 31) },
       { coverageWriteAllowed: true, reportId: null });
   }
+  const planFiles = new Set(readdirSync(join(f.stateDir, "plans")).map((file) => join(f.stateDir, "plans", file)));
+  const planBytes = [...planFiles].reduce((total, file) => total + readFileSync(file).byteLength, 0);
+  let planReads = 0, bytesRead = 0;
   const reads = new Map<string, number>();
   let unreadable = false;
   const read = fs.readFileSync;
   const mocked = t.mock.method(fs, "readFileSync", (...args: Parameters<typeof fs.readFileSync>) => {
     if (args[0] === f.file || args[0] === otherFile) reads.set(args[0], (reads.get(args[0]) ?? 0) + 1);
     if (args[0] === f.file && unreadable) throw Object.assign(new Error("unreadable workflow"), { code: "EACCES" });
-    return read(...args);
+    const result = read(...args);
+    if (planFiles.has(String(args[0]))) {
+      planReads += 1;
+      bytesRead += Buffer.byteLength(result);
+    }
+    return result;
   });
   syncBuiltinESMExports();
   try {
     type Loaded = { plans: { sourceValid: boolean; diff: unknown[]; blockers: string[] }[] };
     const initial = await f.call("load") as Loaded;
+    t.diagnostic("plan JSON reads: " + planReads + "; bytes: " + bytesRead + "; single-pass bytes: " + planBytes);
+    assert.equal(planReads, 80, "40 plans and their metadata must each be read once per load");
+    assert.equal(bytesRead, planBytes);
     assert.equal(initial.plans.length, 40);
     assert.equal(initial.plans.filter((plan) => plan.sourceValid).length, 39);
     const outdated = initial.plans.find((plan) => !plan.sourceValid)!;
@@ -141,6 +152,27 @@ test("review reads each workflow once per load and refreshes before approval", a
     mocked.mock.restore();
     syncBuiltinESMExports();
   }
+});
+
+test("review reloads coverage metadata for approval and apply and fails closed when missing or malformed", async (t) => {
+  const f = fixture(t);
+  await f.call("load");
+  const metaPath = join(f.stateDir, "plans", f.plan.planId + ".meta.json");
+  const setCoverage = (allowed: unknown) => writeFileSync(metaPath, JSON.stringify({ coverageWriteAllowed: allowed, reportId: null }));
+  const approval = { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) };
+  setCoverage(false);
+  await assert.rejects(f.call("approve", approval), /COVERAGE_INSUFFICIENT_FOR_WRITE/);
+  assert.equal(f.store.readNonce(f.plan.planId), null);
+  rmSync(metaPath);
+  const missing = await f.call("load") as { plans: { blockers: string[] }[] };
+  assert.ok(missing.plans[0]!.blockers.includes("COVERAGE_INSUFFICIENT_FOR_WRITE"));
+  setCoverage("true");
+  await assert.rejects(f.call("load"), /PlanMeta schema mismatch/);
+  setCoverage(true);
+  await f.call("approve", approval);
+  setCoverage(false);
+  await assert.rejects(f.call("apply", { id: f.plan.planId }), /COVERAGE_INSUFFICIENT_FOR_WRITE/);
+  assert.equal(readFileSync(f.file, "utf8"), SOURCE);
 });
 
 test("read-only report load scopes binding and never creates directories or repairs index", async (t) => {
