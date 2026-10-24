@@ -6,8 +6,41 @@ import { test } from "node:test";
 import { parseDocument } from "yaml";
 import type { Node } from "yaml";
 import { byteRangeOf, parseWorkflow } from "../../src/core/workflow/index.ts";
+import { createByteRangeReader } from "../../src/core/workflow/byte-ranges.ts";
 
 const FIXTURES = new URL("../fixtures/workflows/", import.meta.url);
+
+test("indexed byte ranges match UTF-8 prefixes including split and lone surrogates", () => {
+  for (const text of ["", "ascii\r\n", "é हिंदी 한국어", "a🚀b", "\ud800x\udc00", "🚀\ud800🚀\udc00"]) {
+    const rangeOf = createByteRangeReader(text, Buffer.byteLength(text, "utf8"));
+    assert.equal(rangeOf(null), null);
+    assert.equal(rangeOf(undefined), null);
+    for (let start = 0; start <= text.length; start += 1) {
+      for (let end = start; end <= text.length; end += 1) {
+        const node = { range: [start, end, end] } as Node;
+        assert.deepEqual(rangeOf(node), byteRangeOf(text, node), JSON.stringify({ text, start, end }));
+      }
+    }
+  }
+});
+
+test("workflow parsing does not repeatedly measure source prefixes", (t) => {
+  const text = "name: CI 한글 🚀\non: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n"
+    + Array.from({ length: 200 }, (_, i) => "      - uses: actions/upload-artifact@v4\n        with:\n          name: 결과-" + i + "\n          path: dist\n          retention-days: 30\n").join("");
+  const original = Buffer.byteLength;
+  let measuredUnits = 0;
+  t.mock.method(Buffer, "byteLength", (...args: Parameters<typeof Buffer.byteLength>) => {
+    if (typeof args[0] === "string") measuredUnits += args[0].length;
+    return original(...args);
+  });
+  const workflow = parseWorkflow("ci.yml", text);
+  assert.equal(workflow.parseError, null);
+  assert.equal(workflow.jobs[0]?.steps.length, 200);
+  assert.ok(measuredUnits <= text.length * 2, "UTF-8 length measurement must stay linear in source length, not node count");
+  const range = workflow.jobs[0]!.steps[199]!.withEntries.find((entry) => entry.key === "retention-days")!.valueRange;
+  assert.ok(range);
+  assert.equal(slice(text, range), "30");
+});
 
 async function fixture(name: string): Promise<string> {
   return readFile(new URL(name, FIXTURES), "utf8");
