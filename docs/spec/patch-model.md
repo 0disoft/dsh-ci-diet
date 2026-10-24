@@ -135,6 +135,9 @@ configuration). The scan resolves a local action to every file in its directory
 interpreters (`node build.js`, `bash scripts/check.sh`), `./` and `../`
 executables, and slash-containing arguments relative to the step
 `working-directory` or the job/top-level `defaults.run.working-directory`.
+Literal relative `cd` commands (including `cd -- path`) update that base. A
+directory escape or an unsupported `cd` form records an unresolved dependency
+and stops collecting that step; subsequent commands never inherit the old base.
 Local `uses: ./...` references resolve from the repository root. Interpreter
 flags are classified by kind: boolean flags such as `--enable-source-maps` do
 not consume the script path, while `--require`, `--loader`, `--import`, and

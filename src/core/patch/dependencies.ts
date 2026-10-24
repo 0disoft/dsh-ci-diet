@@ -407,9 +407,19 @@ function collectRunScript(
   let working = base;
   for (const segment of commandSegments(step.run)) {
     const head = segment[0] ?? "";
-    if (head === "cd" && segment[1] !== undefined) {
-      const next = normalizeBase(joinRelative(working, segment[1]));
-      if (next !== null) working = next;
+    if (head === "cd") {
+      const args = segment.slice(1);
+      if (args[0] === "--") args.shift();
+      const target = args.length === 1 ? args[0] : undefined;
+      const next = target === undefined || target.startsWith("-") || /^~|[$`\\]/.test(target)
+        ? null : normalizeBase(joinRelative(working, target));
+      if (next === null) {
+        // Never hash a same-named file in the old directory after losing cwd.
+        // Apply treats any unresolved dependency as a reason to reject approval.
+        sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (unresolved cd working-directory)");
+        return;
+      }
+      working = next;
       continue;
     }
     collectRunSegment(realRoot, sink, working, segment);
