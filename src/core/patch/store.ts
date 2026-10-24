@@ -367,23 +367,22 @@ export class PatchStore {
   findBindingByRoot(workspaceRoot: string): RepositoryBinding | null {
     const directory = this.path("bindings");
     const wanted = process.platform === "win32" ? workspaceRoot.toLowerCase() : workspaceRoot;
+    const matchesRoot = (binding: RepositoryBinding) =>
+      (process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot) === wanted;
     let latest: RepositoryBinding | null = null;
     let latestAt = Number.NEGATIVE_INFINITY;
     for (const file of readdirSync(directory)) {
       if (!file.endsWith(".json")) continue;
       const binding = this.readJson<RepositoryBinding>(join(directory, file), "RepositoryBinding");
       if (binding === null) continue;
-      const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
       const at = Date.parse(binding.createdAt);
-      if (candidate === wanted && at > latestAt) {
+      if (matchesRoot(binding) && at > latestAt) {
         latest = binding;
         latestAt = at;
       }
     }
-    for (const snapshot of this.currentSnapshots()) {
+    for (const snapshot of this.currentSnapshots(matchesRoot)) {
       const binding = snapshot.binding;
-      const candidate = process.platform === "win32" ? binding.workspaceRoot.toLowerCase() : binding.workspaceRoot;
-      if (candidate !== wanted) continue;
       const merged = newestBinding(latest, binding);
       if (merged !== latest) {
         latest = merged;
@@ -481,12 +480,15 @@ export class PatchStore {
    * and delete the old generation between the pointer read and the file reads,
    * so a vanished generation is retried once against the new pointer.
    */
-  private readCurrentSnapshot(bindingId: string): CurrentSnapshot | null {
+  private readCurrentSnapshot(bindingId: string, includeBinding?: (binding: RepositoryBinding) => boolean): CurrentSnapshot | null {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const pointer = this.readSnapshotPointer(bindingId);
       if (pointer === null) return null;
       const directory = this.snapshotDirectory(bindingId, pointer.generationId);
       const binding = this.readJson<RepositoryBinding>(join(directory, "binding.json"), "RepositoryBinding");
+      // Reject unrelated roots before loading their potentially large payloads.
+      // Matching snapshots still require the complete generation validation below.
+      if (binding !== null && includeBinding !== undefined && !includeBinding(binding)) return null;
       const history = this.readJson<HistoryBundle>(join(directory, "history.json"));
       const report = this.readJson<AnalysisReport>(join(directory, "report.json"), "AnalysisReport");
       if (
@@ -503,7 +505,7 @@ export class PatchStore {
     return null;
   }
 
-  private currentSnapshots(): CurrentSnapshot[] {
+  private currentSnapshots(includeBinding: (binding: RepositoryBinding) => boolean): CurrentSnapshot[] {
     let names: string[];
     try {
       names = readdirSync(this.path("snapshots", "current"));
@@ -515,7 +517,7 @@ export class PatchStore {
       if (!name.endsWith(".json")) continue;
       const bindingId = name.slice(0, -".json".length);
       if (!ID_PATTERN.test(bindingId)) continue;
-      const snapshot = this.readCurrentSnapshot(bindingId);
+      const snapshot = this.readCurrentSnapshot(bindingId, includeBinding);
       if (snapshot !== null) snapshots.push(snapshot);
     }
     return snapshots;

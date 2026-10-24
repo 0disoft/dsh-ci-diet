@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { acquireStoreLock, withStoreWriteLock } from "../../src/core/patch/locks.ts";
-import { appliedBackupConfirmToken, PatchStore, StoreQuotaError } from "../../src/core/patch/store.ts";
+import { appliedBackupConfirmToken, PatchStore, StoreCorruptionError, StoreQuotaError } from "../../src/core/patch/store.ts";
 import type { AnalysisReport, AppliedChange, RepositoryBinding } from "../../src/core/contracts/schema.ts";
 import type { HistoryBundle } from "../../src/core/history/model.ts";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
@@ -13,6 +13,7 @@ import { buildHistoryReport } from "../../src/core/analysis/report.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { isolatedEnv } from "../helpers/test-env.ts";
+import type { DocumentKind } from "../../src/core/contracts/validate.ts";
 
 const CLI = join(import.meta.dirname, "..", "..", "src", "cli", "index.ts");
 const HASH = "sha256:" + "a".repeat(64);
@@ -203,6 +204,44 @@ test("latestReport trusts a valid index without scanning unrelated records", () 
     writeFileSync(join(store.root, "reports", "broken.json"), "{", "utf8");
     assert.equal(store.latestReport()?.reportId, report.reportId);
     assert.equal(store.latestReportForBinding(binding.bindingId)?.reportId, report.reportId);
+  });
+});
+
+test("workspace binding lookup reads payloads only for matching snapshot roots", (t) => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const bindings = Array.from({ length: 8 }, (_, i) => {
+      const directory = join(root, "repo-" + i);
+      mkdirSync(directory);
+      const binding = createLocalBinding(directory, NOW.toISOString(), { repositoryFullName: "owner/repo-" + i }).binding;
+      const snapshot = history(NOW.toISOString());
+      store.saveHistorySnapshot(binding, snapshot, reportFor(binding, snapshot));
+      return binding;
+    });
+    const reader = store as unknown as { readJson(path: string, kind?: DocumentKind): unknown };
+    const read = reader.readJson.bind(store);
+    const payloadReads: string[] = [];
+    t.mock.method(reader, "readJson", (path: string, kind?: DocumentKind) => {
+      if (/[\\/](history|report)\.json$/.test(path)) payloadReads.push(path);
+      return read(path, kind);
+    });
+    const target = bindings[3]!;
+    assert.equal(store.findBindingByRoot(target.workspaceRoot)?.bindingId, target.bindingId);
+    t.diagnostic("history/report payload reads for 8 repositories: " + payloadReads.length);
+    assert.equal(payloadReads.length, 2, "only the matching snapshot's history and report are needed");
+
+    const generation = (binding: RepositoryBinding) => {
+      const pointer = JSON.parse(readFileSync(join(store.root, "snapshots", "current", binding.bindingId + ".json"), "utf8")) as { generationId: string };
+      return join(store.root, "snapshots", "generations", binding.bindingId, pointer.generationId);
+    };
+    writeFileSync(join(generation(bindings[7]!), "history.json"), "{");
+    writeFileSync(join(generation(bindings[7]!), "report.json"), "{");
+    assert.equal(store.findBindingByRoot(target.workspaceRoot)?.bindingId, target.bindingId, "unrelated corruption cannot block the lookup");
+    writeFileSync(join(generation(target), "history.json"), "{");
+    assert.throws(() => store.findBindingByRoot(target.workspaceRoot), StoreCorruptionError, "matching snapshot validation stays mandatory");
+    writeFileSync(join(generation(target), "history.json"), JSON.stringify(history(NOW.toISOString())));
+    writeFileSync(join(generation(target), "report.json"), "{");
+    assert.throws(() => store.findBindingByRoot(target.workspaceRoot), StoreCorruptionError, "matching report validation stays mandatory");
   });
 });
 
