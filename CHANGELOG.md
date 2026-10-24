@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- History sync deduplicates job IDs within each run attempt and marks overlapping
+  or non-progressing pages partial with `JOB_PAGINATION_CHANGED`. Unique jobs
+  alone count toward progress and timeout cohorts, and a page with no new jobs
+  stops further requests for that attempt.
+
 - CD001 excludes rerun attempts that have no job observed before a replacement
   event from cancellation savings. Already-started attempts still include their
   queued jobs, and excluded reruns remain in observed runner time.

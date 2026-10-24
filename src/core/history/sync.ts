@@ -212,11 +212,21 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
     const attempts = Math.max(1, run.run_attempt);
     for (let attempt = attempts; attempt >= 1; attempt -= 1) {
       signal?.throwIfAborted();
+      const jobIds = new Set<number>();
+      let paginationChanged = false;
       try {
         for (let page = 1; page <= 10; page += 1) {
           const result = await effectiveClient.attemptJobs(run.id, attempt, page, JOB_PAGE_SIZE);
-          fetched += result.items.length;
+          const previousCount = jobIds.size;
           for (const job of result.items) {
+            // Keep one observation per attempt/job, so overlapping pages cannot
+            // inflate timeout cohorts or scenario evidence.
+            if (jobIds.has(job.id)) {
+              paginationChanged = true;
+              continue;
+            }
+            jobIds.add(job.id);
+            fetched += 1;
             const durationMillis = job.started_at === null ? null : durationMillisBetween(job.started_at, job.completed_at);
             jobs.push({
               jobId: String(job.id),
@@ -234,6 +244,10 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
             });
           }
           if (!result.hasNext) break;
+          if (jobIds.size === previousCount) {
+            paginationChanged = true;
+            break;
+          }
           if (page === 10) {
             pageTruncated = true;
             runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_PAGE_LIMIT_REACHED", resumable: true }));
@@ -243,6 +257,9 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
         signal?.throwIfAborted();
         if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
         runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: failureReason(error, "JOBS_UNAVAILABLE"), resumable: true }));
+      }
+      if (paginationChanged) {
+        runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_PAGINATION_CHANGED", resumable: true }));
       }
     }
     return { run, workflowPath, attempts, jobs, pullRequestNumbers, jobsFetched: fetched, jobsPageTruncated: pageTruncated, runMissingScopes };
@@ -438,6 +455,7 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   if (truncatedByLimit) historyReasons.push("RUN_LIMIT_REACHED");
   if (runPaginationChanged) historyReasons.push("RUN_PAGINATION_CHANGED");
   if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
+  if (missingScopes.some((scope) => scope.reason === "JOB_PAGINATION_CHANGED")) historyReasons.push("JOB_PAGINATION_CHANGED");
   if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
   const historyStatus: Dimension["status"] =
     historyError !== null

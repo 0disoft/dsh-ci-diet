@@ -60,6 +60,13 @@ accepted runs stops pagination with the same reason, so duplicates or empty
 pages cannot exhaust the budget without advancing the sample. This does not
 claim an atomic snapshot of GitHub's live listing.
 
+Job pages apply the same rule per run attempt: keep each job ID once, count
+only unique jobs in progress, and mark history `partial` with
+`JOB_PAGINATION_CHANGED` when an ID repeats. A next-linked page that adds no
+new jobs stops the attempt's pagination with that reason. The missing scope
+identifies the run and attempt; overlapping pages cannot manufacture extra
+successful samples for a timeout recommendation.
+
 The machine-readable policy is `contracts/coverage-policy.json`. It is the
 authority. The table below is the composed result when one axis is
 `partial` / `unavailable`; the `full` case evaluates each rule's individual

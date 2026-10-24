@@ -6,6 +6,7 @@ import { GitHubError } from "../../src/adapters/github/errors.ts";
 import type { GhResponse, GhRunner, GhTransport } from "../../src/adapters/github/transport.ts";
 import { DeadlineExceededError } from "../../src/core/support/deadline.ts";
 import { composeCoverage, buildCoverage } from "../../src/core/analysis/coverage.ts";
+import { cd005Recommendations } from "../../src/core/rules/cd005.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -266,13 +267,13 @@ test("marks history partial when artifacts stop at the page cap", async () => {
 test("marks history partial when jobs stop at the page cap", async () => {
   const transport = fakeTransport();
   const original = transport.get.bind(transport);
-  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+  transport.get = async (request, family) => {
     if (/\/attempts\/\d+\/jobs$/.test(request.path)) {
       return response(
         {
           total_count: 999,
           jobs: [{
-            id: 11,
+            id: 11 + Number(request.query?.page ?? "1"),
             name: "build",
             conclusion: "success",
             started_at: "2026-10-19T10:00:10Z",
@@ -596,6 +597,89 @@ function jobResponse(runId: number, page = 1): GhResponse {
   });
 }
 
+test("job pagination keeps new rows after an overlap and counts each id once", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const pages = [[1, 1], [1, 2], [3]];
+  let reads = 0;
+  transport.get = async (request, family) => {
+    if (request.path.endsWith("/attempts/1/jobs")) {
+      const page = pages[reads++];
+      assert.ok(page, "no unexpected page request");
+      const jobs = page.flatMap((id) => (jobResponse(100, id).body as { jobs: unknown[] }).jobs);
+      return response({ total_count: 3, jobs }, reads < pages.length
+        ? { link: '<https://api.github.com/repositories/1/actions/runs/100/attempts/1/jobs?page=2>; rel="next"' } : {});
+    }
+    return original(request, family);
+  };
+  const progress: number[] = [];
+  const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport,
+    onProgress: (snapshot) => progress.push(snapshot.jobsFetched) });
+  assert.equal(reads, 3);
+  assert.deepEqual(history.runs[0]?.jobs.map((job) => job.jobId), ["1001", "1002", "1003"]);
+  assert.deepEqual(progress, [3]);
+  assert.equal(history.missingScopes.filter((scope) => scope.reason === "JOB_PAGINATION_CHANGED").length, 1);
+  assert.equal(history.coverage.history.status, "partial");
+});
+
+test("overlapping job pages cannot turn 19 timeout samples into 20", async (t) => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const runs = workflowRuns(19);
+  let overlappingReads = 0;
+  transport.get = async (request, family) => {
+    if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+    if (request.path.endsWith("/attempts/1/jobs")) {
+      const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+      const result = jobResponse(runId);
+      if (runId === 300 && ++overlappingReads === 1) {
+        return { ...result, headers: { link: '<https://api.github.com/repositories/1/actions/runs/300/attempts/1/jobs?page=2>; rel="next"' } };
+      }
+      return result;
+    }
+    return original(request, family);
+  };
+  const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  const definition = history.runs[0]?.definition;
+  assert.ok(definition);
+  const evidence = cd005Recommendations(history, definition.path, definition.sha256, "build");
+  t.diagnostic("accepted job rows: " + history.runs.reduce((n, run) => n + run.jobs.length, 0)
+    + "; qualifying timeout samples: " + (evidence[0]?.sampleCount ?? 0));
+  assert.deepEqual(evidence, [], "duplicate rows must not pass the 20-sample timeout gate");
+  assert.equal(history.runs[0]?.jobs.length, 1);
+  assert.equal(history.coverage.history.status, "partial");
+  assert.ok(history.coverage.history.reasons.includes("JOB_PAGINATION_CHANGED"));
+});
+
+for (const emptyNextPage of [false, true]) {
+  test("stops non-progressing job pages: empty=" + emptyNextPage, async (t) => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    let reads = 0;
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/attempts/1/jobs")) {
+        reads += 1;
+        const result = emptyNextPage && reads > 1 ? response({ total_count: 1, jobs: [] }) : jobResponse(100);
+        return { ...result, headers: { link: '<https://api.github.com/repositories/1/actions/runs/100/attempts/1/jobs?page=2>; rel="next"' } };
+      }
+      return original(request, family);
+    };
+    const progress: number[] = [];
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport,
+      onProgress: (snapshot) => progress.push(snapshot.jobsFetched) });
+    t.diagnostic("job page requests: " + reads + "; stored jobs: " + history.runs[0]?.jobs.length);
+    assert.equal(reads, 2);
+    assert.equal(history.runs[0]?.jobs.length, 1);
+    assert.deepEqual(progress, [1]);
+    assert.equal(history.coverage.history.status, "partial");
+    const scopes = history.missingScopes.filter((scope) => scope.reason === "JOB_PAGINATION_CHANGED");
+    assert.equal(scopes.length, 1);
+    assert.equal(scopes[0]?.runId, "100");
+    assert.equal(scopes[0]?.attempt, 1);
+    assert.equal(scopes[0]?.resumable, true);
+  });
+}
+
 for (const scenario of [
   { name: "overlapping pages", pages: [[0, 1], [1, 2]], maxRuns: 3, expected: [300, 301, 302], nextOnLast: false },
   { name: "duplicates inside a page", pages: [[0, 0, 1]], maxRuns: 4, expected: [300, 301], nextOnLast: false },
@@ -712,13 +796,13 @@ test("records a jobs page cap once while collecting runs concurrently", async ()
   const transport = fakeTransport();
   const original = transport.get.bind(transport);
   const runs = workflowRuns(2);
-  (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
+  transport.get = async (request, family) => {
     if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
     if (/\/attempts\/\d+\/jobs$/.test(request.path)) {
       const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
       return response(
         { total_count: 999, jobs: [{
-          id: runId * 10,
+          id: runId * 100 + Number(request.query?.page ?? "1"),
           name: "build",
           conclusion: "success",
           started_at: "2026-10-19T10:00:10Z",
