@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, renameSync, rmdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { clockOf, idsOf } from "../support/clock.ts";
 import type { Clock, RuntimeSeams } from "../support/clock.ts";
@@ -73,8 +73,7 @@ export function acquireLock(lockRoot: string, name: string, waitMs: number, mess
     if (observed === null) {
       const age = ageOf(path, clock);
       if (age === null) continue;
-      if (age > LEASE_CLAIM_STALE_MS) {
-        rmSync(path, { recursive: true, force: true });
+      if (age > LEASE_CLAIM_STALE_MS && removeEmptyLockDirectory(path)) {
         continue;
       }
     } else if (!leaseOwnerAlive(observed.owner)) {
@@ -149,7 +148,24 @@ function createClaim(path: string, token: string): void {
   try {
     writeFileSync(join(path, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
-    rmSync(path, { recursive: true, force: true });
+    try { removeEmptyLockDirectory(path); } catch { /* Preserve the owner write error. */ }
+    throw error;
+  }
+}
+
+/**
+ * An absent owner is only an observation: a creator may publish it before
+ * cleanup. Non-recursive rmdir checks emptiness atomically with removal, so
+ * neither stale recovery nor failed creation can erase a newly published token.
+ */
+export function removeEmptyLockDirectory(path: string): boolean {
+  try {
+    rmdirSync(path);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return true;
+    if (code === "ENOTEMPTY" || code === "EEXIST") return false;
     throw error;
   }
 }

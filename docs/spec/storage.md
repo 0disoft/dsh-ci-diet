@@ -40,6 +40,10 @@ serializes every mutation of that lease path. A second concurrent apply, or a
 foreign lock left by another process, fails with `WRITE_CONFLICT` before any byte
 is written. Plan and approval records use their own per-record claim instead of
 the writer lease.
+An ownerless stale lock is removed only by an atomic empty-directory removal.
+If a creator publishes its owner token after inspection, cleanup leaves it
+intact and the contender refuses or waits. Failed owner-file creation uses the
+same empty-only cleanup; it never recursively deletes an unverified lock.
 
 The store belongs to one user. On POSIX the store root and every managed
 directory are `0700`, and every file, including temp files and backups, is

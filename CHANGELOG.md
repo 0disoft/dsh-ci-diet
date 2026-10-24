@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Remove ownerless claim and writer-lease directories only while atomically
+  empty. A creator publishing its owner between inspection and cleanup is no
+  longer deleted by stale recovery or failed owner-file creation, preserving
+  exclusion for store writes and apply/revert transactions.
+
 - Reject unsupported shell control grammar during dependency collection. A
   conditional or loop such as `if true; then node build.js; fi` no longer hides
   the script behind a reserved word and produces a complete-looking empty hash.

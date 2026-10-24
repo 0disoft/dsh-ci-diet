@@ -24,6 +24,7 @@ import {
   createLockDirectory,
   leaseOwnerAlive,
   readLeaseObservation,
+  removeEmptyLockDirectory,
   releaseLock,
   restorePath,
   tightenLockPath,
@@ -158,8 +159,7 @@ function acquireWriterLease(lockRoot: string, lease: string, token: string, seam
       // claim nobody else can create a lease, but only an old leftover is safe
       // to remove: a very recent one may be mid-create by an older writer.
       const age = ageOf(lease, clock);
-      if (age !== null && age > WRITER_LEASE_STALE_MS) {
-        rmSync(lease, { recursive: true, force: true });
+      if (age !== null && age > WRITER_LEASE_STALE_MS && removeEmptyLockDirectory(lease)) {
         createWriterLease(lease, token);
         return;
       }
@@ -219,9 +219,9 @@ function createWriterLease(lease: string, token: string): void {
   try {
     writeFileSync(join(lease, LEASE_TOKEN_FILE), token, { encoding: "utf8", flag: "wx", mode: 0o600 });
   } catch (error) {
-    // A lease directory without its token would block every writer until it
-    // expires, so a failed create must remove what it just made.
-    rmSync(lease, { recursive: true, force: true });
+    // Clean up only while empty: a resumed creator may have published its token
+    // into this path, and failure must never erase that owner's exclusion.
+    try { removeEmptyLockDirectory(lease); } catch { /* Preserve the owner write error. */ }
     throw error;
   }
 }

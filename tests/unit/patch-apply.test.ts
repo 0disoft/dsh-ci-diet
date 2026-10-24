@@ -89,6 +89,54 @@ function setup(text = WORKFLOW, rule: "CD001" | "CD005" = "CD001") {
   return { ...space, binding, store, plan: built.plan, text, now };
 }
 
+for (const phase of ["age check", "owner write"]) {
+  test("apply preserves a writer owner published during " + phase, async (t) => {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const approved = approvePlan({ store: f.store, planId: f.plan.planId,
+      confirmation: approvalConfirmation(f.plan), subjectId: "tester", channel: "human-cli", now: f.now });
+    const lease = join(f.store.root, "locks", "writer");
+    const ownerPath = join(lease, "owner");
+    const owner = "lease_" + process.pid.toString(36) + "_live_other";
+    if (phase === "age check") {
+      mkdirSync(lease);
+      const old = new Date(Date.now() - 11 * 60_000);
+      fs.utimesSync(lease, old, old);
+    }
+    const stat = fs.statSync;
+    const write = fs.writeFileSync;
+    let published = false;
+    t.mock.method(fs, "statSync", (...args: Parameters<typeof fs.statSync>) => {
+      const result = stat(...args);
+      if (phase === "age check" && !published && String(args[0]) === lease) {
+        published = true;
+        write(ownerPath, owner);
+      }
+      return result;
+    });
+    t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+      if (phase === "owner write" && !published && String(args[0]) === ownerPath) {
+        published = true;
+        write(ownerPath, owner);
+      }
+      return write(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" }));
+    } finally {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+    assert.equal(published, true);
+    assert.equal(readFileSync(ownerPath, "utf8"), owner);
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+    assert.equal(f.store.readNonce(f.plan.planId)?.nonceId, approved.nonce.nonceId);
+    assert.deepEqual(f.store.listChanges(), []);
+    assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+  });
+}
+
 test("apply requires an approved plan", async () => {
   const fixture = setup();
   const result = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
