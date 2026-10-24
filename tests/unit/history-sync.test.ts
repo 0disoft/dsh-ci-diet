@@ -5,6 +5,7 @@ import { syncRepositoryHistory } from "../../src/core/history/sync.ts";
 import { GitHubError } from "../../src/adapters/github/errors.ts";
 import type { GhResponse, GhRunner, GhTransport } from "../../src/adapters/github/transport.ts";
 import { DeadlineExceededError } from "../../src/core/support/deadline.ts";
+import { composeCoverage, buildCoverage } from "../../src/core/analysis/coverage.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -92,6 +93,43 @@ function fakeTransport(overrides: { readonly files?: () => never } = {}): GhTran
 
 function config() {
   return { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: 7, maxRuns: 100 } };
+}
+
+for (const kind of ["not-found", "null", "object", "empty"] as const) {
+  test("preserves branch protection evidence for a branch-rules " + kind + " response", async () => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    let classicReads = 0;
+    transport.get = async (request, family) => {
+      if (request.path.includes("/rules/branches/")) {
+        if (kind === "not-found") throw new GitHubError("NOT_FOUND", "resource not found", 404);
+        return response(kind === "empty" ? [] : kind === "null" ? null : { message: "unexpected response" });
+      }
+      if (request.path.endsWith("/pulls/5/files")) return response([{ filename: "src/app.ts" }]);
+      if (request.path.endsWith("/protection")) {
+        classicReads += 1;
+        throw new GitHubError("NOT_FOUND", "branch is not protected", 404);
+      }
+      return original(request, family);
+    };
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+    const coverage = buildCoverage({ apiVersion: "test", ghVersion: "test",
+      requestedFrom: history.requestedFrom, requestedTo: history.requestedTo }, history.coverage);
+    assert.equal(history.coverage.changedFiles.status, "complete");
+    if (kind === "empty") {
+      assert.equal(history.protection?.ruleCount, 0);
+      assert.equal(history.protection?.classicProtection, false);
+      assert.equal(history.coverage.protectionRules.status, "complete");
+      assert.equal(classicReads, 1);
+      assert.equal(composeCoverage(coverage, "CD001").writeAllowed, true);
+      return;
+    }
+    assert.equal(history.protection, null);
+    assert.equal(history.coverage.protectionRules.status, "unavailable");
+    assert.match(history.coverage.protectionRules.reasons.join(" "), kind === "not-found" ? /NOT_FOUND/ : /NETWORK_ERROR/);
+    assert.equal(classicReads, 0, "a failed rules lookup cannot establish absence of protection");
+    assert.equal(composeCoverage(coverage, "CD001").writeAllowed, false);
+  });
 }
 
 test("stops a collection that outlives its deadline", async () => {

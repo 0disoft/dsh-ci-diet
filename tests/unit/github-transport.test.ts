@@ -58,6 +58,32 @@ describe("read-only endpoint allowlist", () => {
 
 
 describe("github client", () => {
+  it("preserves an unreadable branch-rules response instead of reporting zero rules", async () => {
+    const { runner, calls } = runnerFrom(httpResponse(404, { message: "Not Found" }));
+    const transport = new GhTransport({ budget: budget(), runner, retries: 0 });
+    const client = new GitHubClient(transport, "owner", "repo");
+    await assert.rejects(client.branchRules("main"),
+      (error: unknown) => error instanceof GitHubError && error.code === "NOT_FOUND");
+    assert.equal(calls.length, 1);
+  });
+
+  for (const body of [null, { message: "unexpected response" }]) {
+    it("rejects a non-array branch-rules response: " + JSON.stringify(body), async () => {
+      const { runner, calls } = runnerFrom(httpResponse(200, body));
+      const transport = new GhTransport({ budget: budget(), runner, retries: 0 });
+      const client = new GitHubClient(transport, "owner", "repo");
+      await assert.rejects(client.branchRules("main"),
+        (error: unknown) => error instanceof GitHubError && error.code === "NETWORK_ERROR");
+      assert.equal(calls.length, 1);
+    });
+  }
+
+  it("accepts a confirmed empty branch-rules array", async () => {
+    const { runner } = runnerFrom(httpResponse(200, []));
+    const client = new GitHubClient(new GhTransport({ budget: budget(), runner }), "owner", "repo");
+    assert.deepEqual(await client.branchRules("main"), []);
+  });
+
   it("fetches a nested workflow file as path segments", async () => {
     const text = "name: CI\non: push\n";
     const { runner, calls } = runnerFrom(

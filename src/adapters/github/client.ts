@@ -202,13 +202,13 @@ export class GitHubClient {
   }
 
   async branchRules(branch: string): Promise<unknown[]> {
-    try {
-      const response = await this.get({ path: this.base + "/rules/branches/" + branchSegment(branch) }, "policyAndFiles");
-      return Array.isArray(response.body) ? response.body : [];
-    } catch (error) {
-      if (error instanceof GitHubError && error.code === "NOT_FOUND") return [];
-      throw error;
+    const response = await this.get({ path: this.base + "/rules/branches/" + branchSegment(branch) }, "policyAndFiles");
+    // Only a successful array establishes the rule count. Unlike classic
+    // protection, a 404 here is not evidence that no branch rules apply.
+    if (!Array.isArray(response.body)) {
+      throw new GitHubError("NETWORK_ERROR", "GitHub returned a non-array branch-rules response", response.status);
     }
+    return response.body;
   }
 
   async branchProtection(branch: string): Promise<unknown | null> {
