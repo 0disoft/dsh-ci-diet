@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Apply no longer revives a missing Attestation from the plan's embedded copy.
+  Only current stored premises authorize writes; missing, revoked and expired
+  records refuse before backup or workflow mutation and keep approval retryable.
+
 - Local-action dependency collection bounds directory enumeration to its remaining
   500-entry budget plus one truncation probe, instead of allocating an entire
   directory listing first. Directory handles close on success and failure;

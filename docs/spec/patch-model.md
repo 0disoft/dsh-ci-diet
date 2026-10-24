@@ -169,6 +169,10 @@ An Attestation is a durable human claim such as "this workflow runs checks only"
 An `ApprovalChallenge` authorizes one specific byte change right now. They are
 separate records and are never merged. `planDigest` binds the full premise
 snapshot, revision, dependency fingerprint, policy snapshot, and edit content.
+Apply reads the referenced Attestations from the store. A missing record is
+not replaced by the embedded plan snapshot; without a valid live premise the
+write is refused with `ATTESTATION_MISSING`. Restoring a valid record permits
+retry while the plan and approval remain valid.
 
 The scope level matters: workflow, job, or step. A job is never automatically
 included because its workflow is attested, and a step is never carried over

@@ -327,7 +327,14 @@ function changeRecord(
 }
 
 function currentAttestations(store: PatchStore, plan: PatchPlan): Attestation[] {
-  return plan.payload.attestations.map((attestation) => store.readAttestation(attestation.attestationId) ?? attestation);
+  // Embedded premises bind the reviewed plan; only live records can authorize
+  // a new write. Absence must not revive a deleted or withdrawn premise.
+  const current: Attestation[] = [];
+  for (const attestation of plan.payload.attestations) {
+    const stored = store.readAttestation(attestation.attestationId);
+    if (stored !== null) current.push(stored);
+  }
+  return current;
 }
 
 function currentPolicies(store: PatchStore, binding: RepositoryBinding, now: Date): PolicySnapshot[] | undefined {

@@ -167,6 +167,42 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(approved.plan.status.state, "approved");
 });
 
+test("apply refuses a missing live attestation instead of reviving the plan snapshot", async (t) => {
+  const fixture = setup(WORKFLOW, "CD005");
+  t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+  const approved = approvePlan({ store: fixture.store, planId: fixture.plan.planId,
+    confirmation: approvalConfirmation(fixture.plan), subjectId: "tester", channel: "human-cli", now: fixture.now });
+  const attestation = fixture.plan.payload.attestations[0]!;
+  const record = join(fixture.store.root, "attestations", attestation.attestationId + ".json");
+  const original = readFileSync(record);
+  unlinkSync(record);
+
+  const result = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(result.state, "not_applied");
+  assert.ok(result.reasons.includes("ATTESTATION_MISSING"));
+  assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  assert.deepEqual(fixture.store.listChanges(), []);
+  assert.deepEqual(readdirSync(join(fixture.store.root, "backups")), []);
+  assert.equal(fixture.store.readNonce(fixture.plan.planId)?.nonceId, approved.nonce.nonceId);
+
+  for (const reason of ["ATTESTATION_REVOKED", "ATTESTATION_EXPIRED"] as const) {
+    fixture.store.saveAttestation({ ...attestation,
+      ...(reason === "ATTESTATION_REVOKED" ? { revokedAt: fixture.now.toISOString() } : { expiresAt: fixture.now.toISOString() }),
+    });
+    const refused = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+    assert.equal(refused.state, "not_applied");
+    assert.ok(refused.reasons.includes(reason), "live state overrides the unrevoked, unexpired snapshot");
+    assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+    assert.deepEqual(fixture.store.listChanges(), []);
+    assert.deepEqual(readdirSync(join(fixture.store.root, "backups")), []);
+    assert.equal(fixture.store.readNonce(fixture.plan.planId)?.nonceId, approved.nonce.nonceId);
+  }
+
+  writeFileSync(record, original);
+  const retry = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+  assert.equal(retry.state, "applied", "restoring the live record allows the still-valid approval to be retried");
+});
+
 for (const corruptedFile of ["before.yml", "after.yml"]) {
   test("apply refuses a corrupted " + corruptedFile + " before replacing the workflow", async (t) => {
     const fixture = setup();
