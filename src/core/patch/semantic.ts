@@ -149,13 +149,19 @@ export interface SemanticInput {
   readonly edits: readonly ByteEdit[];
 }
 
-/** Return every structural difference outside the exact leaves the plan claims. */
+/** Reject unsupported targets and structural differences outside the claimed leaves. */
 export function semanticProblems(input: SemanticInput): string[] {
   const reparsed = parseWorkflow(input.original.path, input.resultText);
   if (reparsed.parseError !== null)
     return ["edited workflow does not parse: " + reparsed.parseError.message];
   if (reparsed.unsupported.length > 0)
     return reparsed.unsupported.map((feature) => "edited workflow is unsupported: " + feature.code);
+
+  // Old plans can bypass today's editor, so recheck caller targets at apply.
+  const timeoutJobs = new Set(input.edits.filter((edit) => edit.ruleId === "CD005").map(jobKeyOf));
+  const invalidTimeouts = input.original.jobs.filter((job) => job.reusableWorkflow !== null && timeoutJobs.has(job.key));
+  if (invalidTimeouts.length > 0)
+    return invalidTimeouts.map((job) => "timeout-minutes is not supported on a reusable workflow caller: jobs." + job.key);
 
   let before: unknown;
   let after: unknown;

@@ -118,6 +118,9 @@ export function planConcurrencyEdit(
 }
 
 export function planTimeoutEdit(text: string, workflow: WorkflowDefinition, job: WorkflowJob, minutes: number): EditResult {
+  if (job.reusableWorkflow !== null) {
+    return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "timeout-minutes is not supported on a reusable workflow caller" } };
+  }
   if (!Number.isSafeInteger(minutes) || minutes < TIMEOUT_MINUTES_MIN || minutes > TIMEOUT_MINUTES_MAX) {
     return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "timeout minutes must be an integer between " + TIMEOUT_MINUTES_MIN + " and " + TIMEOUT_MINUTES_MAX } };
   }

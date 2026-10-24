@@ -87,7 +87,9 @@ function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
       const match = recoverJobKey(job.name, definition.jobs);
       if (match === null) continue;
       const declaredJob = jobsByKey.get(match.key);
-      if (declaredJob === undefined) continue;
+      // Caller jobs do not support timeout-minutes; child runtimes cannot
+      // justify a timeout on the call itself.
+      if (declaredJob === undefined || declaredJob.reusableWorkflow !== null) continue;
       // Knowing the job key is insufficient when its matrix leg is unknown.
       if (declaredJob.matrix !== null && match.matrix === null) continue;
       const runnerKey = [...job.labels].map((label) => label.toLowerCase()).sort().join(",");

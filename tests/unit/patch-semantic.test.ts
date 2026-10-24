@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import { applyEdits, planConcurrencyEdit, planTimeoutEdit } from "../../src/core/patch/edits.ts";
 import { semanticProblems } from "../../src/core/patch/semantic.ts";
+import type { ByteEdit } from "../../src/core/contracts/schema.ts";
 
 const PATH = ".github/workflows/ci.yml";
 const WORKFLOW = [
@@ -15,6 +16,21 @@ const WORKFLOW = [
   "        env:",
   "          MODE: fast",
 ].join("\n");
+
+test("rejects a legacy CD005 edit on a reusable-workflow caller even inside its allowed path", () => {
+  const text = "on: pull_request\njobs:\n  build:\n    uses: ./.github/workflows/build.yml\n";
+  const original = parseWorkflow(PATH, text);
+  const length = Buffer.byteLength(text);
+  const legacy: ByteEdit = {
+    kind: "insertScalar", startByte: length, endByte: length,
+    replacementUtf8: "    timeout-minutes: 6\n",
+    semanticPath: "jobs.build.timeout-minutes", ruleId: "CD005",
+  };
+  const applied = applyEdits(text, [legacy]);
+  const problems = semanticProblems({ original, originalText: text, resultText: applied.text, edits: [legacy] });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0]!, /reusable workflow/);
+});
 
 function editWithPermissionTamper(): { problems: string[] } {
   const definition = parseWorkflow(PATH, WORKFLOW);

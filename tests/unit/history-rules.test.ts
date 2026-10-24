@@ -379,6 +379,28 @@ test("CD005 computes a p95 timeout cohort from 20 successful samples", () => {
   assert.match(finding.renderedText, /timeout of 6 minutes/);
 });
 
+test("CD005 excludes reusable-workflow callers from findings and stored-finding evidence", () => {
+  const regular = bundle([run("regular", { jobs: twentyJobs("regular") })]);
+  const previousFinding = rule(evaluateRules(context(regular), ["CD005"]), "CD005").findings[0];
+  assert.ok(previousFinding);
+  for (const uses of ["./.github/workflows/tests.yml", "owner/shared/.github/workflows/tests.yml@v1"]) {
+    const text = "on: pull_request\njobs:\n  test:\n    uses: " + uses + "\n";
+    const parsed = definition(text);
+    assert.equal(parsed.parseError, null);
+    assert.equal(parsed.jobs[0]?.reusableWorkflow, uses);
+    const history = bundle(Array.from({ length: 20 }, (_, index) => {
+      const id = String(700 + index);
+      return run(id, { definition: parsed, jobs: [job("j" + id, id, NOW, 30_000)] });
+    }));
+    const staleFinding = { ...previousFinding, workflowHash: parsed.sha256 };
+    const reasons = targetReasons({ finding: staleFinding, history, workflowText: text, workflow: parsed,
+      request: { rule: "CD005", jobKey: "test", stepIndex: null, minutes: 6, retentionDays: 7 } });
+    assert.ok(reasons.includes("EVIDENCE_NOT_FOUND"), "old findings must not authorize caller timeouts");
+    assert.deepEqual(cd005Recommendations(history, parsed.path, parsed.sha256, "test"), []);
+    assert.equal(rule(evaluateRules(context(history), ["CD005"]), "CD005").findings.length, 0);
+  }
+});
+
 test("CD005 keeps a small cohort review-only", () => {
   const jobs: HistoryJob[] = [];
   for (let index = 0; index < 6; index += 1) {

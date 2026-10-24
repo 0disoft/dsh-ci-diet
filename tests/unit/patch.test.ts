@@ -46,6 +46,21 @@ function workflow(path = ".github/workflows/ci.yml") {
 }
 
 describe("patch edits", () => {
+  it("refuses inserting or replacing timeouts on reusable-workflow callers", () => {
+    for (const uses of ["./.github/workflows/tests.yml", "owner/shared/.github/workflows/tests.yml@v1"]) {
+      for (const timeout of ["", "    timeout-minutes: 30\n"]) {
+        const text = "on: pull_request\njobs:\n  test:\n    uses: " + uses + "\n" + timeout;
+        const definition = parseWorkflow(".github/workflows/ci.yml", text);
+        const job = definition.jobs[0];
+        assert.ok(job);
+        const result = planTimeoutEdit(text, definition, job, 6);
+        assert.equal(result.edit, null);
+        assert.equal(result.error?.code, "EDIT_NOT_APPLICABLE");
+        assert.match(result.error.detail, /reusable workflow/);
+      }
+    }
+  });
+
   it("appends a concurrency block that reparses with the expected group", () => {
     const definition = workflow();
     const result = planConcurrencyEdit(workflowText, definition, "git:abc");

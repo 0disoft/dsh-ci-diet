@@ -197,6 +197,12 @@ identity, matrix, and event. Samples whose local scripts or actions changed are
 not the same cohort. If core behaviour identity cannot be established, do not
 emit a p95 recommendation.
 
+Reusable-workflow caller jobs (`jobs.<job_id>.uses`) never seed timeout
+cohorts or recommendations: GitHub does not support `timeout-minutes` on those
+jobs. A timeout must be configured on an execution job inside the called
+workflow. The editor refuses caller targets, and semantic validation rejects
+caller timeout edits from previously saved plans before apply writes any files.
+
 The jobs endpoint reports a display name, not the workflow job key. Within one
 job, a display name equal to the key, a literal job `name:` value, or a matrix
 expansion can explain the observed name. Treat those renderings as candidates

@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- CD005 excludes reusable-workflow caller jobs from timeout cohorts and
+  recommendations, including evidence checks for saved findings. The editor and
+  apply's semantic validation also reject caller timeouts from older plans,
+  preventing unsupported `timeout-minutes` keys beside job-level `uses`.
+
 - History sync deduplicates job IDs within each run attempt and marks overlapping
   or non-progressing pages partial with `JOB_PAGINATION_CHANGED`. Unique jobs
   alone count toward progress and timeout cohorts, and a page with no new jobs
