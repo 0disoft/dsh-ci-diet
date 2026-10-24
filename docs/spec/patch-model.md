@@ -264,6 +264,11 @@ forbidden. Platform replacement, ACL, and flush behaviour must pass the Windows
 A1 spike before writes are enabled. Where directory fsync is unavailable, no
 equivalent power-loss durability is claimed.
 
+Apply and revert create replacement sidecars with exclusive `wx` creation. An
+existing file or link at the temporary path produces `WRITE_CONFLICT` without
+overwriting or removing it. Writing and fsync use the same descriptor; cleanup
+removes only a sidecar this operation created, including after a partial write.
+
 ## Recovery
 
 | Journal and target | Next action |

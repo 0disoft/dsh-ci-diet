@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Apply and revert exclusively create replacement sidecars, refusing existing
+  files and links instead of overwriting them. The same descriptor is used for
+  writing and fsync, and failure cleanup removes only the operation's own file.
+
 - Validate GitHub list response containers for workflows, runs, jobs, artifacts,
   and pull-request files through one page decoder. Missing or non-array lists
   now raise a collection error instead of becoming confirmed empty evidence;

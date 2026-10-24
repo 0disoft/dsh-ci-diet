@@ -663,6 +663,68 @@ test("revert refuses when the working tree changed after apply", async () => {
   assert.equal(reverted.state, "CONFLICT");
 });
 
+for (const operation of ["apply", "revert"] as const) {
+  test(operation + " closes and removes its replacement after a partial write", async (t) => {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    const before = readFileSync(f.file, "utf8");
+    const write = fs.writeFileSync;
+    let handle: number | null = null;
+    t.mock.method(fs, "writeFileSync", (...args: Parameters<typeof fs.writeFileSync>) => {
+      if (typeof args[0] === "number" && handle === null) {
+        handle = args[0];
+        write(handle, "partial bytes");
+        throw Object.assign(new Error("injected partial write"), { code: "ENOSPC" });
+      }
+      return write(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(operation === "apply"
+        ? applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+        : revertChange({ store: f.store, changeId: applied!.change!.changeId, now: f.now }), /WRITE_CONFLICT/);
+    } finally {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+    assert.notEqual(handle, null);
+    assert.throws(() => fs.fstatSync(handle!), { code: "EBADF" });
+    assert.equal(readFileSync(f.file, "utf8"), before);
+    assert.deepEqual(readdirSync(join(f.root, ".github", "workflows")), ["ci.yml"]);
+  });
+
+  for (const collision of ["file", "hard link"] as const) {
+    test(operation + " preserves a pre-existing replacement " + collision, async (t) => {
+      const f = setup();
+      t.after(() => rmSync(f.root, { recursive: true, force: true }));
+      approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+        subjectId: "tester", channel: "human-cli", now: f.now });
+      const applied = operation === "revert"
+        ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+        : null;
+      const before = readFileSync(f.file, "utf8");
+      const stamp = Date.now();
+      t.mock.method(Date, "now", () => stamp);
+      const temporary = f.file + ".ci-diet-" + process.pid + "-" + stamp.toString(36) + ".tmp";
+      const unrelated = join(f.root, "unrelated.txt");
+      writeFileSync(unrelated, "unrelated bytes");
+      if (collision === "hard link") fs.linkSync(unrelated, temporary);
+      else writeFileSync(temporary, "unrelated bytes");
+      await assert.rejects(operation === "apply"
+        ? applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+        : revertChange({ store: f.store, changeId: applied!.change!.changeId, now: f.now }), /WRITE_CONFLICT/);
+      assert.equal(readFileSync(f.file, "utf8"), before);
+      assert.equal(readFileSync(temporary, "utf8"), "unrelated bytes");
+      assert.equal(readFileSync(unrelated, "utf8"), "unrelated bytes");
+    });
+  }
+}
+
 function blockReplacement(root: string, file: string): () => void {
   if (process.platform === "win32") {
     // A read-only target makes the rename fail with EPERM after the retries.

@@ -235,24 +235,28 @@ function releaseWriterLease(lease: string, token: string): void {
 async function replaceAtomically(path: string, text: string, mode: number, expectedHash: string, signal?: AbortSignal): Promise<string> {
   throwIfAborted(signal);
   const temporary = path + ".ci-diet-" + process.pid + "-" + Date.now().toString(36) + ".tmp";
+  let created = false;
   let renamed = false;
   try {
     try {
-      writeFileSync(temporary, text, { encoding: "utf8", mode });
+      // Exclusive creation refuses existing files and links. Keep the descriptor
+      // through writing and fsync rather than reopening a pathname we may not own.
+      const handle = openSync(temporary, "wx", mode);
+      created = true;
+      try {
+        writeFileSync(handle, text, { encoding: "utf8" });
+        try {
+          fsyncSync(handle);
+        } catch (syncError) {
+          const code = (syncError as { code?: string }).code;
+          if (code !== "EPERM" && code !== "EINVAL" && code !== "EBADF") throw syncError;
+        }
+      } finally {
+        closeSync(handle);
+      }
     } catch (error) {
       // Keep one error contract for every failed replacement attempt.
       throw new Error("WRITE_CONFLICT: replacement failed: " + String(error));
-    }
-    const handle = openSync(temporary, "r");
-    try {
-      try {
-        fsyncSync(handle);
-      } catch (syncError) {
-        const code = (syncError as { code?: string }).code;
-        if (code !== "EPERM" && code !== "EINVAL" && code !== "EBADF") throw syncError;
-      }
-    } finally {
-      closeSync(handle);
     }
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -276,8 +280,8 @@ async function replaceAtomically(path: string, text: string, mode: number, expec
     }
     throw new Error("WRITE_CONFLICT: replacement failed: " + String(lastError));
   } finally {
-    // Never leave a sidecar behind, whether the write, fsync, sleep, or rename failed.
-    if (!renamed) {
+    // Remove only the sidecar we created, including after a partial write failure.
+    if (created && !renamed) {
       try {
         rmSync(temporary, { force: true });
       } catch {
