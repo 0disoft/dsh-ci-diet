@@ -80,6 +80,77 @@ test("a file that exceeds the dependency cap inside a local action is unresolved
   assert.ok(collection.dependencies.some((entry) => entry.ref.endsWith("action.yml")));
 });
 
+test("a wide local action bounds directory enumeration before allocating the whole listing", (t) => {
+  const space = workspace(BINARY_WORKFLOW);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  const action = join(space.root, ".github", "actions", "binary");
+  mkdirSync(action, { recursive: true });
+  for (let index = 0; index < 2048; index += 1) writeFileSync(join(action, "file-" + index), "");
+  const canonical = realpathSync(action);
+  const read = fs.readdirSync;
+  const open = fs.opendirSync;
+  let entriesRead = 0, opened = 0, closed = 0;
+  const listing = t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
+    const entries = read(...args);
+    if (args[0] === canonical) entriesRead += entries.length;
+    return entries;
+  });
+  const streaming = t.mock.method(fs, "opendirSync", (...args: Parameters<typeof fs.opendirSync>) => {
+    const directory = open(...args);
+    if (args[0] === canonical) {
+      opened += 1;
+      const next = directory.readSync.bind(directory);
+      const close = directory.closeSync.bind(directory);
+      t.mock.method(directory, "readSync", () => {
+        const entry = next();
+        if (entry !== null) entriesRead += 1;
+        return entry;
+      });
+      t.mock.method(directory, "closeSync", () => { closed += 1; close(); });
+    }
+    return directory;
+  });
+  syncBuiltinESMExports();
+  try {
+    const collection = collectDependencies(space.root, parseWorkflow(space.path, space.text));
+    t.diagnostic("directory entries materialized: " + entriesRead + " of 2048");
+    assert.ok(entriesRead <= 501, "enumeration must stop at the 500-entry budget plus one truncation probe");
+    assert.equal(collection.dependencies.length, 500);
+    assert.ok(collection.unresolved.some((entry) => entry.includes("(file limit reached)")));
+    assert.equal(closed, opened, "early truncation must release directory handles");
+  } finally {
+    listing.mock.restore();
+    streaming.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
+test("a failed local-action directory read releases its handle and stays unresolved", (t) => {
+  const space = workspace(BINARY_WORKFLOW);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  const action = join(space.root, ".github", "actions", "binary");
+  mkdirSync(action, { recursive: true });
+  const open = fs.opendirSync;
+  let closed = 0;
+  const mocked = t.mock.method(fs, "opendirSync", (...args: Parameters<typeof fs.opendirSync>) => {
+    const directory = open(...args);
+    const close = directory.closeSync.bind(directory);
+    t.mock.method(directory, "readSync", () => { throw new Error("simulated directory read failure"); });
+    t.mock.method(directory, "closeSync", () => { closed += 1; close(); });
+    return directory;
+  });
+  syncBuiltinESMExports();
+  try {
+    const collection = collectDependencies(space.root, parseWorkflow(space.path, space.text));
+    assert.equal(closed, 1);
+    assert.deepEqual(collection.dependencies, []);
+    assert.ok(collection.unresolved.includes(".github/actions/binary (unreadable directory)"));
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
+});
+
 test("reused local actions are scanned once and remain fully resolved", (t) => {
   const text = BINARY_WORKFLOW + "\n" + "      - uses: ./.github/actions/binary/.\n".repeat(19);
   const space = workspace(text);
@@ -89,9 +160,9 @@ test("reused local actions are scanned once and remain fully resolved", (t) => {
   writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: run.js\n");
   writeFileSync(join(action, "run.js"), "console.log('run')\n");
   const canonical = realpathSync(action);
-  const read = fs.readdirSync;
+  const read = fs.opendirSync;
   let scans = 0;
-  const mocked = t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
+  const mocked = t.mock.method(fs, "opendirSync", (...args: Parameters<typeof fs.opendirSync>) => {
     if (args[0] === canonical) scans += 1;
     return read(...args);
   });

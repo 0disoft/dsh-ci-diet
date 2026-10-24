@@ -151,7 +151,10 @@ not consume the script path, while `--require`, `--loader`, `--import`, and
 `--env-file` do and their values are hashed when they name a repository file.
 A reference that names a file but cannot be hashed inside the repository
 becomes an `UNRESOLVED_DEPENDENCY:<path>` blocker instead of being dropped
-silently. Collection that hits the 500-file local-action limit, or cannot read
+silently. Local-action directory enumeration uses a bounded stream: it reads at
+most the remaining 500-entry budget plus one probe for truncation, rather than
+allocating the whole directory listing. Handles close even when a read fails.
+Collection that hits this entry limit (including directories), or cannot read
 a file or directory, is recorded the same way with `(file limit reached)`,
 `(unreadable file)`, or `(unreadable directory)`, so a partial fingerprint
 never looks complete.

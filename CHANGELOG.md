@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Local-action dependency collection bounds directory enumeration to its remaining
+  500-entry budget plus one truncation probe, instead of allocating an entire
+  directory listing first. Directory handles close on success and failure;
+  truncated collections still block apply.
+
 - Generation pruning validates the surviving binding and its repository/workspace
   identity before deleting recovery metadata. Corrupt, unreadable or conflicting
   bindings keep the generation and current pointer for operator review instead

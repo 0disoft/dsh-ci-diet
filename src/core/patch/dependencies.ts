@@ -1,6 +1,7 @@
 import { npmCacheDependencies, npmCacheTargets } from "../rules/npm-cache.ts";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { existsSync, opendirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import type { Dirent } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 import type { WorkflowDefinition, WorkflowJob, WorkflowStep } from "../workflow/model.ts";
 
@@ -249,6 +250,22 @@ interface DependencySink {
   result(): DependencyCollection;
 }
 
+/** One extra entry distinguishes a full budget from a truncated listing. */
+function actionEntries(directory: string, remaining: number): Dirent[] {
+  const handle = opendirSync(directory, { bufferSize: Math.min(32, remaining + 1) });
+  try {
+    const entries: Dirent[] = [];
+    while (entries.length <= remaining) {
+      const entry = handle.readSync();
+      if (entry === null) break;
+      entries.push(entry);
+    }
+    return entries;
+  } finally {
+    handle.closeSync();
+  }
+}
+
 function createDependencySink(realRoot: string): DependencySink {
   const found = new Map<string, string>();
   const unresolved = new Set<string>();
@@ -293,7 +310,8 @@ function createDependencySink(realRoot: string): DependencySink {
       const current = stack.pop() as string;
       let entries;
       try {
-        entries = readdirSync(current, { withFileTypes: true });
+        // Bound enumeration itself, not only hashing after a full allocation.
+        entries = actionEntries(current, MAX_ACTION_FILES - visited);
       } catch {
         unresolved.add(toPosix(relative(realRoot, current)) + " (unreadable directory)");
         continue;
