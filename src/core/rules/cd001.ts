@@ -75,8 +75,18 @@ function collectRemovals(run: HistoryRun, replacement: HistoryRun, lagSeconds: n
   const replacementAt = millis(replacement.createdAt);
   if (replacementAt === null) return [];
   const cutoff = replacementAt + lagSeconds * 1000;
+  // createdAt dates only the first attempt. A later rerun cannot have been
+  // cancelled by an earlier replacement event. Keep it only when an observed
+  // job proves that attempt had already started before the replacement.
+  const startedAttempts = new Set([1]);
+  for (const job of run.jobs) {
+    if (job.attempt <= 1) continue;
+    const start = millis(job.startedAt);
+    if (start !== null && start < replacementAt) startedAttempts.add(job.attempt);
+  }
   const rows: RemovalAt[] = [];
   for (const job of run.jobs) {
+    if (!startedAttempts.has(job.attempt)) continue;
     const start = millis(job.startedAt);
     const end = job.completedAt === null ? null : millis(job.completedAt);
     const duration = job.durationMillis;

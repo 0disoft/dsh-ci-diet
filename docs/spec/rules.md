@@ -94,6 +94,13 @@ runner time that a newer run makes obsolete. Re-runs and same-SHA reruns are not
 replacement events. If a run started before the lookback window, mark the left
 edge as truncated instead of pretending the interval started at zero.
 
+Each job belongs to a run attempt. The run's `createdAt` dates its first
+attempt, so later reruns contribute cancellation savings only when an observed
+job in that attempt started strictly before the replacement event. Once that
+condition holds, later queued jobs in the same attempt can contribute too.
+Cancellation lag does not make a later-starting rerun eligible. Excluded reruns
+remain in observed runner time; they are excluded only from removal scenarios.
+
 The moment a replacement run is created is only an approximation of when the old
 run could have been cancelled. Compute the scenario with
 `cancellationLagSeconds = 0` and `30` and present it as a range; never call it a

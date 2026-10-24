@@ -7,6 +7,8 @@ import { targetReasons } from "../../src/core/patch/target.ts";
 import { cd005Recommendations } from "../../src/core/rules/cd005.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { evaluateRules } from "../../src/core/rules/index.ts";
+import { computeReportMetrics } from "../../src/core/savings/report-metrics.ts";
+import { knownString } from "../../src/core/savings/metrics.ts";
 import { parseWorkflow } from "../../src/core/workflow/index.ts";
 import type { HistoryBundle, HistoryJob, HistoryPull, HistoryRun, ProtectionSnapshot } from "../../src/core/history/model.ts";
 import type { WorkflowDefinition } from "../../src/core/workflow/model.ts";
@@ -181,6 +183,50 @@ test("CD001 finds a superseded pull request run and records a removal", () => {
   assert.equal(evaluation.removals[0]?.jobId, "j1");
   assert.ok((evaluation.removals[0]?.endMillis ?? 0) > 0);
 });
+
+for (const firstDuration of [60_000, 600_000]) {
+  test("CD001 excludes later rerun attempts from cancellation savings: first duration " + firstDuration, (t) => {
+    const first = { ...run("400", {
+      createdAt: "2026-10-19T00:00:00.000Z",
+      jobs: [job("original", "400", "2026-10-19T00:00:00.000Z", firstDuration),
+        { ...job("rerun", "400", "2026-10-19T12:00:00.000Z", 300_000), attempt: 2 }],
+    }), attempt: 2 };
+    const second = run("401", { sha: "b".repeat(40), createdAt: "2026-10-19T00:02:00.000Z" });
+    const evaluation = rule(evaluateRules(context(bundle([first, second], pull("main"), { classicProtection: false }))), "CD001");
+    const expectedRemoval = Math.max(0, firstDuration / 1000 - 120);
+    const metrics = computeReportMetrics(first.jobs.map((j) => ({ jobId: j.jobId, durationMillis: j.durationMillis!,
+      sku: knownString("actions_linux", "fixture"), removals: evaluation.removals.filter(r => r.jobId === j.jobId),
+    })), { unavailableReason: "fixture" }).metrics;
+    t.diagnostic("observed seconds: " + metrics.observedRunnerSeconds.value + "; candidate removable: " + metrics.candidateRemovableSeconds.value);
+    assert.equal(metrics.candidateRemovableSeconds.value, expectedRemoval);
+    assert.equal(metrics.observedRunnerSeconds.value, firstDuration / 1000 + 300, "reruns still count as observed work");
+    assert.equal(evaluation.findings.length, expectedRemoval === 0 ? 0 : 1);
+    assert.ok(evaluation.removals.every(r => r.jobId === "original"));
+  });
+}
+
+for (const rerunStart of ["00:01:00", "00:02:00", "00:02:10"]) {
+  test("CD001 counts a rerun only when it predates the replacement event: " + rerunStart, () => {
+    const first = { ...run("410", {
+      createdAt: "2026-10-19T00:00:00.000Z",
+      jobs: [job("original", "410", "2026-10-19T00:00:00.000Z", 60_000),
+        { ...job("rerun-active", "410", "2026-10-19T" + rerunStart + ".000Z", 300_000), attempt: 2 },
+        { ...job("rerun-queued", "410", "2026-10-19T00:03:00.000Z", 120_000), attempt: 2 }],
+    }), attempt: 2 };
+    const second = run("411", { sha: "b".repeat(40), createdAt: "2026-10-19T00:02:00.000Z" });
+    const evaluation = rule(evaluateRules(context(bundle([first, second], pull("main"), { classicProtection: false }))), "CD001");
+    if (rerunStart === "00:01:00") {
+      assert.deepEqual(evaluation.removals.map(r => r.jobId), ["rerun-active", "rerun-queued"]);
+      assert.equal(evaluation.findings[0]?.standaloneRunnerSeconds.value, 360);
+      assert.match(evaluation.findings[0]!.renderedText, /330\.0 runner seconds at a 30 s lag/);
+    } else {
+      // A 30-second lag is not permission to include a new attempt that only
+      // started after the event, even if it started before that lag elapsed.
+      assert.deepEqual(evaluation.removals, []);
+      assert.deepEqual(evaluation.findings, []);
+    }
+  });
+}
 
 test("CD001 keeps the candidate but drops savings when coverage degrades", () => {
   const first = run("300", {

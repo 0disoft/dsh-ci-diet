@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- CD001 excludes rerun attempts that have no job observed before a replacement
+  event from cancellation savings. Already-started attempts still include their
+  queued jobs, and excluded reruns remain in observed runner time.
+
 - Patch dependency fingerprints include existing ancestor `package.json` files
   for literal npm script commands. Changing a script after approval now refuses
   apply, including legacy plans that omitted the manifest. Ambiguous npm
