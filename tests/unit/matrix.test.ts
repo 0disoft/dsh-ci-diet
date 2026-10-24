@@ -184,3 +184,30 @@ test("a dynamic include-only matrix resolves to null", () => {
     null,
   );
 });
+
+test("exclude comparisons have a work cap even when the result fits 256 rows", () => {
+  let comparisons = 0;
+  const values = Array.from({ length: 256 }, (_, key) => ({ key }));
+  const exclude = Array.from({ length: 512 }, () => ({
+    shard: { get key() { comparisons += 1; return -1; } },
+  }));
+  const expanded = expandMatrix(plan({ axes: [{ name: "shard", values }], exclude }));
+  assert.ok(comparisons <= 65_536, "exclude work must stop before all 131,072 comparisons");
+  assert.equal(expanded, null, "an exhausted work budget must never return partial rows");
+});
+
+test("exclude entries are prepared once instead of once per candidate", () => {
+  let entryReads = 0;
+  const exclude = Array.from({ length: 256 }, () => ({
+    get later() { entryReads += 1; return "never"; },
+  }));
+  const expanded = expandMatrix(plan({
+    axes: [
+      { name: "shard", values: Array.from({ length: 4096 }, (_, index) => index) },
+      { name: "later", values: ["keep"] },
+    ],
+    exclude,
+  }));
+  assert.equal(expanded, null);
+  assert.equal(entryReads, exclude.length);
+});

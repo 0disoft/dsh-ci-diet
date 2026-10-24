@@ -49,11 +49,13 @@ export function lookupMatrixValue(
 
 /** Hard stop on candidates examined while excluding rows from the axis product. */
 const MAX_MATRIX_CANDIDATES = MAX_MATRIX_COMBINATIONS * 256;
+/** Candidate count alone does not bound the candidates x excludes matching work. */
+const MAX_MATRIX_EXCLUDE_CHECKS = MAX_MATRIX_CANDIDATES;
 
 /**
  * Expand a statically resolved matrix into rows.
  *
- * Returns null when the final row count would exceed the cap; callers must then
+ * Returns null when the row count or matching work exceeds its cap; callers must
  * treat the matrix as unresolved rather than truncating it. Exclude entries are
  * applied to the axis product before the cap is enforced, because an exclude can
  * shrink a product that is otherwise too large to materialize.
@@ -65,20 +67,27 @@ export function expandMatrix(
   const axisNames = new Set(matrix.axes.map((axis) => axis.name));
   // Base rows carry axis keys only, so an exclude that names any other key can
   // never match; dropping it here is the same as letting it match nothing.
-  const excludes = matrix.exclude.filter((exclude) =>
-    Object.keys(exclude).every((key) => axisNames.has(key)),
-  );
-  const isExcluded = (values: Readonly<Record<string, CanonicalJsonValue>>): boolean =>
-    excludes.some((exclude) =>
-      Object.entries(exclude).every(([key, value]) => {
+  const excludes = matrix.exclude
+    .filter((exclude) => Object.keys(exclude).every((key) => axisNames.has(key)))
+    .map((exclude) => Object.entries(exclude));
+  let excludeChecks = 0;
+  const isExcluded = (values: Readonly<Record<string, CanonicalJsonValue>>): boolean | null => {
+    for (const entries of excludes) {
+      if (excludeChecks >= MAX_MATRIX_EXCLUDE_CHECKS) return null;
+      excludeChecks += 1;
+      if (entries.every(([key, value]) => {
         const current = values[key];
         return current !== undefined && canonicalEqual(current, value);
-      }),
-    );
+      })) return true;
+    }
+    return false;
+  };
   const includeOnly = matrix.axes.length === 0 && matrix.include.length > 0;
   let combinations: Record<string, CanonicalJsonValue>[] = includeOnly ? [] : [{}];
-  if (!includeOnly && isExcluded(combinations[0] as Record<string, CanonicalJsonValue>)) {
-    combinations = [];
+  if (!includeOnly) {
+    const excluded = isExcluded(combinations[0] as Record<string, CanonicalJsonValue>);
+    if (excluded === null) return null;
+    if (excluded) combinations = [];
   }
 
   // Suffix products let a level that is already too large fail without
@@ -95,7 +104,7 @@ export function expandMatrix(
     const axis = matrix.axes[axisIndex];
     if (axis === undefined) continue;
     const pending = excludes.filter(
-      (exclude) => !Object.keys(exclude).every((key) => processed.has(key)),
+      (exclude) => !exclude.every(([key]) => processed.has(key)),
     );
     if (
       pending.length === 0 &&
@@ -111,14 +120,16 @@ export function expandMatrix(
         // small; stop well before that becomes a denial of service.
         if (candidates > MAX_MATRIX_CANDIDATES) return null;
         const candidate = { ...prefix, [axis.name]: value };
-        if (!isExcluded(candidate)) next.push(candidate);
+        const excluded = isExcluded(candidate);
+        if (excluded === null) return null;
+        if (!excluded) next.push(candidate);
       }
     }
     combinations = next;
     processed.add(axis.name);
     if (combinations.length > MAX_MATRIX_COMBINATIONS) {
       const stillPending = excludes.filter(
-        (exclude) => !Object.keys(exclude).every((key) => processed.has(key)),
+        (exclude) => !exclude.every(([key]) => processed.has(key)),
       );
       if (stillPending.length === 0) return null;
     }
