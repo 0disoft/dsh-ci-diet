@@ -456,12 +456,12 @@ test("cache pruning counts nested bytes and reads cache metadata once", (t) => {
     setAge(old, 2);
     setAge(recent, 1);
     let listings = 0, retainedStats = 0;
-    const originalRead = fs.readdirSync, originalStat = fs.statSync;
+    const originalRead = fs.readdirSync, originalStat = fs.lstatSync;
     t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
       if (args[0] === cache) listings += 1;
       return originalRead(...args);
     });
-    t.mock.method(fs, "statSync", (...args: Parameters<typeof fs.statSync>) => {
+    t.mock.method(fs, "lstatSync", (...args: Parameters<typeof fs.lstatSync>) => {
       if (args[0] === old || args[0] === recent) retainedStats += 1;
       return originalStat(...args);
     });
@@ -476,6 +476,72 @@ test("cache pruning counts nested bytes and reads cache metadata once", (t) => {
       assert.equal(existsSync(expired), false);
       assert.equal(existsSync(old), false);
       assert.equal(existsSync(recent), true);
+    } finally {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    }
+  });
+});
+
+test("prune never enters a cache root redirected outside the store", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const external = join(root, "external");
+    mkdirSync(external);
+    const file = join(external, "keep.bin");
+    writeFileSync(file, Buffer.alloc(16));
+    const expired = new Date(NOW.getTime() - 40 * 86_400_000);
+    utimesSync(file, expired, expired);
+    fs.symlinkSync(external, join(store.root, "cache"), process.platform === "win32" ? "junction" : "dir");
+    const result = store.prune(NOW, { reportDays: 90, planDays: 7, cacheDays: 30, cacheMaxBytes: 10 });
+    assert.equal(existsSync(file), true, "external files must never be deleted through the cache root");
+    assert.equal(result.removedCacheEntries, 0);
+    assert.equal(result.bytesFreed, 0);
+  });
+});
+
+test("cache capacity ignores linked external bytes and preserves in-budget cache files", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const cache = join(store.root, "cache"), external = join(root, "external");
+    mkdirSync(cache);
+    mkdirSync(external);
+    const kept = join(cache, "kept.bin"), linked = join(cache, "external");
+    writeFileSync(kept, Buffer.alloc(8));
+    writeFileSync(join(external, "outside.bin"), Buffer.alloc(16));
+    utimesSync(kept, new Date(NOW.getTime() - 86_400_000), new Date(NOW.getTime() - 86_400_000));
+    utimesSync(external, NOW, NOW);
+    fs.symlinkSync(external, linked, process.platform === "win32" ? "junction" : "dir");
+    const result = store.prune(NOW, { reportDays: 90, planDays: 7, cacheDays: 3650, cacheMaxBytes: 10 });
+    assert.equal(existsSync(kept), true, "8 owned bytes fit in the 10-byte cache cap");
+    assert.equal(result.bytesFreed, 0, "external bytes are never counted as reclaimed store space");
+    assert.equal(result.removedCacheEntries, 0);
+    assert.equal(readFileSync(join(external, "outside.bin")).length, 16);
+  });
+});
+
+test("cache size walks do not follow cyclic links inside directories", (t) => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const directory = join(store.root, "cache", "entry");
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "owned.bin"), Buffer.alloc(8));
+    fs.symlinkSync(directory, join(directory, "loop"), process.platform === "win32" ? "junction" : "dir");
+    let listings = 0;
+    const original = fs.readdirSync;
+    t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
+      if (String(args[0]).startsWith(directory)) {
+        listings += 1;
+        if (listings > 8) throw new Error("test stopped a cyclic size walk");
+      }
+      return original(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      const result = store.prune(NOW, { reportDays: 90, planDays: 7, cacheDays: 3650, cacheMaxBytes: 10 });
+      assert.equal(listings, 1, "a linked subtree is not enumerated again");
+      assert.equal(result.bytesFreed, 0);
+      assert.equal(existsSync(directory), true);
     } finally {
       t.mock.restoreAll();
       syncBuiltinESMExports();

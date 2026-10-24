@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Cache pruning does not enter a symbolic-link or Windows-junction cache root,
+  preventing deletion of files outside the state store. Cache entries and nested
+  size walks also ignore links, avoiding cyclic traversal, external byte counts,
+  and eviction of healthy cache files that already fit the configured limit.
+
 - CD005 excludes reusable-workflow caller jobs from timeout cohorts and
   recommendations, including evidence checks for saved findings. The editor and
   apply's semantic validation also reject caller timeouts from older plans,

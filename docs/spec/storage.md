@@ -93,6 +93,11 @@ cleanup never reclaims space by deleting recovery backups; only an explicit
 `--applied-backups --confirm` procedure deletes a backup, after the listing
 shows the targets and confirms that revert will be lost.
 
+Cache cleanup ignores symbolic links and Windows junctions. A linked `cache/`
+root is not enumerated, linked entries are not cleanup targets, and recursive
+cache/backup byte accounting does not follow links. External target bytes never
+contribute to cache capacity or the reported freed bytes.
+
 A sync publishes its binding, history window, and report as one generation: the
 three files are written into `snapshots/generations/<binding>/<generation>` and
 the last step switches `snapshots/current/<binding>.json`. If writing any of

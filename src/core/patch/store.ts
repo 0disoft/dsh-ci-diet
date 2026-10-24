@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import type { AnalysisReport, AppliedChange, Attestation, PatchPlan, PlanStatus, RepositoryBinding } from "../contracts/schema.ts";
 import type { HistoryBundle } from "../history/model.ts";
@@ -199,14 +199,15 @@ function newestReport(left: AnalysisReport | null, right: AnalysisReport | null)
   return Date.parse(right.generatedAt) > Date.parse(left.generatedAt) ? right : left;
 }
 
-/** Bytes in one file or an entire directory tree; used by cache and backup accounting. */
+/** Owned bytes only: never follow symbolic links or Windows junctions. */
 function deepBytes(path: string): number {
   let stat;
   try {
-    stat = statSync(path);
+    stat = lstatSync(path);
   } catch {
     return 0;
   }
+  if (stat.isSymbolicLink()) return 0;
   if (!stat.isDirectory()) return stat.size;
   let total = 0;
   for (const entry of readdirSync(path)) total += deepBytes(join(path, entry));
@@ -1070,16 +1071,19 @@ export class PatchStore {
 
     const cacheRoot = this.path("cache");
     const cacheCap = limits.cacheMaxBytes ?? 0;
-    if (existsSync(cacheRoot)) {
+    // A redirected cache root must never turn cleanup into external deletion.
+    if (existsSync(cacheRoot) && lstatSync(cacheRoot).isDirectory()) {
       const entries: { full: string; size: number; modified: number }[] = [];
       for (const entry of readdirSync(cacheRoot)) {
         const full = join(cacheRoot, entry);
         let info;
         try {
-          info = statSync(full);
+          info = lstatSync(full);
         } catch {
           continue;
         }
+        // Match usage(): links are not owned cache bytes or cleanup targets.
+        if (info.isSymbolicLink()) continue;
         const expired = info.mtimeMs < cacheCutoff;
         // Without a capacity cap, retained trees do not need to be measured.
         if (!expired && cacheCap <= 0) continue;
