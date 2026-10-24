@@ -12,6 +12,7 @@ import { buildPolicySnapshots } from "./plan.ts";
 import { semanticProblems } from "./semantic.ts";
 import type { PatchRule } from "./eligibility.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
+import { rootIdentityHash } from "../scan/binding.ts";
 import { collectDependencies } from "./dependencies.ts";
 import { clockOf, idsOf, isExpired } from "../support/clock.ts";
 import type { Clock, IdSource, RuntimeSeams } from "../support/clock.ts";
@@ -73,6 +74,13 @@ function iso(date: Date): string {
 
 function targetPath(binding: RepositoryBinding, plan: PatchPlan): string {
   return resolveInside(binding.workspaceRoot, plan.payload.workflowPath);
+}
+
+/** Containment in a redirected root is not containment in the approved workspace. */
+function assertWorkspaceIdentity(binding: RepositoryBinding, expected = binding.rootIdentityHash): void {
+  if (binding.rootIdentityHash !== expected || rootIdentityHash(binding.workspaceRoot) !== expected) {
+    throw new Error("WRITE_CONFLICT: workspace root no longer matches the recorded binding");
+  }
 }
 
 function resolveInside(root: string, relative: string): string {
@@ -232,8 +240,9 @@ function releaseWriterLease(lease: string, token: string): void {
   releaseLock(lease, token);
 }
 
-async function replaceAtomically(path: string, text: string, mode: number, expectedHash: string, signal?: AbortSignal): Promise<string> {
+async function replaceAtomically(path: string, text: string, mode: number, expectedHash: string, binding: RepositoryBinding, signal?: AbortSignal): Promise<string> {
   throwIfAborted(signal);
+  assertWorkspaceIdentity(binding);
   const temporary = path + ".ci-diet-" + process.pid + "-" + Date.now().toString(36) + ".tmp";
   let created = false;
   let renamed = false;
@@ -264,6 +273,7 @@ async function replaceAtomically(path: string, text: string, mode: number, expec
       // Refuse a changed target on every attempt, outside the retry catch: a
       // source conflict must never turn into an unconditional later overwrite.
       // This narrows the race; the read and rename are not an OS-level CAS.
+      assertWorkspaceIdentity(binding);
       assertRegularFile(path);
       if (textHash(readFileSync(path, "utf8")) !== expectedHash) {
         throw new Error("WRITE_CONFLICT: target changed before replacement");
@@ -283,6 +293,9 @@ async function replaceAtomically(path: string, text: string, mode: number, expec
     // Remove only the sidecar we created, including after a partial write failure.
     if (created && !renamed) {
       try {
+        // A redirected path may name someone else's sidecar. Leave ours in the
+        // original workspace for recovery instead of deleting through the link.
+        assertWorkspaceIdentity(binding);
         rmSync(temporary, { force: true });
       } catch {
         // Cleanup is best-effort; the original failure is more useful.
@@ -598,7 +611,7 @@ async function commitApply(
   const mode = statSync(target).mode;
   let afterHash: string;
   try {
-    afterHash = await replaceAtomically(target, inspection.text, mode, inspection.beforeHash, options.signal);
+    afterHash = await replaceAtomically(target, inspection.text, mode, inspection.beforeHash, binding, options.signal);
   } catch (error) {
     return handleReplaceFailure(options, plan, applying, target, inspection.beforeHash, inspection.hash, reference, error);
   }
@@ -626,6 +639,7 @@ export async function applyPlan(options: ApplyOptions): Promise<ApplyResult> {
 
   return withWriterLease(options.store, async () => {
     throwIfAborted(options.signal);
+    assertWorkspaceIdentity(binding, plan.payload.rootIdentityHash);
     const target = targetPath(binding, plan);
     const inspection = await inspectApply(options, plan, stored, binding, target);
     if (inspection.kind === "refused") return inspection.result;
@@ -661,6 +675,7 @@ export async function revertChange(options: {
 
   return withWriterLease(options.store, async () => {
     throwIfAborted(options.signal);
+    assertWorkspaceIdentity(binding);
     const target = resolveInside(binding.workspaceRoot, change.workflowPath);
     assertRegularFile(target);
     const currentText = readFileSync(target, "utf8");
@@ -709,7 +724,7 @@ export async function revertChange(options: {
         options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
       }
       const mode = statSync(target).mode;
-      const restoredHash = await replaceAtomically(target, backup.beforeText, mode, change.after.hash, options.signal);
+      const restoredHash = await replaceAtomically(target, backup.beforeText, mode, change.after.hash, binding, options.signal);
       if (restoredHash !== change.before.hash) {
         options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
         return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };

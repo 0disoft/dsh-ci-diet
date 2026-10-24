@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Apply and revert recheck the binding's physical workspace root before inspecting
+  or replacing workflows, including rename retries. Redirecting the root through
+  a directory link no longer makes an unrelated workspace pass containment;
+  cleanup also refuses to delete replacement sidecars through a redirected root.
+
 - Apply no longer revives a missing Attestation from the plan's embedded copy.
   Only current stored premises authorize writes; missing, revoked and expired
   records refuse before backup or workflow mutation and keep approval retryable.

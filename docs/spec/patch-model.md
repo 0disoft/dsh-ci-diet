@@ -187,9 +187,17 @@ unresolved instead of being pinned. Mutable action refs stay opaque until a
 resolved revision is approved.
 
 Immediately before the final approval, recheck plan expiry, premise expiry and
-revocation, Binding identity, current bytes, and policy freshness. A policy
-value that changed requires a new plan and preview; never silently rewrite the
-digest to a newer value. Relevant policy must be at most 600 seconds old, and a
+revocation, Binding identity, current bytes, and policy freshness.
+
+Apply and revert compare the root's current physical-path hash with the stored
+Binding identity, and apply also compares it with the approved plan. A changed
+root refuses with `WRITE_CONFLICT` even if the target is inside the new root.
+The check repeats before replacement and each rename attempt; cleanup does not
+delete a sidecar through a root that no longer matches. These checks narrow
+filesystem races; they are not an operating-system atomic path guarantee.
+
+A policy value that changed requires a new plan and preview; never silently
+rewrite the digest to a newer value. Relevant policy must be at most 600 seconds old, and a
 write stops if fresh data cannot be obtained.
 
 Freshness is per rule, not "the newest snapshot wins". CD001 needs a branch

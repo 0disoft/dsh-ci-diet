@@ -652,6 +652,59 @@ test("revert retry from recovery still refuses a user-edited target", async () =
 });
 
 for (const operation of ["apply", "revert"] as const) {
+  for (const phase of ["after approval", "before replacement"] as const) {
+  test(operation + " refuses a workspace root redirected " + phase, async (t) => {
+    const f = setup();
+    const outside = mkdtempSync(join(tmpdir(), "ci-diet-root-target-"));
+    const saved = f.root + "-original";
+    t.after(() => {
+      if (existsSync(saved)) {
+        // A directory link is removed as a link, never recursively followed.
+        if (existsSync(f.root)) unlinkSync(f.root);
+        renameSync(saved, f.root);
+      }
+      rmSync(f.root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    });
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    const original = readFileSync(f.file, "utf8");
+    const outsideFile = join(outside, ".github", "workflows", "ci.yml");
+    const redirect = () => {
+      fs.cpSync(f.root, outside, { recursive: true });
+      renameSync(f.root, saved);
+      symlinkSync(outside, f.root, process.platform === "win32" ? "junction" : "dir");
+    };
+    if (phase === "after approval") redirect();
+    else {
+      const save = f.store.saveChange.bind(f.store);
+      t.mock.method(f.store, "saveChange", (change: AppliedChange) => {
+        save(change);
+        if (change.state === (operation === "apply" ? "APPLYING" : "REVERTING")) redirect();
+      });
+    }
+
+    await assert.rejects(async () => {
+      const result = operation === "apply"
+        ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+        : await revertChange({ store: f.store, changeId: applied!.change!.changeId, now: f.now });
+      t.diagnostic(operation + " returned " + result.state + "; outside workflow changed: " + (readFileSync(outsideFile, "utf8") !== original));
+    }, /WRITE_CONFLICT/);
+    assert.equal(readFileSync(outsideFile, "utf8"), original);
+    assert.equal(readFileSync(join(saved, f.path), "utf8"), original);
+    if (operation === "apply") {
+      if (phase === "after approval") assert.deepEqual(f.store.listChanges(), []);
+      else assert.equal(f.store.listChanges()[0]?.state, "NOT_APPLIED");
+      assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+    } else {
+      assert.equal(f.store.readChange(applied!.change!.changeId)?.state, phase === "after approval" ? "APPLIED" : "REVERTING");
+    }
+  });
+  }
+
   test(operation + " refuses a parent directory redirected outside the workspace", async () => {
     const f = setup();
     approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
