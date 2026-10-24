@@ -1061,34 +1061,28 @@ export class PatchStore {
     }
 
     const cacheRoot = this.path("cache");
-    if (existsSync(cacheRoot)) {
-      for (const entry of readdirSync(cacheRoot)) {
-        const full = join(cacheRoot, entry);
-        let modified = 0;
-        try {
-          modified = statSync(full).mtimeMs;
-        } catch {
-          continue;
-        }
-        if (modified >= cacheCutoff) continue;
-        bytesFreed += entryBytes(full);
-        rmSync(full, { recursive: true, force: true });
-        removedCacheEntries += 1;
-      }
-    }
-
     const cacheCap = limits.cacheMaxBytes ?? 0;
-    if (cacheCap > 0 && existsSync(cacheRoot)) {
+    if (existsSync(cacheRoot)) {
       const entries: { full: string; size: number; modified: number }[] = [];
       for (const entry of readdirSync(cacheRoot)) {
         const full = join(cacheRoot, entry);
-        let modified = 0;
+        let info;
         try {
-          modified = statSync(full).mtimeMs;
+          info = statSync(full);
         } catch {
           continue;
         }
-        entries.push({ full, size: deepBytes(full), modified });
+        const expired = info.mtimeMs < cacheCutoff;
+        // Without a capacity cap, retained trees do not need to be measured.
+        if (!expired && cacheCap <= 0) continue;
+        const size = info.isDirectory() ? deepBytes(full) : info.size;
+        if (expired) {
+          rmSync(full, { recursive: true, force: true });
+          bytesFreed += size;
+          removedCacheEntries += 1;
+        } else {
+          entries.push({ full, size, modified: info.mtimeMs });
+        }
       }
       let total = entries.reduce((sum, entry) => sum + entry.size, 0);
       entries.sort((a, b) => a.modified - b.modified);

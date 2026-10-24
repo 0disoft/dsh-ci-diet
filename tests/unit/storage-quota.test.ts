@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -369,6 +371,52 @@ test("an older history snapshot cannot replace a newer one", () => {
     assert.equal(store.saveHistory(bindingId, older), false);
     assert.equal(store.readLatestHistory(bindingId)?.requestedTo, newer.requestedTo);
     assert.equal(store.saveHistory(bindingId, history(newer.requestedTo)), true);
+  });
+});
+
+test("cache pruning counts nested bytes and reads cache metadata once", (t) => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const cache = join(store.root, "cache");
+    const expired = join(cache, "expired");
+    mkdirSync(expired, { recursive: true });
+    writeFileSync(join(expired, "first.bin"), Buffer.alloc(700));
+    writeFileSync(join(expired, "second.bin"), Buffer.alloc(800));
+    const old = join(cache, "old.bin"), recent = join(cache, "recent.bin");
+    writeFileSync(old, Buffer.alloc(900));
+    writeFileSync(recent, Buffer.alloc(900));
+    const setAge = (path: string, days: number) => {
+      const at = new Date(NOW.getTime() - days * 86_400_000);
+      utimesSync(path, at, at);
+    };
+    setAge(expired, 40);
+    setAge(old, 2);
+    setAge(recent, 1);
+    let listings = 0, retainedStats = 0;
+    const originalRead = fs.readdirSync, originalStat = fs.statSync;
+    t.mock.method(fs, "readdirSync", (...args: Parameters<typeof fs.readdirSync>) => {
+      if (args[0] === cache) listings += 1;
+      return originalRead(...args);
+    });
+    t.mock.method(fs, "statSync", (...args: Parameters<typeof fs.statSync>) => {
+      if (args[0] === old || args[0] === recent) retainedStats += 1;
+      return originalStat(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      const result = store.prune(NOW, { reportDays: 90, planDays: 7, cacheDays: 30, cacheMaxBytes: 1000 });
+      t.diagnostic(JSON.stringify({ bytesFreed: result.bytesFreed, listings, retainedStats }));
+      assert.equal(result.bytesFreed, 2400, "1500 expired bytes plus the oldest 900-byte entry");
+      assert.equal(result.removedCacheEntries, 2);
+      assert.equal(listings, 1, "age and capacity eviction share one directory listing");
+      assert.equal(retainedStats, 2, "each retained file is statted once");
+      assert.equal(existsSync(expired), false);
+      assert.equal(existsSync(old), false);
+      assert.equal(existsSync(recent), true);
+    } finally {
+      t.mock.restoreAll();
+      syncBuiltinESMExports();
+    }
   });
 });
 
