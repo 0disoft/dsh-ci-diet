@@ -212,7 +212,7 @@ function metricRows(metrics: Record<string, { status: string; value: number | st
 interface ToolRootExec { readonly agent?: unknown }
 
 /** The session directory when the model omitted `cwd`, never the Host launch directory. */
-function toolRoot(ctx: Context, exec: ToolRootExec, requested: string | undefined): string {
+function toolRoot(ctx: Context, exec: ToolRootExec, requested: string | undefined, requireSessionRoot = false): string {
   if (requested !== undefined) return requested;
   const service = (ctx as { get?: (name: string) => unknown }).get?.call(ctx, "workingDirectory") as { get(session: unknown): string } | undefined;
   const session = exec.agent === undefined ? undefined : (exec.agent as { session?: unknown }).session;
@@ -220,9 +220,11 @@ function toolRoot(ctx: Context, exec: ToolRootExec, requested: string | undefine
     try {
       return service.get(session);
     } catch {
-      return process.cwd();
+      // Reports must not silently select the Host's repository when a live
+      // session's directory cannot be resolved.
     }
   }
+  if (requireSessionRoot && exec.agent !== undefined) throw new Error("session workspace is unavailable; pass cwd explicitly");
   return process.cwd();
 }
 
@@ -364,7 +366,9 @@ export function apply(ctx: Context, config: Config) {
   ctx.tools.register(defineTool({
     name: "ci_diet_report",
     description: t("dsh.report.description"),
-    parameters: {},
+    parameters: {
+      cwd: { type: "string", description: t("dsh.param.cwd") },
+    },
     output: {
       schema: {
         type: "object",
@@ -379,13 +383,14 @@ export function apply(ctx: Context, config: Config) {
       },
       render: (_args, value) => text(t("dsh.report.render", { report: value.reportId ?? "", repository: value.repository ?? "", findings: (value.findings ?? []).length })),
     },
-    async execute(_args, exec) {
+    async execute(args, exec) {
       exec.signal.throwIfAborted();
       const settings = engineSettingsOf(readPluginSettings(config));
+      const root = realpathSync(toolRoot(ctx, exec, args.cwd, true));
       const store = PatchStore.open(stateDirOf(config), settings.config.storage);
-      const report = store.latestReport();
-      if (report === null) throw new Error("no report stored yet; run ci_diet_scan or ci_diet_sync first");
-      const binding = store.readBinding(report.bindingId);
+      const binding = store.findBindingByRoot(root);
+      const report = binding === null ? null : store.latestReportForBinding(binding.bindingId);
+      if (report === null) throw new Error("no report stored yet for this workspace; run ci_diet_scan or ci_diet_sync first");
       return {
         reportId: report.reportId,
         repository: binding?.repositoryFullName ?? "unknown",

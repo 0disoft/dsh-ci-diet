@@ -186,12 +186,12 @@ test("reads live settings on every tool call", async () => {
   const first = stateDirRef.get();
   stateDirRef.set(join(mkdtempSync(join(tmpdir(), "ci-diet-plugin-live-")), "state"));
   await assert.rejects(
-    () => tools.get("ci_diet_report")!.execute({}, { signal: new AbortController().signal }),
+    () => tools.get("ci_diet_report")!.execute({ cwd: root }, { signal: new AbortController().signal }),
     /no report stored yet/,
   );
 
   stateDirRef.set(first);
-  const report = (await tools.get("ci_diet_report")!.execute({}, { signal: new AbortController().signal })) as { findings: unknown[] };
+  const report = (await tools.get("ci_diet_report")!.execute({ cwd: root }, { signal: new AbortController().signal })) as { findings: unknown[] };
   assert.equal(report.findings.length, 1);
 
   await assert.rejects(
@@ -240,12 +240,34 @@ test("ci_diet_scan stores a report and lists findings", async () => {
   const rules = result.findings.map((finding) => finding.ruleId).sort();
   assert.deepEqual(rules, ["CD008"]);
 
-  const report = (await tools.get("ci_diet_report")!.execute({}, { signal: new AbortController().signal })) as {
+  const report = (await tools.get("ci_diet_report")!.execute({ cwd: root }, { signal: new AbortController().signal })) as {
     findings: unknown[];
     coverage: unknown[];
   };
   assert.equal(report.findings.length, 1);
   assert.equal(report.coverage.length, 5);
+});
+
+test("ci_diet_report selects the session workspace instead of the last scanned repository", async () => {
+  const firstRoot = workspace();
+  const secondRoot = workspace();
+  const { tools, ctx } = harness({}, firstRoot);
+  const exec = { signal: new AbortController().signal, agent: { session: { id: "first-session" } } };
+  const scan = tools.get("ci_diet_scan")!;
+  const first = await scan.execute({ cwd: firstRoot }, exec) as { reportId: string };
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const second = await scan.execute({ cwd: secondRoot }, exec) as { reportId: string };
+  assert.notEqual(first.reportId, second.reportId);
+  const report = tools.get("ci_diet_report")!;
+  const current = await report.execute({}, exec) as { reportId: string };
+  assert.equal(current.reportId, first.reportId, "another repository's newer report must not enter this session");
+  const explicit = await report.execute({ cwd: secondRoot }, exec) as { reportId: string };
+  assert.equal(explicit.reportId, second.reportId, "an explicit workspace remains supported");
+  await assert.rejects(() => report.execute({ cwd: workspace() }, exec), /no report stored yet/);
+  ctx.get = () => undefined;
+  await assert.rejects(() => report.execute({}, exec), /session workspace is unavailable/);
+  ctx.get = () => ({ get() { throw new Error("session removed"); } });
+  await assert.rejects(() => report.execute({}, exec), /session workspace is unavailable/);
 });
 
 test("reads a changed rule switch on the next tool call", async () => {
