@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- History report IDs now fingerprint the report content, so distinct observations
+  or analysis results generated at the same timestamp cannot overwrite each
+  other just because their workflow hashes and run IDs match.
+
 - GitHub ETag responses now use a 32-entry LRU bounded by 4 MiB of encoded
   JSON bodies. Oversized or no-ETag replacements discard obsolete entries;
   evictions fetch normally and recent 304 responses still reuse their bodies.

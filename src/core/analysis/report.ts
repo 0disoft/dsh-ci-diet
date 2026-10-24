@@ -27,8 +27,10 @@ export interface HistoryReportResult {
   readonly evaluations: readonly RuleEvaluation[];
 }
 
-function reportIdFor(bindingId: string, generatedAt: string, hashes: readonly string[]): string {
-  return "r_" + sha256Hex([bindingId, generatedAt, ...hashes].join("\n")).slice(0, 24);
+function reportIdFor(content: Omit<AnalysisReport, "reportId">): string {
+  // Include the result, not just run ids: observations and configuration can
+  // change within one timestamp. JSON also preserves valid fractional metrics.
+  return "r_" + sha256Hex(JSON.stringify(content)).slice(0, 24);
 }
 
 function jobsFrom(history: HistoryBundle, removals: readonly RuleRemoval[]): JobInput[] {
@@ -107,10 +109,9 @@ export function buildHistoryReport(input: HistoryReportInput): HistoryReportResu
     .map((workflow) => "workflow:" + workflow.path + "@" + workflow.sha256)
     .concat("history:" + input.history.repositoryFullName + "@" + input.history.requestedFrom + ".." + input.history.requestedTo)
     .sort();
-  const report: AnalysisReport = {
+  const content: Omit<AnalysisReport, "reportId"> = {
     schemaVersion: 2,
     provenance: "observed",
-    reportId: reportIdFor(input.binding.bindingId, input.generatedAt, inputHashes),
     bindingId: input.binding.bindingId,
     engineVersion: ENGINE_VERSION,
     generatedAt: input.generatedAt,
@@ -123,6 +124,7 @@ export function buildHistoryReport(input: HistoryReportInput): HistoryReportResu
     parentReportId: null,
     pricingSnapshot: PRICING_SNAPSHOT,
   };
+  const report: AnalysisReport = { ...content, reportId: reportIdFor(content) };
   assertValidDocument("AnalysisReport", report);
   return { report, evaluations };
 }

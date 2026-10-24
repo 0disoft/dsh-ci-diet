@@ -75,6 +75,36 @@ function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value, null, 2) + "\n", "utf8");
 }
 
+test("different history reports at the same timestamp retain distinct addressable ids", () => {
+  withRoot((root) => {
+    const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    const snapshot = (durationMillis: number): HistoryBundle => ({
+      ...history(NOW.toISOString()),
+      runs: [{
+        runId: "42", workflowPath: ".github/workflows/ci.yml", workflowName: "CI", headSha: "a".repeat(40),
+        headBranch: "main", event: "push", createdAt: NOW.toISOString(), attempt: 1, conclusion: "success",
+        pullRequestNumbers: [], definition: null, definitionResolution: "unresolved",
+        jobs: [{ jobId: "7", runId: "42", attempt: 1, name: "test", workflowPath: ".github/workflows/ci.yml",
+          conclusion: "success", startedAt: NOW.toISOString(), completedAt: new Date(NOW.getTime() + durationMillis).toISOString(),
+          durationMillis, labels: ["ubuntu-latest"], runnerName: null, sku: "actions_linux" }],
+      }],
+    });
+    const first = reportFor(binding, snapshot(60_001));
+    const second = reportFor(binding, snapshot(120_001));
+    assert.equal(first.metrics.observedRunnerSeconds.value, 60);
+    assert.equal(second.metrics.observedRunnerSeconds.value, 120);
+    const store = PatchStore.open(join(root, "state"));
+    store.saveReport(first);
+    store.saveReport(second);
+    assert.equal(store.readReport(first.reportId)?.metrics.observedRunnerSeconds.value, 60, "saving new observations must not overwrite the older report");
+    assert.notEqual(first.reportId, second.reportId);
+    assert.equal(store.readReport(second.reportId)?.metrics.observedRunnerSeconds.value, 120);
+    assert.equal(reportFor(binding, snapshot(60_001)).reportId, first.reportId, "identical content keeps a deterministic id");
+    const changedCoverage = reportFor(binding, { ...snapshot(60_001), apiVersion: "different-api-version" });
+    assert.notEqual(changedCoverage.reportId, first.reportId, "coverage changes must also distinguish reports");
+  });
+});
+
 function withRoot<T>(run: (root: string) => T): T {
   const root = mkdtempSync(join(tmpdir(), "ci-diet-quota-"));
   try {
