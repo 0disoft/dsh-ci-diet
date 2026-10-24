@@ -2,8 +2,8 @@ import type { Finding } from "../contracts/schema.ts";
 import { composeCoverage } from "../analysis/coverage.ts";
 import type { HistoryBundle } from "../history/model.ts";
 import { notApplicableSeconds, unknownSeconds } from "../savings/metrics.ts";
-import { isAnalyzable, recoverJobKey } from "../workflow/index.ts";
-import type { WorkflowDefinition, WorkflowJob } from "../workflow/model.ts";
+import { expandMatrix, isAnalyzable, recoverJobKey } from "../workflow/index.ts";
+import type { MatrixPlan, WorkflowDefinition, WorkflowJob } from "../workflow/model.ts";
 import { RULE_VERSION } from "../version.ts";
 import { buildFinding, ruleResult } from "./types.ts";
 import type { DetectionRule, RuleContext, RuleEvaluation } from "./types.ts";
@@ -33,6 +33,7 @@ interface Cohort {
   readonly runnerKey: string;
   readonly event: string;
   readonly matrixKey: string;
+  readonly declaredMatrix: MatrixPlan | null;
   readonly samples: Sample[];
 }
 
@@ -47,6 +48,7 @@ interface JobCohorts {
   readonly workflowPath: string;
   readonly workflowHash: string;
   readonly jobKey: string;
+  readonly declaredMatrix: MatrixPlan | null;
   readonly cohorts: Cohort[];
 }
 
@@ -77,12 +79,17 @@ export interface Cd005Evidence {
 function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
   const cohorts = new Map<string, Cohort>();
   for (const { run, definition } of analyzableRuns(history)) {
+    const jobsByKey = new Map(definition.jobs.map((job) => [job.key, job]));
     for (const job of run.jobs) {
       if (job.conclusion !== "success") continue;
       const seconds = jobSeconds(job);
       if (seconds === null || seconds <= 0) continue;
       const match = recoverJobKey(job.name, definition.jobs);
       if (match === null) continue;
+      const declaredJob = jobsByKey.get(match.key);
+      if (declaredJob === undefined) continue;
+      // Knowing the job key is insufficient when its matrix leg is unknown.
+      if (declaredJob.matrix !== null && match.matrix === null) continue;
       const runnerKey = [...job.labels].map((label) => label.toLowerCase()).sort().join(",");
       const matrixKey = match.matrix === null ? "" : JSON.stringify(match.matrix);
       const key = run.workflowPath + "|" + definition.sha256 + "|" + match.key + "|" + runnerKey + "|" + run.event + "|" + matrixKey;
@@ -103,6 +110,7 @@ function collectCohorts(history: HistoryBundle): Map<string, Cohort> {
           runnerKey,
           event: run.event,
           matrixKey,
+          declaredMatrix: declaredJob.matrix,
           samples: [sample],
         });
       } else {
@@ -128,6 +136,7 @@ function groupByJob(cohorts: Iterable<Cohort>): Map<string, JobCohorts> {
         workflowPath: cohort.workflowPath,
         workflowHash: cohort.workflowHash,
         jobKey: cohort.jobKey,
+        declaredMatrix: cohort.declaredMatrix,
         cohorts: [cohort],
       });
     } else {
@@ -157,8 +166,13 @@ function aggregateJob(group: JobCohorts): JobAggregate | null {
     if (entry.minutes > slowest.minutes || (entry.minutes === slowest.minutes && entry.p95 > slowest.p95)) slowest = entry;
   }
   const totalSamples = group.cohorts.reduce((total, cohort) => total + cohort.samples.length, 0);
-  const cohortReady = group.cohorts.every((cohort) => cohort.samples.length >= CD005_MIN_COHORT);
   const matrixKeys = [...new Set(group.cohorts.map((cohort) => cohort.matrixKey))].sort();
+  const observedMatrixKeys = new Set(matrixKeys);
+  const declaredLegs = group.declaredMatrix === null ? [null] : expandMatrix(group.declaredMatrix);
+  // An absent leg has zero successful samples, even when collection was complete.
+  const allLegsObserved = declaredLegs !== null && declaredLegs.length > 0
+    && declaredLegs.every((values) => observedMatrixKeys.has(values === null ? "" : JSON.stringify(values)));
+  const cohortReady = allLegsObserved && group.cohorts.every((cohort) => cohort.samples.length >= CD005_MIN_COHORT);
   return {
     qualifying: measured.map((entry) => entry.cohort),
     totalSamples,
@@ -199,7 +213,8 @@ function recommendationIndex(history: HistoryBundle): Map<string, Cd005Evidence>
   const index = new Map<string, Cd005Evidence>();
   for (const group of groupByJob(collectCohorts(history).values()).values()) {
     const aggregate = aggregateJob(group);
-    if (aggregate === null) continue;
+    // Recheck at plan time too: previously stored findings may predate this gate.
+    if (aggregate === null || !aggregate.cohortReady) continue;
     index.set(group.workflowPath + "|" + group.workflowHash + "|" + group.jobKey, {
       sampleCount: aggregate.totalSamples,
       p95Seconds: aggregate.p95Seconds,

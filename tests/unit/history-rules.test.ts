@@ -376,6 +376,39 @@ function matrixJobs(runId: string): HistoryJob[] {
   return jobs;
 }
 
+test("CD005 cannot plan a job-wide timeout when a declared matrix leg has no successful samples", () => {
+  const parsed = definition(MATRIX_WORKFLOW);
+  for (const failedLegPresent of [false, true]) {
+    const runId = "missing-leg-" + failedLegPresent;
+    const jobs = matrixJobs(runId).filter((entry) => entry.name === "test (ubuntu-latest)");
+    if (failedLegPresent) jobs.push({
+      ...job("slow-failed", runId, "2026-10-19T00:00:00.000Z", 1_800_000, "failure"),
+      name: "test (windows-2022)", labels: ["windows-2022"],
+    });
+    const history = bundle([run(runId, { jobs, definition: parsed })]);
+    const finding = rule(evaluateRules(context(history), ["CD005"]), "CD005").findings[0];
+    assert.ok(finding);
+    assert.match(finding.renderedText, /6 minutes/);
+    assert.equal(finding.patchability, "review-only", "20 fast successes cannot cover a leg with 0 successes");
+    assert.ok(finding.blockers.includes("COHORT_BELOW_20"));
+    assert.deepEqual(cd005Recommendations(history, parsed.path, parsed.sha256, "test"), []);
+    const olderFinding = { ...finding, patchability: "eligible" as const, blockers: [] };
+    const reasons = targetReasons({ finding: olderFinding, history, workflowText: MATRIX_WORKFLOW, workflow: parsed,
+      request: { rule: "CD005", jobKey: "test", stepIndex: null, minutes: 6, retentionDays: 7 } });
+    assert.ok(reasons.includes("EVIDENCE_NOT_FOUND"), "an older actionable finding cannot bypass the new evidence check");
+  }
+});
+
+test("CD005 never pools unidentifiable dynamic matrix legs into a timeout cohort", () => {
+  const text = MATRIX_WORKFLOW.replace("        os: [ubuntu-latest, windows-2022]", "        os: ${{ fromJSON(inputs.runners) }}")
+    .replace("    runs-on: ubuntu-latest", "    name: Shared\n    runs-on: ubuntu-latest");
+  const parsed = definition(text);
+  const jobs = matrixJobs("dynamic").map((entry) => ({ ...entry, name: "Shared" }));
+  const history = bundle([run("dynamic", { jobs, definition: parsed })]);
+  assert.equal(rule(evaluateRules(context(history), ["CD005"]), "CD005").findings.length, 0);
+  assert.deepEqual(cd005Recommendations(history, parsed.path, parsed.sha256, "test"), []);
+});
+
 test("CD005 keeps an equal or smaller literal timeout", () => {
   for (const minutes of [5, 6]) {
     const parsed = definition(TIMEOUT_WORKFLOW(minutes));
