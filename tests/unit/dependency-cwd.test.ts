@@ -37,7 +37,8 @@ for (const cd of ["cd ../external", "cd /external", "cd", "cd -", 'cd "$WORKDIR"
     const f = fixture(t, cd + " && node build.js");
     const collection = collectDependencies(f.root, f.workflow);
     assert.deepEqual(collection.dependencies, []);
-    assert.deepEqual(collection.unresolved, ["jobs.build.steps[0] (unresolved cd working-directory)"]);
+    const reason = cd === 'cd "$WORKDIR"' ? "unsupported shell quoting or expansion" : "unresolved cd working-directory";
+    assert.deepEqual(collection.unresolved, ["jobs.build.steps[0] (" + reason + ")"]);
   });
 }
 

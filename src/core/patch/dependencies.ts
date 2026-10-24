@@ -75,7 +75,7 @@ function toPosix(value: string): string {
 }
 
 function normalizeBase(base: string): string | null {
-  const text = base.trim().replace(/^["']|["']$/g, "");
+  const text = base;
   if (text === "" || text === ".") return "";
   if (text.includes("${{")) return null;
   if (text.includes("://") || isAbsolute(text)) return null;
@@ -151,19 +151,52 @@ function hashFile(realPath: string): string | null {
   }
 }
 
-/** Split a run script into one token list per command segment. */
-function commandSegments(run: string): string[][] {
-  return run
-    .split(/\r?\n/)
-    .flatMap((line) => line.split(/&&|\|\||[;|]/))
-    .map((segment) =>
-      segment
-        .trim()
-        .split(/\s+/)
-        .map((token) => token.replace(/^["']|["']$/g, ""))
-        .filter((token) => token.length > 0),
-    )
-    .filter((segment) => segment.length > 0);
+/** Static shell words: delimiters inside quotes belong to the same argument.
+ * Ambiguous concatenation, expansion and escapes must never pin a prefix file.
+ */
+function commandSegments(run: string): string[][] | null {
+  const segments: string[][] = [];
+  let words: string[] = [], word = "";
+  let quote: string | null = null;
+  let started = false, closedQuote = false;
+  const finishWord = (): void => {
+    if (started) words.push(word);
+    word = "";
+    started = false;
+    closedQuote = false;
+  };
+  const finishCommand = (): void => {
+    finishWord();
+    if (words.length > 0) segments.push(words);
+    words = [];
+  };
+  for (let i = 0; i < run.length; i += 1) {
+    const char = run[i]!;
+    if (quote !== null) {
+      if (char === quote) { quote = null; closedQuote = true; }
+      else if (char === "\\" || char === "`" || (quote === '"' && char === "$")) return null;
+      else word += char;
+      continue;
+    }
+    if (char === "\n" || char === ";" || char === "|" || char === "&") { finishCommand(); continue; }
+    if (/\s/.test(char)) { finishWord(); continue; }
+    if (char === "#" && !started) {
+      while (i + 1 < run.length && run[i + 1] !== "\n") i += 1;
+      continue;
+    }
+    if (closedQuote || char === "\\" || char === "`" || char === "$") return null;
+    if (char === '"' || char === "'") {
+      if (started) return null;
+      quote = char;
+      started = true;
+    } else {
+      word += char;
+      started = true;
+    }
+  }
+  if (quote !== null) return null;
+  finishCommand();
+  return segments;
 }
 
 function baseName(token: string): string {
@@ -413,8 +446,13 @@ function collectRunScript(
     sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (dynamic run script)");
     return;
   }
+  const segments = commandSegments(step.run);
+  if (segments === null) {
+    sink.unresolved("jobs." + job.key + ".steps[" + step.index + "] (unsupported shell quoting or expansion)");
+    return;
+  }
   let working = base;
-  for (const segment of commandSegments(step.run)) {
+  for (const segment of segments) {
     const head = segment[0] ?? "";
     if (head === "cd") {
       const args = segment.slice(1);

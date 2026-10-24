@@ -286,3 +286,79 @@ test("apply re-collects the workflow dependencies instead of trusting the stored
   assert.equal(result.state, "not_applied");
   assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"), result.reasons.join(","));
 });
+
+for (const quote of ['"', "'"]) {
+  test("apply rejects changes to a script with a " + quote + " quoted space in its path", async (t) => {
+    const text = SCRIPT_WORKFLOW.replace("node task.js", "node " + quote + "task name.js" + quote);
+    const space = workspace(text);
+    t.after(() => rmSync(space.root, { recursive: true, force: true }));
+    writeFileSync(join(space.root, "task"), "// decoy prefix\n");
+    writeFileSync(join(space.root, "task name.js"), "console.log('reviewed')\n");
+    const workflow = parseWorkflow(space.path, text);
+    const before = collectDependencies(space.root, workflow);
+    t.diagnostic("pinned scripts: " + JSON.stringify(before.dependencies.map((entry) => entry.ref)));
+    const binding = createLocalBinding(space.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    const attestation = createAttestation({
+      bindingId: binding.bindingId, workflowPath: space.path, workflowHash: workflow.sha256,
+      dependencyHash: dependencyHashOf(before.dependencies), scope: "job", jobKey: "build", stepKey: null,
+      claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+      evidenceRefs: ["test:quoted-script"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+    });
+    const { plan } = buildPatchPlan({
+      binding, workflow, text, dependencies: before.dependencies,
+      edits: [planTimeoutEdit(text, workflow, workflow.jobs[0]!, 15).edit!],
+      attestations: [attestation], policies: buildPolicySnapshots({ binding, protection: null, retention: null, now: NOW }),
+      blockers: [], coverageWriteAllowed: true, now: NOW,
+    });
+    const store = PatchStore.open(join(space.root, ".ci-diet"));
+    store.saveBinding(binding);
+    store.saveAttestation(attestation);
+    store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+    const approval = approvePlan({ store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+      subjectId: "tester", channel: "human-cli", now: NOW });
+    writeFileSync(join(space.root, "task name.js"), "console.log('changed after approval')\n");
+    const result = await applyPlan({ store, planId: plan.planId, now: NOW, subjectId: "tester" });
+    assert.equal(result.state, "not_applied");
+    assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"));
+    assert.deepEqual(before.dependencies.map((entry) => entry.ref), ["task name.js"]);
+    assert.equal(readFileSync(join(space.root, space.path), "utf8"), text);
+    assert.equal(store.readNonce(plan.planId)?.nonceId, approval.nonce.nonceId);
+    assert.deepEqual(store.listChanges(), []);
+  });
+}
+
+test("quoted command separators and working directories remain literal paths", (t) => {
+  const text = SCRIPT_WORKFLOW.replace("node task.js", 'cd "sub dir" && node "task;name.js" # ignored " quote');
+  const space = workspace(text);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  mkdirSync(join(space.root, "sub dir"));
+  writeFileSync(join(space.root, "sub dir", "task;name.js"), "// reviewed\n");
+  const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+  assert.deepEqual(collected.unresolved, []);
+  assert.deepEqual(collected.dependencies.map((entry) => entry.ref), ["sub dir/task;name.js"]);
+});
+
+for (const command of ['node "task.js', 'node task".js"', 'node "task".js', 'node task\\ name.js', 'node "$SCRIPT"']) {
+  test("ambiguous shell words fail closed: " + command, (t) => {
+    const text = SCRIPT_WORKFLOW.replace("node task.js", command);
+    const space = workspace(text);
+    t.after(() => rmSync(space.root, { recursive: true, force: true }));
+    writeFileSync(join(space.root, "task"), "// decoy\n");
+    writeFileSync(join(space.root, "task.js"), "// decoy\n");
+    const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+    assert.deepEqual(collected.dependencies, []);
+    assert.deepEqual(collected.unresolved, ["jobs.build.steps[0] (unsupported shell quoting or expansion)"]);
+  });
+}
+
+test("quoted cd preserves a literal quote in the directory name", (t) => {
+  const directory = "'sub dir";
+  const text = SCRIPT_WORKFLOW.replace("node task.js", 'cd "' + directory + '" && node task.js');
+  const space = workspace(text);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  mkdirSync(join(space.root, directory));
+  writeFileSync(join(space.root, directory, "task.js"), "// reviewed\n");
+  const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+  assert.deepEqual(collected.unresolved, []);
+  assert.deepEqual(collected.dependencies.map((entry) => entry.ref), [directory + "/task.js"]);
+});
