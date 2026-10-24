@@ -17,6 +17,27 @@ export const REVIEW_CHANNEL = "/api";
 export const REVIEW_ENDPOINT = "ci-diet-review";
 interface ReviewSettings { readonly engine: EngineSettings; readonly localApplyEnabled: boolean }
 interface ReviewRequest { action: "load" | "approve" | "apply" | "revert"; sessionId: string; id?: string; confirmation?: string }
+interface WorkflowSource { readonly text: string; readonly hash: string }
+
+/** Share bytes and hashes only within one request; mutations always reread. */
+function workflowSourceReader(binding: RepositoryBinding, maxBytes: number) {
+  const sources = new Map<string, WorkflowSource | null>();
+  return (path: string): WorkflowSource | null => {
+    const cached = sources.get(path);
+    if (cached !== undefined) return cached;
+    let source: WorkflowSource | null = null;
+    try {
+      const file = resolveWorkflowFile(binding, path);
+      if (maxBytes > 0 && statSync(file).size > maxBytes) throw new Error("WORKFLOW_TOO_LARGE");
+      const text = readFileSync(file, "utf8");
+      source = { text, hash: sourceHashOf(text) };
+    } catch {
+      // Unavailable and oversized sources remain blocked for every plan.
+    }
+    sources.set(path, source);
+    return source;
+  };
+}
 
 function requestOf(value: unknown): ReviewRequest {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
@@ -38,17 +59,15 @@ export class ReviewService {
     this.settings = settings;
   }
 
-  private preview(store: PatchStore, binding: RepositoryBinding, plan: PatchPlan, settings: ReviewSettings, now: Date, usedPlans?: ReadonlySet<string>) {
+  private preview(store: PatchStore, plan: PatchPlan, settings: ReviewSettings, now: Date, readSource: ReturnType<typeof workflowSourceReader>, usedPlans?: ReadonlySet<string>) {
     const blockers = [...plan.payload.blockers];
     let sourceValid = false;
     let diff: ReturnType<typeof renderEditDiff> = [];
     try {
-      const file = resolveWorkflowFile(binding, plan.payload.workflowPath);
-      const maxBytes = settings.engine.config.storage.workflowMaxBytes;
-      if (maxBytes > 0 && statSync(file).size > maxBytes) throw new Error("WORKFLOW_TOO_LARGE");
-      const source = readFileSync(file, "utf8");
-      sourceValid = sourceHashOf(source) === plan.payload.sourceHash;
-      if (sourceValid) diff = renderEditDiff(source, plan.payload.edits);
+      const source = readSource(plan.payload.workflowPath);
+      if (source === null) throw new Error("SOURCE_UNAVAILABLE");
+      sourceValid = source.hash === plan.payload.sourceHash;
+      if (sourceValid) diff = renderEditDiff(source.text, plan.payload.edits);
       else blockers.push("SOURCE_HASH_MISMATCH");
     } catch {
       blockers.push("SOURCE_UNAVAILABLE");
@@ -79,13 +98,14 @@ export class ReviewService {
       const locale = resolveRequestedLocale(null, process.env);
       const changes = binding === null ? [] : reader.listChanges().filter((change) => change.bindingId === binding.bindingId);
       const usedPlans = new Set(changes.filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId));
+      const readSource = binding === null ? null : workflowSourceReader(binding, settings.engine.config.storage.workflowMaxBytes);
       return { root, bindingId: binding?.bindingId ?? null, localApplyEnabled: settings.localApplyEnabled,
         report: report === null ? null : { ...report, findings: report.findings.map((finding) => {
           const localized = localizedFinding(finding, locale);
           return { ...finding, title: localized.title, renderedText: localized.text };
         }) },
         plans: binding === null ? [] : reader.listPlans().filter(({ plan }) => plan.payload.bindingId === binding.bindingId)
-          .map(({ plan }) => this.preview(reader, binding, plan, settings, new Date(), usedPlans)),
+          .map(({ plan }) => this.preview(reader, plan, settings, new Date(), readSource!, usedPlans)),
         changes: changes
           .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state })) };
     }
@@ -100,7 +120,7 @@ export class ReviewService {
     }
     const stored = reader.readPlan(id);
     if (stored === null || stored.plan.payload.bindingId !== binding.bindingId) throw new Error("PLAN_NOT_FOUND");
-    const preview = this.preview(reader, binding, stored.plan, settings, new Date());
+    const preview = this.preview(reader, stored.plan, settings, new Date(), workflowSourceReader(binding, settings.engine.config.storage.workflowMaxBytes));
     if (preview.blockers.length > 0) throw new Error(preview.blockers.join(", "));
     const store = PatchStore.open(stateDir, settings.engine.config.storage);
     if (request.action === "approve") {

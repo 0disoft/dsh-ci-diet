@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,6 +14,7 @@ import { planConcurrencyEdit } from "../../src/core/patch/edits.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import { runStaticScan } from "../../src/core/scan/scan.ts";
+import { digestOf } from "../../src/shared/cdj1.ts";
 
 const SOURCE = "on: [pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n";
 function fixture(t: { after(fn: () => void): void }) {
@@ -79,6 +82,65 @@ test("review fails closed for changed/deleted source, disabled writes and foreig
   const other = new ReviewService(() => tmpdir(), () => ({ engine: f.engine, localApplyEnabled: true }));
   await assert.rejects(other.execute({ action: "apply", sessionId: "session", id: f.plan.planId }, "browser", new AbortController().signal), /BINDING_NOT_FOUND/);
   await assert.rejects(f.call("load", { cwd: tmpdir() }), /INVALID_REQUEST/);
+});
+
+test("review reads each workflow once per load and refreshes before approval", async (t) => {
+  const f = fixture(t);
+  const otherPath = ".github/workflows/other.yml";
+  const otherFile = join(f.root, otherPath);
+  writeFileSync(otherFile, SOURCE);
+  // Forty plans across two workflows, including an outdated source hash.
+  for (let i = 1; i < 40; i += 1) {
+    const payload = { ...f.plan.payload,
+      workflowPath: i < 20 ? f.plan.payload.workflowPath : otherPath,
+      createdAt: new Date(Date.now() + i * 1000).toISOString(),
+      sourceHash: i === 1 ? "sha256:" + "0".repeat(64) : f.plan.payload.sourceHash };
+    const planDigest = digestOf(payload);
+    f.store.savePlan({ ...f.plan, payload, planDigest, planId: "p_" + planDigest.slice(7, 31) },
+      { coverageWriteAllowed: true, reportId: null });
+  }
+  const reads = new Map<string, number>();
+  let unreadable = false;
+  const read = fs.readFileSync;
+  const mocked = t.mock.method(fs, "readFileSync", (...args: Parameters<typeof fs.readFileSync>) => {
+    if (args[0] === f.file || args[0] === otherFile) reads.set(args[0], (reads.get(args[0]) ?? 0) + 1);
+    if (args[0] === f.file && unreadable) throw Object.assign(new Error("unreadable workflow"), { code: "EACCES" });
+    return read(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    type Loaded = { plans: { sourceValid: boolean; diff: unknown[]; blockers: string[] }[] };
+    const initial = await f.call("load") as Loaded;
+    assert.equal(initial.plans.length, 40);
+    assert.equal(initial.plans.filter((plan) => plan.sourceValid).length, 39);
+    const outdated = initial.plans.find((plan) => !plan.sourceValid)!;
+    assert.ok(outdated.blockers.includes("SOURCE_HASH_MISMATCH"));
+    assert.deepEqual(outdated.diff, []);
+    assert.deepEqual([...reads.values()], [1, 1], "40 previews must read only two workflow sources");
+    t.diagnostic("workflow reads: 40 -> 2; source bytes: " + 40 * Buffer.byteLength(SOURCE) + " -> " + 2 * Buffer.byteLength(SOURCE));
+
+    writeFileSync(f.file, SOURCE + "# changed\n");
+    await assert.rejects(f.call("approve", { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) }), /SOURCE_HASH_MISMATCH/);
+    const updated = await f.call("load") as Loaded;
+    assert.equal(updated.plans.filter((plan) => plan.sourceValid).length, 20);
+    assert.equal(reads.get(f.file), 3, "approval and reload must each read fresh source");
+    assert.equal(reads.get(otherFile), 2);
+
+    unreadable = true;
+    const inaccessible = await f.call("load") as Loaded;
+    assert.equal(inaccessible.plans.filter((plan) => plan.blockers.includes("SOURCE_UNAVAILABLE")).length, 20);
+    assert.equal(reads.get(f.file), 4, "an unreadable source is attempted once per load");
+    unreadable = false;
+    rmSync(f.file);
+    const deleted = await f.call("load") as Loaded;
+    assert.equal(deleted.plans.filter((plan) => plan.blockers.includes("SOURCE_UNAVAILABLE")).length, 20);
+    writeFileSync(f.file, SOURCE);
+    const restored = await f.call("load") as Loaded;
+    assert.equal(restored.plans.filter((plan) => plan.sourceValid).length, 39, "failed reads must not survive a request");
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
 });
 
 test("read-only report load scopes binding and never creates directories or repairs index", async (t) => {

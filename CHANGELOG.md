@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- DSH review loads read and hash each workflow once per request instead of once
+  per stored plan. Missing or unreadable sources still block every affected
+  plan; reloading, approving and applying always check fresh source bytes.
+
 - `ci_diet_scan`, `ci_diet_sync`, and `ci_diet_plan` now use the session
   working directory when `cwd` is omitted instead of the DSH Host launch
   directory. A scan started from the Web UI no longer reports zero workflows
