@@ -226,6 +226,39 @@ test("a status write refuses a stale revision and leaves the plan unchanged", (t
   assert.equal(readFileSync(join(f.store.root, "plans", f.plan.planId + ".json"), "utf8"), before);
 });
 
+test("status compare-and-set reads the revision after acquiring the write lock", (t) => {
+  const f = setup();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const rival = PatchStore.open(f.store.root);
+  const revision = f.plan.status.revision;
+  const newerStatus = { ...f.plan.status, revision: revision + 2 };
+  const originalMkdir = fs.mkdirSync;
+  let interleaved = false;
+  const mocked = t.mock.method(fs, "mkdirSync", (...args: Parameters<typeof mkdirSync>) => {
+    if (!interleaved && String(args[0]) === join(f.store.root, "locks", "write.claim")) {
+      interleaved = true;
+      // A different store writer commits just before this writer gets its lock.
+      rival.updatePlanStatus(f.plan.planId, newerStatus, revision);
+    }
+    return originalMkdir(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    assert.throws(
+      () => f.store.updatePlanStatus(f.plan.planId, { ...f.plan.status, revision: revision + 1 }, revision),
+      /PLAN_STATUS_CONFLICT: expected revision/,
+    );
+    assert.equal(interleaved, true);
+    assert.deepEqual(f.store.readPlan(f.plan.planId)?.plan.status, newerStatus);
+  } finally {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  }
+  // A refused CAS must also release its lock so a fresh revision can proceed.
+  f.store.updatePlanStatus(f.plan.planId, { ...newerStatus, revision: revision + 3 }, revision + 2);
+  assert.equal(f.store.readPlan(f.plan.planId)?.plan.status.revision, revision + 3);
+});
+
 test("prune skips a plan whose approval claim is held", (t) => {
   const f = setup();
   t.after(() => rmSync(f.root, { recursive: true, force: true }));

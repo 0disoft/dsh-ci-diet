@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Plan status compare-and-set now holds the store write lock while reading and
+  checking the revision as well as writing it. A writer that commits while an
+  approval is waiting for the lock can no longer have its newer status replaced
+  using a revision checked before the wait.
+
 - History report IDs now fingerprint the report content, so distinct observations
   or analysis results generated at the same timestamp cannot overwrite each
   other just because their workflow hashes and run IDs match.

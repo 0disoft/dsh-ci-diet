@@ -769,20 +769,21 @@ export class PatchStore {
 
   /**
    * Compare-and-set a plan status. Approval is already serialized per plan, but
-   * a prune or a second writer can still replace the record between the read
-   * and this write; the expected revision turns that into a refusal instead of
-   * silently resurrecting a deleted plan or overwriting a newer status.
+   * other store writers use the global write lock. Hold it across the read,
+   * revision check and replacement so waiting for it cannot stale the check.
    */
   updatePlanStatus(planId: string, status: PlanStatus, expectedRevision?: number): void {
-    const stored = this.readPlan(planId);
-    if (stored === null) throw new Error("STORE_PLAN_NOT_FOUND: " + planId);
-    if (expectedRevision !== undefined && stored.plan.status.revision !== expectedRevision) {
-      throw new Error("PLAN_STATUS_CONFLICT: expected revision " + expectedRevision + ", found " + stored.plan.status.revision);
-    }
-    const plan = { ...stored.plan, status };
-    assertValidDocument("PatchPlan", plan);
-    // A status transition must not republish unchanged metadata after the plan.
-    this.writeJson(this.path("plans", requireId(planId, "planId") + ".json"), plan);
+    this.withWriteLock(() => {
+      const stored = this.readPlan(planId);
+      if (stored === null) throw new Error("STORE_PLAN_NOT_FOUND: " + planId);
+      if (expectedRevision !== undefined && stored.plan.status.revision !== expectedRevision) {
+        throw new Error("PLAN_STATUS_CONFLICT: expected revision " + expectedRevision + ", found " + stored.plan.status.revision);
+      }
+      const plan = { ...stored.plan, status };
+      assertValidDocument("PatchPlan", plan);
+      // The lock is already held; do not reacquire it or rewrite metadata.
+      this.writeJsonUnlocked(this.path("plans", requireId(planId, "planId") + ".json"), plan);
+    });
   }
 
   listPlans(): StoredPlan[] {
