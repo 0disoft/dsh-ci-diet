@@ -87,21 +87,27 @@ export interface HistoryBundle {
   readonly missingScopes: readonly MissingScope[];
 }
 
-/** Normalize a runner label set to one pricing SKU candidate. */
+const RUNNER_SKU_PATTERNS: readonly (readonly [RegExp, string])[] = [
+  [/^ubuntu-(?:latest|\d{2}\.\d{2})$/, "actions_linux"],
+  [/^ubuntu-(?:latest|\d{2}\.\d{2})-arm$/, "actions_linux_arm"],
+  [/^ubuntu-slim$/, "actions_linux_slim"],
+  [/^windows-(?:latest|\d{4})$/, "actions_windows"],
+  [/^windows-(?:latest|\d{2}|\d{4})-arm$/, "actions_windows_arm"],
+  [/^macos-(?:latest|\d{2}(?:\.\d+)?)$/, "actions_macos"],
+];
+
+/** Normalize only supported, mutually consistent image labels to a SKU candidate. */
 export function skuForLabels(labels: readonly string[]): string | null {
-  const joined = labels.map((label) => label.toLowerCase()).join(" ");
-  if (joined === "") return null;
-  // A self-hosted runner is not billed per GitHub-hosted minute. Pricing it as
-  // GitHub-hosted Linux would invent a cost, so the SKU stays unknown.
-  if (joined.includes("self-hosted")) return null;
-  if (joined.includes("windows")) return "actions_windows";
-  if (joined.includes("macos") || joined.includes("mac-os")) return "actions_macos";
-  if (joined.includes("-arm") || joined.includes("arm64")) return "actions_linux_arm";
-  if (joined.includes("ubuntu-slim") || joined.includes("slim")) return "actions_linux_slim";
-  // Only labels that unambiguously identify a GitHub-hosted Ubuntu runner keep
-  // the standard Linux SKU; anything else is left for a human to classify.
-  if (/(^|\s)ubuntu(-[0-9][0-9.]*|-latest)?(\s|$)/.test(joined)) return "actions_linux";
-  return null;
+  let sku: string | null = null;
+  for (const label of labels) {
+    const normalized = label.toLowerCase();
+    const match = RUNNER_SKU_PATTERNS.find(([pattern]) => pattern.test(normalized));
+    // Unknown/custom labels (including self-hosted and larger runner variants)
+    // must not inherit a standard rate from an OS or architecture substring.
+    if (match === undefined || (sku !== null && sku !== match[1])) return null;
+    sku = match[1];
+  }
+  return sku;
 }
 
 /** Convert an RFC 3339 timestamp pair into a non-negative duration. */

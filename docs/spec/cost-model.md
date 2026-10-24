@@ -127,7 +127,12 @@ from the network; a new snapshot requires a new reviewed data file.
 Labels are candidates only. `ubuntu-latest` and `ubuntu-24.04` suggest the
 Linux x64 family, `ubuntu-24.04-arm` suggests arm64, `ubuntu-slim` suggests
 slim, `windows-2025` suggests Windows, and `macos-14` / `macos-15` suggest
-macOS. The actual image and core count of `latest` are not fixed by a label, and
+macOS. Matching uses whole image labels rather than OS or architecture
+substrings; bare `arm64` or `slim` is insufficient. Self-hosted markers, unknown
+labels, larger-runner suffixes, and labels matching different SKU families are
+rejected.
+
+The actual image and core count of `latest` are not fixed by a label, and
 self-hosted runners may reuse any label, so an unconfirmed provider,
 standard/larger class, OS, architecture, or core count makes the SKU
 `unknown`. The label map is not billing evidence.
