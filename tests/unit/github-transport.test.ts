@@ -214,6 +214,51 @@ describe("gh transport", () => {
     assert.ok((calls[1] ?? []).includes("If-None-Match: W/\"abc\""));
   });
 
+  it("bounds cached response bytes and keeps recent 304 reuse", async () => {
+    const calls: string[][] = [];
+    const runner: GhRunner = async (args) => {
+      calls.push([...args]);
+      return { exitCode: 0, stderr: "", stdout: args.some((arg) => arg.startsWith("If-None-Match:"))
+        ? httpResponse(304, null)
+        : httpResponse(200, { payload: "x".repeat(1024 * 1024) }, { etag: '"large"' }) };
+    };
+    const transport = new GhTransport({ budget: new RequestBudget({ discovery: 0, jobs: 10, definitions: 0, policyAndFiles: 0 }), runner });
+    const request = (page: number) => ({ path: "/repos/owner/repo/actions/runs/1/attempts/1/jobs", query: { page: String(page) } });
+    for (let page = 1; page <= 6; page += 1) await transport.get(request(page), "jobs");
+    assert.equal((await transport.get(request(6), "jobs")).status, 304);
+    assert.equal((await transport.get(request(1), "jobs")).status, 200, "old bodies must be evicted before retained data exceeds 4 MiB");
+    assert.ok(!calls.at(-1)!.some((arg) => arg.startsWith("If-None-Match:")));
+  });
+
+  it("bounds tiny cache entries, refreshes recency on 304, and fetches evictions normally", async () => {
+    const runner: GhRunner = async (args) => ({ exitCode: 0, stderr: "", stdout: args.some((arg) => arg.startsWith("If-None-Match:"))
+      ? httpResponse(304, null) : httpResponse(200, { id: 7 }, { etag: '"tiny"' }) });
+    const transport = new GhTransport({ budget: new RequestBudget({ discovery: 0, jobs: 40, definitions: 0, policyAndFiles: 0 }), runner });
+    const request = (page: number) => ({ path: "/repos/owner/repo/actions/runs/1/attempts/1/jobs", query: { page: String(page) } });
+    for (let page = 1; page <= 32; page += 1) await transport.get(request(page), "jobs");
+    assert.equal((await transport.get(request(1), "jobs")).status, 304);
+    await transport.get(request(33), "jobs");
+    assert.equal((await transport.get(request(1), "jobs")).status, 304, "304 reuse refreshes recency");
+    assert.equal((await transport.get(request(2), "jobs")).status, 200, "least recently used entry is evicted");
+  });
+
+  it("does not cache an oversized response or retain an obsolete ETag after an uncacheable replacement", async () => {
+    const { runner, calls } = runnerFrom(
+      httpResponse(200, { id: 7 }, { etag: '"old"' }),
+      httpResponse(200, { payload: "x".repeat(4 * 1024 * 1024) }, { etag: '"oversized"' }),
+      httpResponse(200, { id: 8 }),
+      httpResponse(200, { id: 9 }, { etag: '"new"' }),
+      httpResponse(200, { id: 10 }),
+      httpResponse(200, { id: 11 }),
+    );
+    const transport = new GhTransport({ budget: new RequestBudget({ discovery: 6, jobs: 0, definitions: 0, policyAndFiles: 0 }), runner });
+    for (let index = 0; index < 6; index += 1) await transport.get({ path: "/repos/owner/repo" }, "discovery");
+    assert.ok(calls[1]!.includes('If-None-Match: "old"'));
+    assert.ok(!calls[2]!.some((arg) => arg.startsWith("If-None-Match:")));
+    assert.ok(calls[4]!.includes('If-None-Match: "new"'));
+    assert.ok(!calls[5]!.some((arg) => arg.startsWith("If-None-Match:")));
+  });
+
   it("reports a missing gh binary", async () => {
     const runner: GhRunner = async () => ({ exitCode: 127, stdout: "", stderr: "not found" });
     const transport = new GhTransport({ budget: budget(), runner });

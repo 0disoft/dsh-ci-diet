@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- GitHub ETag responses now use a 32-entry LRU bounded by 4 MiB of encoded
+  JSON bodies. Oversized or no-ETag replacements discard obsolete entries;
+  evictions fetch normally and recent 304 responses still reuse their bodies.
+
 - Run comparison now attributes job and step differences only when the job's
   name and runner labels are unique in both runs. Ambiguous rows show unknown
   after-times instead of reusing a first match, including in HTML reports.

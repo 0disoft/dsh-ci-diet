@@ -42,6 +42,20 @@ export interface TransportOptions {
 
 const ACCEPT = "Accept: application/vnd.github+json";
 const VERSION = "X-GitHub-Api-Version: " + API_VERSION;
+const MAX_ETAG_CACHE_BYTES = 4 * 1024 * 1024;
+const MAX_ETAG_CACHE_ENTRIES = 32;
+
+interface CachedResponse {
+  readonly etag: string;
+  readonly response: GhResponse;
+  /** Encoded JSON body size, not an estimate of JavaScript heap usage. */
+  readonly bytes: number;
+}
+
+interface DispatchResult {
+  readonly response: GhResponse;
+  readonly bytes: number;
+}
 
 /** Largest delay a Node timer represents without overflowing. */
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -235,7 +249,8 @@ export class GhTransport {
   private readonly sleep: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
   private readonly cache: boolean;
   private readonly signal: AbortSignal | undefined;
-  private readonly etags = new Map<string, { etag: string; response: GhResponse }>();
+  private readonly etags = new Map<string, CachedResponse>();
+  private etagBytes = 0;
 
   constructor(options: TransportOptions) {
     this.budget = options.budget;
@@ -248,6 +263,22 @@ export class GhTransport {
     this.signal = options.signal;
   }
 
+  private remember(path: string, response: GhResponse, bytes: number): void {
+    const previous = this.etags.get(path);
+    if (previous !== undefined) {
+      this.etags.delete(path);
+      this.etagBytes -= previous.bytes;
+    }
+    if (response.etag === null || bytes > MAX_ETAG_CACHE_BYTES) return;
+    while (this.etagBytes + bytes > MAX_ETAG_CACHE_BYTES || this.etags.size >= MAX_ETAG_CACHE_ENTRIES) {
+      const oldest = this.etags.keys().next().value!;
+      this.etagBytes -= this.etags.get(oldest)!.bytes;
+      this.etags.delete(oldest);
+    }
+    this.etags.set(path, { etag: response.etag, response, bytes });
+    this.etagBytes += bytes;
+  }
+
   async get(request: EndpointRequest, family: Family): Promise<GhResponse> {
     throwIfAborted(this.signal);
     const rendered = renderPath(request);
@@ -257,9 +288,12 @@ export class GhTransport {
       throwIfAborted(this.signal);
       this.budget.consume(family);
       try {
-        const response = await this.dispatch(rendered, cached?.etag ?? null);
-        if (response.notified304 && cached !== undefined) return { ...cached.response, status: 304 };
-        if (this.cache && response.etag !== null) this.etags.set(rendered, { etag: response.etag, response });
+        const { response, bytes } = await this.dispatch(rendered, cached?.etag ?? null);
+        if (response.notified304 && cached !== undefined) {
+          this.remember(rendered, cached.response, cached.bytes);
+          return { ...cached.response, status: 304 };
+        }
+        if (this.cache) this.remember(rendered, response, bytes);
         return response;
       } catch (error) {
         if (this.signal?.aborted === true) throw abortError(this.signal);
@@ -279,7 +313,7 @@ export class GhTransport {
     throw lastError ?? new GitHubError("NETWORK_ERROR", "request failed without a reason");
   }
 
-  private async dispatch(path: string, etag: string | null): Promise<GhResponse> {
+  private async dispatch(path: string, etag: string | null): Promise<DispatchResult> {
     throwIfAborted(this.signal);
     const args = ["api", "--hostname", "github.com", "--method", "GET", "--include", "-H", ACCEPT, "-H", VERSION];
     if (etag !== null) args.push("-H", "If-None-Match: " + etag);
@@ -295,7 +329,7 @@ export class GhTransport {
     if (result.timedOut === true) throw new GitHubError("NETWORK_ERROR", "gh timed out after " + String(this.timeoutMs) + "ms", 0);
     const parsed = parseResponse(result.stdout);
     if (parsed.status === 304) {
-      return { status: 304, headers: parsed.headers, body: null, etag, notified304: true };
+      return { response: { status: 304, headers: parsed.headers, body: null, etag, notified304: true }, bytes: 0 };
     }
     if (parsed.status >= 200 && parsed.status < 300) {
       let body: unknown = null;
@@ -306,7 +340,10 @@ export class GhTransport {
           throw new GitHubError("NETWORK_ERROR", "GitHub returned a non-JSON body", parsed.status, parsed.text.slice(0, 200));
         }
       }
-      return { status: parsed.status, headers: parsed.headers, body, etag: parsed.headers["etag"] ?? null, notified304: false };
+      return {
+        response: { status: parsed.status, headers: parsed.headers, body, etag: parsed.headers["etag"] ?? null, notified304: false },
+        bytes: Buffer.byteLength(parsed.text, "utf8"),
+      };
     }
     throw classify(parsed.status, parsed.headers, result.stderr.trim() !== "" ? result.stderr : parsed.text);
   }
