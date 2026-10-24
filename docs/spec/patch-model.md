@@ -135,6 +135,14 @@ configuration). The scan resolves a local action to every file in its directory
 interpreters (`node build.js`, `bash scripts/check.sh`), `./` and `../`
 executables, and slash-containing arguments relative to the step
 `working-directory` or the job/top-level `defaults.run.working-directory`.
+Literal npm script invocations (`npm test`, `npm run`, and lifecycle aliases)
+also pin existing `package.json` files from that directory up to the repository
+root, including parent manifests that control workspace membership. A changed
+or deleted manifest invalidates approval, including older plans that omitted
+it. Unhashable manifests become unresolved dependencies. Package-selection
+options such as `--prefix` and `--workspace` are unresolved rather than guessed;
+arguments following `--` remain script arguments. This records dispatch
+manifests, not a recursive graph of package scripts or their imported modules.
 Literal unquoted environment prefixes such as `NODE_ENV=production node build.js`
 are removed before identifying the executable; quoted assignment-looking words
 and assignment-looking arguments after the executable stay ordinary arguments.

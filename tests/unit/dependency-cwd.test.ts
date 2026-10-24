@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -26,6 +26,84 @@ const CONTROL_COMMANDS = [
   "time node build.js",
   "if true; then CI=true node build.js; fi",
 ];
+
+for (const state of ["changed", "deleted", "legacy", "unchanged"]) {
+test("apply checks npm script dispatch after approval: " + state, async (t) => {
+  const f = fixture(t, "npm test");
+  const manifest = join(f.root, "package.json");
+  writeFileSync(manifest, JSON.stringify({ scripts: { test: "node build.js" } }));
+  const dependencies = state === "legacy" ? [] : collectDependencies(f.root, f.workflow).dependencies;
+  const binding = createLocalBinding(f.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+  const attestation = createAttestation({
+    bindingId: binding.bindingId, workflowPath: PATH, workflowHash: f.workflow.sha256,
+    dependencyHash: dependencyHashOf(dependencies), scope: "job", jobKey: "build", stepKey: null,
+    claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+    evidenceRefs: ["test:npm-dispatch"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+  });
+  const { plan } = buildPatchPlan({ binding, workflow: f.workflow, text: f.text, dependencies,
+    edits: [planTimeoutEdit(f.text, f.workflow, f.workflow.jobs[0]!, 15).edit!], attestations: [attestation],
+    policies: buildPolicySnapshots({ binding, protection: null, retention: null, now: NOW }),
+    blockers: [], coverageWriteAllowed: true, now: NOW });
+  const store = PatchStore.open(join(f.root, ".ci-diet"));
+  store.saveBinding(binding);
+  store.saveAttestation(attestation);
+  store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+  const approved = approvePlan({ store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+    subjectId: "tester", channel: "human-cli", now: NOW });
+  if (state === "changed") writeFileSync(manifest, JSON.stringify({ scripts: { test: "node deploy.js" } }));
+  if (state === "deleted") unlinkSync(manifest);
+  const result = await applyPlan({ store, planId: plan.planId, now: NOW, subjectId: "tester" });
+  t.diagnostic("pinned files: " + JSON.stringify(dependencies.map(d => d.ref)) + "; apply: " + result.state);
+  if (state === "unchanged") {
+    assert.equal(result.state, "applied", result.reasons.join(","));
+    return;
+  }
+  assert.equal(result.state, "not_applied");
+  assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"));
+  assert.equal(readFileSync(join(f.root, PATH), "utf8"), f.text);
+  assert.equal(store.readNonce(plan.planId)?.nonceId, approved.nonce.nonceId);
+  assert.deepEqual(store.listChanges(), []);
+  assert.deepEqual(readdirSync(join(store.root, "backups")), []);
+});
+}
+
+for (const command of ["npm test", "npm.cmd run build", "npm --silent test", "npm run test -- --workspace=argument"]) {
+  test("pins the manifest for literal npm script invocation: " + command, (t) => {
+    const f = fixture(t, command);
+    writeFileSync(join(f.root, "package.json"), JSON.stringify({ scripts: { test: "echo test", build: "echo build" } }));
+    const collection = collectDependencies(f.root, f.workflow);
+    assert.deepEqual(collection.dependencies.map(d => d.ref), ["package.json"]);
+    assert.deepEqual(collection.unresolved, []);
+  });
+}
+
+for (const command of ["npm --prefix scripts test", "npm run test --workspace=scripts"]) {
+  test("refuses ambiguous npm package selection: " + command, (t) => {
+    const f = fixture(t, command);
+    writeFileSync(join(f.root, "package.json"), "{}");
+    const collection = collectDependencies(f.root, f.workflow);
+    assert.deepEqual(collection.unresolved, ["npm (unsupported script options)"]);
+  });
+}
+
+test("pins parent and workspace manifests from a nested npm cwd", (t) => {
+  const f = fixture(t, "cd scripts; npm test");
+  writeFileSync(join(f.root, "package.json"), JSON.stringify({ workspaces: ["scripts"] }));
+  writeFileSync(join(f.root, "scripts/package.json"), JSON.stringify({ scripts: { test: "node build.js" } }));
+  const collection = collectDependencies(f.root, f.workflow);
+  assert.deepEqual(collection.dependencies.map(d => d.ref), ["package.json", "scripts/package.json"]);
+  assert.deepEqual(collection.unresolved, []);
+  unlinkSync(join(f.root, "scripts/package.json"));
+  assert.deepEqual(collectDependencies(f.root, f.workflow).dependencies.map(d => d.ref), ["package.json"]);
+});
+
+test("an oversized npm manifest is unresolved instead of omitted", (t) => {
+  const f = fixture(t, "npm test");
+  writeFileSync(join(f.root, "package.json"), Buffer.alloc(2 * 1024 * 1024 + 1));
+  const collection = collectDependencies(f.root, f.workflow);
+  assert.deepEqual(collection.dependencies, []);
+  assert.deepEqual(collection.unresolved, ["package.json"]);
+});
 
 function fixture(t: TestContext, command: string) {
   const parent = mkdtempSync(join(tmpdir(), "ci-diet-cwd-"));

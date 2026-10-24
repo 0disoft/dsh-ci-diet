@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Patch dependency fingerprints include existing ancestor `package.json` files
+  for literal npm script commands. Changing a script after approval now refuses
+  apply, including legacy plans that omitted the manifest. Ambiguous npm
+  package-selection options are unresolved instead of pinning the wrong package.
+
 - Apply refuses policy-dependent patches when current history is missing or
   its relevant policy is stale, even if the approved plan's policy is fresh
   and the policy values still have the same hash. Refusal precedes backup and

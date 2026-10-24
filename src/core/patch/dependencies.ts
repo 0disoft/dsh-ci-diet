@@ -70,6 +70,8 @@ function flagValuePath(value: string): string | null {
   return null;
 }
 const SHELL_SOURCE_COMMANDS = new Set([".", "source"]);
+const NPM_SCRIPT_COMMANDS = new Set(["run", "run-script", "test", "t", "tst", "start", "stop", "restart"]);
+const NPM_SCRIPT_FLAGS = new Set(["--silent", "-s", "--if-present", "--ignore-scripts", "--foreground-scripts", "--json"]);
 /** Reserved command heads need shell grammar, not the linear argv/cwd model. */
 const SHELL_CONTROL_WORDS = new Set([
   "if", "then", "elif", "else", "fi", "for", "select", "while", "until",
@@ -405,6 +407,30 @@ function collectRunSegment(
     const script = segment[1];
     if (script !== undefined && !add(base, script)) miss(base, script);
     return;
+  }
+  if (baseName(head) === "npm") {
+    const separator = segment.indexOf("--");
+    const args = segment.slice(1, separator < 0 ? undefined : separator);
+    if (args.some((arg) => NPM_SCRIPT_COMMANDS.has(arg))) {
+      // Prefix/workspace selection needs npm's configuration resolver. Never
+      // fingerprint a convenient package in the original cwd instead.
+      if (args.some((arg) => arg.startsWith("-") && !NPM_SCRIPT_FLAGS.has(arg))) {
+        sink.unresolved("npm (unsupported script options)");
+        return;
+      }
+      // npm can find a package above the step cwd; parent manifests can also
+      // control workspace membership. Pin each existing ancestor, bounded by
+      // the repository root. Keep the ordinary argument collection below.
+      let directory = base;
+      for (;;) {
+        if (existsSync(join(realRoot, directory, "package.json")) && !add(directory, "package.json")) {
+          miss(directory, "package.json");
+        }
+        if (directory === "") break;
+        const slash = directory.lastIndexOf("/");
+        directory = slash < 0 ? "" : directory.slice(0, slash);
+      }
+    }
   }
   const interpreter = INTERPRETERS.has(baseName(head)) ? baseName(head) : null;
   if (interpreter === null) {
