@@ -543,7 +543,12 @@ async function commitApply(
     return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
   }
   const backup = options.store.readBackup(changeId);
-  if (backup === null || backup.manifest.beforeHash !== manifest.beforeHash) {
+  // Verify the stored bytes, not only hashes copied into the manifest. A bad
+  // backup must be rejected while the original workflow is still untouched.
+  if (backup === null || backup.manifest.beforeHash !== inspection.beforeHash
+    || backup.manifest.afterHash !== inspection.hash
+    || textHash(backup.beforeText) !== inspection.beforeHash
+    || textHash(backup.afterText) !== inspection.hash) {
     discardBackup(options.store, changeId);
     return { state: "not_applied", reasons: ["BACKUP_UNAVAILABLE"], change: null, resultText: null };
   }

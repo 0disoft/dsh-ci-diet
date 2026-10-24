@@ -119,6 +119,38 @@ test("approve then apply writes the planned bytes and records a backup", async (
   assert.equal(approved.plan.status.state, "approved");
 });
 
+for (const corruptedFile of ["before.yml", "after.yml"]) {
+  test("apply refuses a corrupted " + corruptedFile + " before replacing the workflow", async (t) => {
+    const fixture = setup();
+    t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
+    approvePlan({
+      store: fixture.store, planId: fixture.plan.planId,
+      confirmation: approvalConfirmation(fixture.plan), subjectId: "tester",
+      channel: "human-cli", now: fixture.now,
+    });
+    const original = fixture.store.writeBackup.bind(fixture.store);
+    const corrupt = t.mock.method(fixture.store, "writeBackup", (...args: Parameters<PatchStore["writeBackup"]>) => {
+      const manifest = original(...args);
+      const path = join(fixture.store.root, "backups", args[0], corruptedFile);
+      const bytes = readFileSync(path);
+      bytes[0] = bytes[0]! ^ 1;
+      writeFileSync(path, bytes);
+      return manifest;
+    });
+    const refused = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+    assert.equal(refused.state, "not_applied");
+    assert.deepEqual(refused.reasons, ["BACKUP_UNAVAILABLE"]);
+    assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+    assert.equal(fixture.store.listChanges().length, 0);
+    assert.notEqual(fixture.store.readNonce(fixture.plan.planId), null);
+    corrupt.mock.restore();
+    const retried = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
+    assert.equal(retried.state, "applied");
+    assert.equal((await revertChange({ store: fixture.store, changeId: retried.change!.changeId, now: fixture.now })).state, "REVERTED");
+    assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
+  });
+}
+
 test("prune keeps the binding a revert still needs", async (t) => {
   const fixture = setup();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
