@@ -53,14 +53,19 @@ export function renderEditDiff(text: string, edits: readonly ByteEdit[], context
     }
     const first = lineIndexAt(starts, Math.min(edit.startByte, buffer.length));
     const last = lineIndexAt(starts, edit.startByte === edit.endByte ? edit.startByte : Math.min(edit.endByte - 1, buffer.length));
-    const insertOnly = edit.startByte === edit.endByte && edit.startByte === lineStart(first);
+    // Only newline-terminated text inserts whole lines before the original
+    // line. A prefix without a newline modifies that line instead.
+    const insertOnly = edit.startByte === edit.endByte && edit.startByte === lineStart(first)
+      && edit.replacementUtf8.endsWith("\n");
     const oldLines: string[] = [];
     if (!insertOnly) {
       for (let line = first; line <= last; line += 1) oldLines.push(lineText(line));
     }
     const prefix = buffer.subarray(lineStart(first), edit.startByte).toString("utf8");
     const suffix = buffer.subarray(edit.endByte, lineEnd(last)).toString("utf8");
-    const combined = insertOnly ? edit.replacementUtf8 : prefix + edit.replacementUtf8 + suffix;
+    // The final newline separates the inserted lines from the untouched line;
+    // it does not introduce an extra empty added line.
+    const combined = insertOnly ? edit.replacementUtf8.slice(0, -1) : prefix + edit.replacementUtf8 + suffix;
     const newLines = combined.split("\n");
     context(first - contextLines, first - 1);
     let start = 0;
@@ -70,8 +75,8 @@ export function renderEditDiff(text: string, edits: readonly ByteEdit[], context
     }
     for (let index = start; index < oldLines.length; index += 1) lines.push({ kind: "removed", text: oldLines[index] ?? "" });
     for (let index = start; index < newLines.length; index += 1) lines.push({ kind: "added", text: newLines[index] ?? "" });
-    lastLine = last;
-    context(last + 1, last + contextLines);
+    lastLine = insertOnly ? first - 1 : last;
+    context(lastLine + 1, lastLine + contextLines);
   }
   return lines;
 }

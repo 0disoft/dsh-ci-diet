@@ -3,6 +3,8 @@ import test from "node:test";
 import type { ByteEdit } from "../../src/core/contracts/schema.ts";
 import { applyEdits } from "../../src/core/patch/edits.ts";
 import { renderEditDiff } from "../../src/core/patch/diff.ts";
+import { planNpmCacheEdit } from "../../src/core/patch/edits.ts";
+import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 
 function edit(startByte: number, endByte: number, replacementUtf8: string): ByteEdit {
   return {
@@ -53,3 +55,33 @@ test("applies sorted edits and keeps the result equal to the byte application", 
 test("rejects an edit outside the source bytes", () => {
   assert.throws(() => renderEditDiff("a: 1\n", [edit(2, 99, "x")]), /EDIT_RANGE_INVALID/);
 });
+
+for (const newline of ["\n", "\r\n"]) {
+  test("cache insertion preview reconstructs the actual before and after bytes: " + JSON.stringify(newline), () => {
+    const text = ["jobs:", "  test:", "    runs-on: ubuntu-latest", "    steps:",
+      "      - uses: actions/setup-node@v4", "        with:", "          node-version: 22",
+      "      - run: npm ci", ""].join(newline);
+    const workflow = parseWorkflow(".github/workflows/ci.yml", text);
+    const job = workflow.jobs[0]!;
+    const planned = planNpmCacheEdit(text, job, job.steps[0]!);
+    assert.equal(planned.error, null);
+    const edit = planned.edit!;
+    const lines = renderEditDiff(text, [edit], 100);
+    const reconstruct = (exclude: "added" | "removed") => lines.filter((line) => line.kind !== exclude)
+      .map((line) => line.text.replace(/\r$/, "")).join("\n");
+    assert.equal(reconstruct("added"), text.replace(/\r\n/g, "\n"), "all unchanged original lines must remain in the preview");
+    assert.equal(reconstruct("removed"), applyEdits(text, [edit]).text.replace(/\r\n/g, "\n"));
+    assert.equal(lines.filter((line) => line.kind === "added").length, 2, "the cache patch adds exactly two lines");
+  });
+}
+
+for (const replacement of ["# ", "\n"]) {
+  test("line-start insertion preview preserves prefixes and intentional blank lines: " + JSON.stringify(replacement), () => {
+    const text = "name: ci\non: push\n";
+    const insertion = edit(0, 0, replacement);
+    const lines = renderEditDiff(text, [insertion], 100);
+    const reconstruct = (exclude: "added" | "removed") => lines.filter((line) => line.kind !== exclude).map((line) => line.text).join("\n");
+    assert.equal(reconstruct("added"), text);
+    assert.equal(reconstruct("removed"), applyEdits(text, [insertion]).text);
+  });
+}

@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Plan previews preserve the original line after a line-start insertion and no
+  longer invent an extra blank added line. CD006 cache diffs retain existing
+  setup-node inputs; insertion prefixes without a newline show a replacement.
+
 - Reusing a local action, or referencing nested action directories, no longer
   marks already-pinned files as unresolved and blocks valid patches. Each
   canonical action directory is scanned once per dependency collection; apply
