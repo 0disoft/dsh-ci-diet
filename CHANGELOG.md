@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Generation pruning validates the surviving binding and its repository/workspace
+  identity before deleting recovery metadata. Corrupt, unreadable or conflicting
+  bindings keep the generation and current pointer for operator review instead
+  of allowing the last valid binding to be deleted.
+
 - History sync counts unique run IDs toward `maxRuns` and fetches each run's
   jobs once when offset pages overlap. Repeated IDs or a next page making no
   progress mark history `partial` with `RUN_PAGINATION_CHANGED`; a page with

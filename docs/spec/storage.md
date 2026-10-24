@@ -108,7 +108,12 @@ from earlier generations until cleanup removes them. `prune` applies
 unit; when the removed generation is current, its pointer is removed too. Before
 deleting, the generation's binding is kept as `bindings/<binding>.json` when no
 binding record exists, because revert and recovery need the workspace root
-regardless of how long reports are retained. Generation cleanup is age-based
+regardless of how long reports are retained. An existing binding must pass
+schema validation and match the generation's repository and workspace identity
+before it counts as a preserved recovery record. If either record is corrupt,
+unreadable, or conflicting, cleanup skips that generation and leaves both the
+records and current pointer for operator review; it never overwrites the bad
+record automatically. Generation cleanup is age-based
 only: a sync never deletes older generations by count. A valid report index is
 trusted without rescanning unrelated reports.
 

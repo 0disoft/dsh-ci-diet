@@ -586,10 +586,17 @@ export class PatchStore {
    */
   private preserveBinding(bindingId: string, directory: string): boolean {
     const target = this.path("bindings", bindingId + ".json");
-    if (existsSync(target)) return true;
-    const binding = this.readJson<RepositoryBinding>(join(directory, "binding.json"), "RepositoryBinding");
-    if (binding === null) return false;
     try {
+      const binding = this.readJson<RepositoryBinding>(join(directory, "binding.json"), "RepositoryBinding");
+      if (binding === null || binding.bindingId !== bindingId) return false;
+      const existing = this.readJson<RepositoryBinding>(target, "RepositoryBinding");
+      if (existing !== null) {
+        // Existence alone cannot protect recovery: the surviving record must
+        // validate and identify the same workspace. Keep conflicting evidence
+        // for operator review rather than overwriting it or deleting its peer.
+        return (["bindingId", "repositoryId", "workspaceRoot", "rootIdentityHash", "host", "stateScope", "provenance"] as const)
+          .every((key) => existing[key] === binding[key]);
+      }
       this.writeJsonUnlocked(target, binding);
       return true;
     } catch {

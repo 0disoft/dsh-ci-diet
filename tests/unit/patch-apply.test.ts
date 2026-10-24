@@ -199,7 +199,8 @@ for (const corruptedFile of ["before.yml", "after.yml"]) {
   });
 }
 
-test("prune keeps the binding a revert still needs", async (t) => {
+for (const corruptLegacy of [false, true]) {
+test("prune keeps the binding a revert still needs" + (corruptLegacy ? " beside corrupt legacy metadata" : ""), async (t) => {
   const fixture = setup();
   t.after(() => rmSync(fixture.root, { recursive: true, force: true }));
   approvePlan({
@@ -242,13 +243,22 @@ test("prune keeps the binding a revert still needs", async (t) => {
     generatedAt: requestedTo,
   }).report;
   assert.equal(fixture.store.saveHistorySnapshot(fixture.binding, snapshot, report), true);
+  const legacyPath = join(fixture.store.root, "bindings", fixture.binding.bindingId + ".json");
+  if (corruptLegacy) writeFileSync(legacyPath, "{");
   const pruned = fixture.store.prune(new Date("2030-01-01T00:00:00Z"), { reportDays: 90, planDays: 7, cacheDays: 30 });
-  assert.equal(pruned.removedReports, 1);
+  assert.equal(pruned.removedReports, corruptLegacy ? 0 : 1);
+  if (corruptLegacy) {
+    assert.equal(readFileSync(legacyPath, "utf8"), "{", "prune preserves the corrupt record for review");
+    // Simulate an operator quarantining the corrupt legacy record. The last
+    // valid generation must still support a real restore from the backup.
+    rmSync(legacyPath);
+  }
 
   const reverted = await revertChange({ store: fixture.store, changeId, now: fixture.now });
   assert.equal(reverted.state, "REVERTED");
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
+}
 
 test("status-only persistence rejects invalid status without changing stored records", (t) => {
   const f = setup();

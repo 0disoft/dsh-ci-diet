@@ -293,6 +293,39 @@ test("prune removes expired generation reports and their pointers", () => {
   });
 });
 
+for (const defect of ["invalid JSON", "invalid schema", "bindingId", "repositoryId", "workspaceRoot", "rootIdentityHash"] as const) {
+  test("prune retains recovery generations when the existing binding has " + defect, () => {
+    withRoot((root) => {
+      const store = PatchStore.open(join(root, "state"));
+      const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+      const snapshot = history(NOW.toISOString());
+      const report = reportFor(binding, snapshot);
+      store.saveHistorySnapshot(binding, snapshot, report);
+      const target = join(store.root, "bindings", binding.bindingId + ".json");
+      const contents = defect === "invalid JSON" ? "{"
+        : defect === "invalid schema" ? "{}"
+        : JSON.stringify({ ...binding, [defect]: defect === "rootIdentityHash" ? HASH : "other-repository" });
+      writeFileSync(target, contents);
+      const pointerPath = join(store.root, "snapshots", "current", binding.bindingId + ".json");
+      const pointerBytes = readFileSync(pointerPath, "utf8");
+      const pointer = JSON.parse(pointerBytes) as { generationId: string };
+      const directory = join(store.root, "snapshots", "generations", binding.bindingId, pointer.generationId);
+      const before = ["binding.json", "history.json", "report.json"].map((file) => readFileSync(join(directory, file), "utf8"));
+      const pruned = store.prune(new Date("2030-01-01T00:00:00Z"), { reportDays: 90, planDays: 7, cacheDays: 30 });
+      assert.equal(pruned.removedReports, 0, "a file's existence is not proof that recovery metadata was preserved");
+      assert.equal(pruned.bytesFreed, 0);
+      assert.equal(readFileSync(target, "utf8"), contents, "prune must not overwrite invalid evidence");
+      assert.equal(readFileSync(pointerPath, "utf8"), pointerBytes);
+      assert.deepEqual(["binding.json", "history.json", "report.json"].map((file) => readFileSync(join(directory, file), "utf8")), before);
+      assert.equal(store.readReport(report.reportId)?.reportId, report.reportId);
+      // Once the operator removes the bad legacy record, the retained snapshot
+      // still supplies the original binding needed by revert.
+      rmSync(target);
+      assert.equal(store.readBinding(binding.bindingId)?.workspaceRoot, binding.workspaceRoot);
+    });
+  });
+}
+
 test("latestReport trusts a valid index without scanning unrelated records", () => {
   withRoot((root) => {
     const store = PatchStore.open(join(root, "state"));
