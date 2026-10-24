@@ -154,7 +154,10 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
     }
     if (input.currentPolicies !== undefined) {
       const current = input.currentPolicies.find((policy) => policy.kind === kind);
-      if (current === undefined || current.policyHash !== planPolicy.policyHash) reasons.push("POLICY_STALE");
+      if (current === undefined || current.status !== "known" || current.policyHash !== planPolicy.policyHash
+        || isStale(now, isoMillis(current.observedAt), input.policyMaxAgeMs ?? POLICY_MAX_AGE_MS)) {
+        reasons.push("POLICY_STALE");
+      }
     }
   }
 

@@ -187,6 +187,30 @@ function history(): HistoryBundle {
   };
 }
 
+for (const age of [null, 0, 600_000, 601_000, -601_000]) {
+  test("apply requires current retention evidence: " + (age === null ? "missing" : age + "ms old"), async (t) => {
+    const f = fixture("CD008");
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    if (age !== null) {
+      const snapshot = history();
+      f.store.saveHistory(f.binding.bindingId, { ...snapshot, repositoryId: f.binding.repositoryId,
+        retention: { ...snapshot.retention!, fetchedAt: new Date(NOW.getTime() - age).toISOString() } });
+    }
+    approve(f.store, f.plan);
+    const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: NOW, subjectId: "tester" });
+    if (age !== null && Math.abs(age) <= 600_000) {
+      assert.equal(result.state, "applied", result.reasons.join(","));
+    } else {
+      assert.equal(result.state, "not_applied");
+      assert.ok(result.reasons.includes("POLICY_STALE"), result.reasons.join(","));
+      assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
+      assert.deepEqual(f.store.listChanges(), []);
+      assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+      assert.notEqual(f.store.readNonce(f.plan.planId), null);
+    }
+  });
+}
+
 test("refuses an edit that changes a field outside the rule", () => {
   const space = workspace();
   const binding = createLocalBinding(space.root, ISO, { repositoryFullName: "owner/repo" }).binding;

@@ -68,6 +68,14 @@ function setup(text = WORKFLOW, rule: "CD001" | "CD005" = "CD001") {
   store.saveBinding(binding);
   store.saveAttestation(attestation);
   const fetchedAt = now.toISOString();
+  store.saveHistory(binding.bindingId, {
+    repositoryId: binding.repositoryId, repositoryFullName: "owner/repo", defaultBranch: "main",
+    requestedFrom: fetchedAt, requestedTo: fetchedAt, runs: [], pulls: new Map(), workflows: [], artifacts: [],
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt },
+    retention: { days: 90, maximumAllowedDays: 90, fetchedAt },
+    coverage: buildCoverage({ apiVersion: "2026-03-10", ghVersion: "gh 2", requestedFrom: fetchedAt, requestedTo: fetchedAt }, {}),
+    missingScopes: [],
+  });
   const policies = buildPolicySnapshots({
     binding,
     protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt },
@@ -202,6 +210,32 @@ test("apply refuses a missing live attestation instead of reviving the plan snap
   const retry = await applyPlan({ store: fixture.store, planId: fixture.plan.planId, now: fixture.now, subjectId: "tester" });
   assert.equal(retry.state, "applied", "restoring the live record allows the still-valid approval to be retried");
 });
+
+for (const rule of ["CD001", "CD005"] as const) {
+  test(rule + " handles history removed after approval according to its policy requirements", async (t) => {
+    const f = setup(WORKFLOW, rule);
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const approved = approvePlan({ store: f.store, planId: f.plan.planId,
+      confirmation: approvalConfirmation(f.plan), subjectId: "tester", channel: "human-cli", now: f.now });
+    const record = join(f.store.root, "snapshots", "history", f.binding.bindingId + ".json");
+    const original = readFileSync(record);
+    unlinkSync(record);
+    const result = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+    if (rule === "CD005") {
+      assert.equal(result.state, "applied", result.reasons.join(","));
+      return;
+    }
+    assert.equal(result.state, "not_applied");
+    assert.ok(result.reasons.includes("POLICY_STALE"));
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+    assert.deepEqual(f.store.listChanges(), []);
+    assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+    assert.equal(f.store.readNonce(f.plan.planId)?.nonceId, approved.nonce.nonceId);
+    writeFileSync(record, original);
+    const retry = await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" });
+    assert.equal(retry.state, "applied", retry.reasons.join(","));
+  });
+}
 
 for (const corruptedFile of ["before.yml", "after.yml"]) {
   test("apply refuses a corrupted " + corruptedFile + " before replacing the workflow", async (t) => {

@@ -350,9 +350,10 @@ function currentAttestations(store: PatchStore, plan: PatchPlan): Attestation[] 
   return current;
 }
 
-function currentPolicies(store: PatchStore, binding: RepositoryBinding, now: Date): PolicySnapshot[] | undefined {
+function currentPolicies(store: PatchStore, binding: RepositoryBinding, now: Date): PolicySnapshot[] {
   const history = store.readLatestHistory(binding.bindingId);
-  if (history === null) return undefined;
+  // Missing evidence must reach checkApply as an empty set, never skip its check.
+  if (history === null) return [];
   return buildPolicySnapshots({ binding, protection: history.protection, retention: history.retention, now });
 }
 

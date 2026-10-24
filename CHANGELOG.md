@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Apply refuses policy-dependent patches when current history is missing or
+  its relevant policy is stale, even if the approved plan's policy is fresh
+  and the policy values still have the same hash. Refusal precedes backup and
+  workflow writes; CD005 remains independent of account policy snapshots.
+
 - Apply and revert recheck the binding's physical workspace root before inspecting
   or replacing workflows, including rename retries. Redirecting the root through
   a directory link no longer makes an unrelated workspace pass containment;

@@ -198,7 +198,12 @@ filesystem races; they are not an operating-system atomic path guarantee.
 
 A policy value that changed requires a new plan and preview; never silently
 rewrite the digest to a newer value. Relevant policy must be at most 600 seconds old, and a
-write stops if fresh data cannot be obtained.
+write stops if fresh data cannot be obtained. Apply requires the relevant policy
+in the current stored history as well as the approved plan: missing history is
+an empty evidence set, never permission to reuse the plan's snapshot. The
+current policy must be known, match the approved value, and satisfy the same
+freshness bound in either time direction. Refusal happens before backup or
+workflow writes and leaves the approval available for a retry after sync.
 
 Freshness is per rule, not "the newest snapshot wins". CD001 needs a branch
 protection snapshot, CD008 needs the artifact retention policy, and CD005 needs

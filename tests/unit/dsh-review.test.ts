@@ -14,6 +14,7 @@ import { planConcurrencyEdit } from "../../src/core/patch/edits.ts";
 import { createAttestation } from "../../src/core/patch/attestation.ts";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import { runStaticScan } from "../../src/core/scan/scan.ts";
+import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { digestOf } from "../../src/shared/cdj1.ts";
 
 const SOURCE = "on: [pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n";
@@ -37,6 +38,15 @@ function fixture(t: { after(fn: () => void): void }) {
     claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
     evidenceRefs: ["test:review"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now });
   store.saveAttestation(attestation);
+  const fetchedAt = now.toISOString();
+  store.saveHistory(binding.bindingId, {
+    repositoryId: binding.repositoryId, repositoryFullName: "owner/repo", defaultBranch: "main",
+    requestedFrom: fetchedAt, requestedTo: fetchedAt, runs: [], pulls: new Map(), workflows: [], artifacts: [],
+    protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt },
+    retention: { days: 90, maximumAllowedDays: 90, fetchedAt },
+    coverage: buildCoverage({ apiVersion: "2026-03-10", ghVersion: "gh 2", requestedFrom: fetchedAt, requestedTo: fetchedAt }, {}),
+    missingScopes: [],
+  });
   const built = buildPatchPlan({ binding, workflow, text: SOURCE, edits: [edit], attestations: [attestation],
     policies: buildPolicySnapshots({ binding, protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: now.toISOString() },
       retention: { days: 90, maximumAllowedDays: 90, fetchedAt: now.toISOString() }, now }), blockers: [], coverageWriteAllowed: true, now });
