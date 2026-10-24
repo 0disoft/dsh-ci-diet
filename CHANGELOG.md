@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Dependency collection recognizes literal leading environment assignments such
+  as `NODE_ENV=production node build.js` before dispatching interpreters or
+  tracking `cd`. Executed scripts are pinned again, and apply rejects legacy
+  approvals that omitted them. Quoted assignment-looking words remain commands
+  and assignment-looking arguments after a command remain arguments.
+
 - Static scans now share content-based report IDs with history reports. Changes
   to selected rules, coverage failures or workflow paths no longer overwrite a
   different report produced at the same timestamp with the same source hashes.

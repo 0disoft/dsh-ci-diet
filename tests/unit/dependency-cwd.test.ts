@@ -139,3 +139,72 @@ for (const command of [
     assert.deepEqual(collection.dependencies.map((entry) => entry.ref), ["build.js", "scripts/build.js"]);
   });
 }
+
+for (const [command, expected] of [
+  ["NODE_ENV=production node build.js", ["build.js"]],
+  ["NODE_ENV=production CI=true node build.js", ["build.js"]],
+  ["NODE_ENV= node build.js", ["build.js"]],
+  ["CI=true cd scripts && node build.js", ["scripts/build.js"]],
+  ["node build.js && CI=true node scripts/build.js", ["build.js", "scripts/build.js"]],
+  ["node build.js NODE_ENV=production", ["build.js"]],
+  ["'NODE_ENV=production' node build.js", []],
+] as const) {
+  test("literal environment prefixes preserve script attribution: " + command, (t) => {
+    const f = fixture(t, command);
+    const collection = collectDependencies(f.root, f.workflow);
+    assert.deepEqual(collection.dependencies.map((entry) => entry.ref), [...expected]);
+    assert.deepEqual(collection.unresolved, []);
+  });
+}
+
+test("environment prefixes do not hide an isolated cd or dynamic assignment", (t) => {
+  for (const command of ["CI=true cd scripts | cat; node build.js", 'NODE_ENV="$MODE" node build.js']) {
+    const f = fixture(t, command);
+    const collection = collectDependencies(f.root, f.workflow);
+    assert.deepEqual(collection.dependencies, []);
+    assert.deepEqual(collection.unresolved, ["jobs.build.steps[0] (unsupported shell syntax)"]);
+  }
+});
+
+for (const legacy of [true, false]) {
+  test(legacy ? "apply refuses a legacy approval that omitted an environment-prefixed script"
+    : "apply accepts a fresh approval with an unchanged environment-prefixed script", async (t) => {
+    const f = fixture(t, "NODE_ENV=production node build.js");
+    const binding = createLocalBinding(f.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    // The old collector stored no dependencies for this command.
+    const dependencies = legacy ? [] : collectDependencies(f.root, f.workflow).dependencies;
+    const attestation = createAttestation({
+      bindingId: binding.bindingId, workflowPath: PATH, workflowHash: f.workflow.sha256,
+      dependencyHash: dependencyHashOf(dependencies), scope: "job", jobKey: "build", stepKey: null,
+      claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+      evidenceRefs: ["test:environment-prefix"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+    });
+    const policies = buildPolicySnapshots({ binding, now: NOW,
+      protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: NOW.toISOString() },
+      retention: { days: 90, maximumAllowedDays: 90, fetchedAt: NOW.toISOString() },
+    });
+    const { plan } = buildPatchPlan({ binding, workflow: f.workflow, text: f.text, dependencies,
+      edits: [planTimeoutEdit(f.text, f.workflow, f.workflow.jobs[0]!, 15).edit!],
+      attestations: [attestation], policies, blockers: [], coverageWriteAllowed: true, now: NOW });
+    const store = PatchStore.open(join(f.root, ".ci-diet"));
+    store.saveBinding(binding);
+    store.saveAttestation(attestation);
+    store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+    const approved = approvePlan({ store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+      subjectId: "tester", channel: "human-cli", now: NOW });
+    if (legacy) writeFileSync(join(f.root, "build.js"), "console.log('changed after approval')\n");
+    const result = await applyPlan({ store, planId: plan.planId, now: NOW, subjectId: "tester" });
+    if (!legacy) {
+      assert.equal(result.state, "applied");
+      assert.notEqual(readFileSync(join(f.root, PATH), "utf8"), f.text);
+      return;
+    }
+    t.diagnostic("apply after changing the unpinned script: " + result.state);
+    assert.equal(result.state, "not_applied");
+    assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"));
+    assert.equal(readFileSync(join(f.root, PATH), "utf8"), f.text);
+    assert.equal(store.readNonce(plan.planId)?.nonceId, approved.nonce.nonceId);
+    assert.deepEqual(store.listChanges(), []);
+    assert.deepEqual(readdirSync(join(store.root, "backups")), []);
+  });
+}

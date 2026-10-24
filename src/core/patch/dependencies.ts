@@ -161,7 +161,11 @@ function commandSegments(run: string): string[][] | null {
   let started = false, closedQuote = false;
   let isolatedCommands = false;
   const finishWord = (): void => {
-    if (started) words.push(word);
+    // Literal assignments before the command are environment, not argv[0].
+    // Keep quoted assignment-looking words and arguments after the command:
+    // they are ordinary shell words, not prefixes to strip.
+    const assignment = words.length === 0 && !closedQuote && /^[A-Za-z_][A-Za-z0-9_]*=/.test(word);
+    if (started && !assignment) words.push(word);
     word = "";
     started = false;
     closedQuote = false;

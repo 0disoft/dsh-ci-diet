@@ -135,6 +135,9 @@ configuration). The scan resolves a local action to every file in its directory
 interpreters (`node build.js`, `bash scripts/check.sh`), `./` and `../`
 executables, and slash-containing arguments relative to the step
 `working-directory` or the job/top-level `defaults.run.working-directory`.
+Literal unquoted environment prefixes such as `NODE_ENV=production node build.js`
+are removed before identifying the executable; quoted assignment-looking words
+and assignment-looking arguments after the executable stay ordinary arguments.
 Literal relative `cd` commands (including `cd -- path`) update that base. A
 directory escape or an unsupported `cd` form records an unresolved dependency
 and stops collecting that step; subsequent commands never inherit the old base.
