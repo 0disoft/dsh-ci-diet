@@ -78,17 +78,35 @@ test("a file that exceeds the dependency cap inside a local action is unresolved
   assert.ok(collection.dependencies.some((entry) => entry.ref.endsWith("action.yml")));
 });
 
-for (const incomplete of [false, true]) {
-  test("apply " + (incomplete ? "refuses an incomplete" : "accepts a complete") + " local-action dependency collection", async (t) => {
+for (const kind of ["complete", "oversized", "linked-directory", "linked-file"] as const) {
+  const incomplete = kind !== "complete";
+  test("apply checks local-action dependency completeness: " + kind, async (t) => {
     const space = workspace(BINARY_WORKFLOW);
     t.after(() => rmSync(space.root, { recursive: true, force: true }));
     const action = join(space.root, ".github", "actions", "binary");
     mkdirSync(action, { recursive: true });
     writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: run.js\n");
     writeFileSync(join(action, "run.js"), "console.log('run')\n");
+    const linked = kind === "linked-directory" || kind === "linked-file";
+    const runtime = join(space.root, "runtime");
+    if (linked) {
+      mkdirSync(runtime);
+      writeFileSync(join(runtime, "run.js"), "console.log('reviewed')\n");
+      writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: "
+        + (kind === "linked-directory" ? "linked/run.js" : "linked") + "\n");
+      try {
+        symlinkSync(kind === "linked-directory" ? runtime : join(runtime, "run.js"), join(action, "linked"),
+          kind === "linked-file" ? "file" : process.platform === "win32" ? "junction" : "dir");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+        t.skip("symlink creation is not permitted on this platform");
+        return;
+      }
+    }
     const workflow = parseWorkflow(space.path, space.text);
     const before = collectDependencies(space.root, workflow);
-    assert.deepEqual(before.unresolved, []);
+    if (!linked) assert.deepEqual(before.unresolved, []);
+    // Recreate an already-approved plan from versions that silently omitted links.
     const binding = createLocalBinding(space.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
     const attestation = createAttestation({
       bindingId: binding.bindingId, workflowPath: space.path, workflowHash: workflow.sha256,
@@ -108,11 +126,16 @@ for (const incomplete of [false, true]) {
     store.savePlan(built.plan, { coverageWriteAllowed: true, reportId: null });
     const approval = approvePlan({ store, planId: built.plan.planId, confirmation: approvalConfirmation(built.plan),
       subjectId: "tester", channel: "human-cli", now: NOW });
-    if (incomplete) {
+    if (kind === "oversized") {
       writeFileSync(join(action, "blob.bin"), Buffer.alloc(2 * 1024 * 1024 + 1));
       const after = collectDependencies(space.root, workflow);
       assert.deepEqual(after.dependencies, before.dependencies, "the hashable subset is unchanged");
       assert.deepEqual(after.unresolved, [".github/actions/binary/blob.bin (file too large)"]);
+    }
+    if (linked) {
+      writeFileSync(join(runtime, "run.js"), "console.log('unreviewed')\n");
+      const after = collectDependencies(space.root, workflow);
+      assert.deepEqual(after.dependencies, before.dependencies, "the linked runtime is absent from the pinned subset");
     }
     const result = await applyPlan({ store, planId: built.plan.planId, now: NOW, subjectId: "tester" });
     assert.equal(result.state, incomplete ? "not_applied" : "applied");
@@ -122,6 +145,10 @@ for (const incomplete of [false, true]) {
       assert.equal(store.readNonce(built.plan.planId)?.nonceId, approval.nonce.nonceId);
       assert.deepEqual(store.listChanges(), []);
       assert.equal(store.readBackup(store.changeIdFor(built.plan.planId, NOW)), null);
+    }
+    if (linked) {
+      assert.deepEqual(collectDependencies(space.root, workflow).unresolved,
+        [".github/actions/binary/linked (symbolic link)"]);
     }
   });
 }

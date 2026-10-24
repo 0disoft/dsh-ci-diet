@@ -244,6 +244,13 @@ function createDependencySink(realRoot: string): DependencySink {
           break walk;
         }
         visited += 1;
+        // Dirent classifies links separately from files/directories. Silently
+        // skipping one would leave its executable target outside the approval
+        // hash. Keep it unresolved until bounded link traversal is supported.
+        if (entry.isSymbolicLink()) {
+          unresolved.add(toPosix(relative(realRoot, join(current, entry.name))) + " (symbolic link)");
+          continue;
+        }
         if (entry.isDirectory()) {
           if (!ACTION_SKIP_DIRS.has(entry.name)) stack.push(join(current, entry.name));
           continue;
