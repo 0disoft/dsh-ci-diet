@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Reject unsupported shell control grammar during dependency collection. A
+  conditional or loop such as `if true; then node build.js; fi` no longer hides
+  the script behind a reserved word and produces a complete-looking empty hash.
+  Apply also refuses legacy approvals issued with the incomplete fingerprint.
+
 - Dependency collection recognizes literal leading environment assignments such
   as `NODE_ENV=production node build.js` before dispatching interpreters or
   tracking `cd`. Executed scripts are pinned again, and apply rejects legacy

@@ -138,6 +138,10 @@ executables, and slash-containing arguments relative to the step
 Literal unquoted environment prefixes such as `NODE_ENV=production node build.js`
 are removed before identifying the executable; quoted assignment-looking words
 and assignment-looking arguments after the executable stay ordinary arguments.
+Shell control words (`if`/`then`, loops, `case`, functions, brace groups, `!`,
+and `time`) are unsupported: the whole step records an unresolved dependency
+instead of treating a keyword as an executable and accepting a partial hash.
+These steps cannot authorize apply, including through previously saved approvals.
 Literal relative `cd` commands (including `cd -- path`) update that base. A
 directory escape or an unsupported `cd` form records an unresolved dependency
 and stops collecting that step; subsequent commands never inherit the old base.

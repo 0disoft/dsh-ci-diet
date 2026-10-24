@@ -16,6 +16,17 @@ import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 const PATH = ".github/workflows/ci.yml";
 const NOW = new Date("2026-10-20T00:00:00Z");
 
+const CONTROL_COMMANDS = [
+  "if true; then node build.js; fi",
+  "for item in one; do node build.js; done",
+  "while false; do node build.js; done",
+  "until true; do node build.js; done",
+  "! node build.js",
+  "{ node build.js; }",
+  "time node build.js",
+  "if true; then CI=true node build.js; fi",
+];
+
 function fixture(t: TestContext, command: string) {
   const parent = mkdtempSync(join(tmpdir(), "ci-diet-cwd-"));
   t.after(() => rmSync(parent, { recursive: true, force: true }));
@@ -31,6 +42,52 @@ function fixture(t: TestContext, command: string) {
   writeFileSync(join(root, PATH), text);
   return { root, external, text, workflow: parseWorkflow(PATH, text) };
 }
+
+for (const command of CONTROL_COMMANDS) {
+  test("rejects shell control grammar instead of reporting a complete fingerprint: " + command, (t) => {
+    // Quote YAML so ! and braces reach the shell collector as literal text.
+    const f = fixture(t, JSON.stringify(command));
+    assert.equal(f.workflow.jobs[0]!.steps[0]!.run, command);
+    const collection = collectDependencies(f.root, f.workflow);
+    assert.deepEqual(collection.dependencies, []);
+    assert.deepEqual(collection.unresolved, ["jobs.build.steps[0] (unsupported shell syntax)"]);
+  });
+}
+
+test("apply refuses a legacy approval that omitted a script behind shell control grammar", async (t) => {
+  const f = fixture(t, "if true; then node build.js; fi");
+  const binding = createLocalBinding(f.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+  const dependencies: ReturnType<typeof collectDependencies>["dependencies"] = [];
+  const attestation = createAttestation({
+    bindingId: binding.bindingId, workflowPath: PATH, workflowHash: f.workflow.sha256,
+    dependencyHash: dependencyHashOf(dependencies), scope: "job", jobKey: "build", stepKey: null,
+    claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+    evidenceRefs: ["test:shell-control"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+  });
+  const { plan } = buildPatchPlan({
+    binding, workflow: f.workflow, text: f.text, dependencies,
+    edits: [planTimeoutEdit(f.text, f.workflow, f.workflow.jobs[0]!, 15).edit!],
+    attestations: [attestation], policies: buildPolicySnapshots({ binding, now: NOW,
+      protection: { defaultBranch: "main", ruleCount: 0, classicProtection: true, fetchedAt: NOW.toISOString() },
+      retention: { days: 90, maximumAllowedDays: 90, fetchedAt: NOW.toISOString() },
+    }), blockers: [], coverageWriteAllowed: true, now: NOW,
+  });
+  const store = PatchStore.open(join(f.root, ".ci-diet"));
+  store.saveBinding(binding);
+  store.saveAttestation(attestation);
+  store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+  const approved = approvePlan({ store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+    subjectId: "tester", channel: "human-cli", now: NOW });
+  writeFileSync(join(f.root, "build.js"), "console.log('changed after approval')\n");
+  const result = await applyPlan({ store, planId: plan.planId, now: NOW, subjectId: "tester" });
+  t.diagnostic("apply after changing control-flow script: " + result.state);
+  assert.equal(result.state, "not_applied");
+  assert.ok(result.reasons.includes("DEPENDENCY_HASH_MISMATCH"));
+  assert.equal(readFileSync(join(f.root, PATH), "utf8"), f.text);
+  assert.equal(store.readNonce(plan.planId)?.nonceId, approved.nonce.nonceId);
+  assert.deepEqual(store.listChanges(), []);
+  assert.deepEqual(readdirSync(join(store.root, "backups")), []);
+});
 
 for (const cd of ["cd ../external", "cd /external", "cd", "cd -", 'cd "$WORKDIR"', "cd -P scripts", "cd scripts extra"]) {
   test("does not attribute subsequent commands to the old directory after " + cd, (t) => {

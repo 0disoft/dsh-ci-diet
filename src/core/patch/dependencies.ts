@@ -69,6 +69,11 @@ function flagValuePath(value: string): string | null {
   return null;
 }
 const SHELL_SOURCE_COMMANDS = new Set([".", "source"]);
+/** Reserved command heads need shell grammar, not the linear argv/cwd model. */
+const SHELL_CONTROL_WORDS = new Set([
+  "if", "then", "elif", "else", "fi", "for", "select", "while", "until",
+  "do", "done", "case", "esac", "function", "{", "}", "!", "time",
+]);
 
 function toPosix(value: string): string {
   return sep === "/" ? value : value.split(sep).join("/");
@@ -209,6 +214,9 @@ function commandSegments(run: string): string[][] | null {
   }
   if (quote !== null) return null;
   finishCommand();
+  // Never return a complete-looking subset when a reserved word hides the
+  // actual executable (e.g. `then node build.js`) or branches the cwd.
+  if (segments.some((words) => SHELL_CONTROL_WORDS.has(words[0] ?? ""))) return null;
   if (isolatedCommands && segments.some((words) => words[0] === "cd")) return null;
   return segments;
 }
