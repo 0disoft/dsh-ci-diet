@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- History sync counts unique run IDs toward `maxRuns` and fetches each run's
+  jobs once when offset pages overlap. Repeated IDs or a next page making no
+  progress mark history `partial` with `RUN_PAGINATION_CHANGED`; a page with
+  no new runs stops pagination instead of consuming the remaining budget.
+
 - Apply and revert exclusively create replacement sidecars, refusing existing
   files and links instead of overwriting them. The same descriptor is used for
   writing and fsync, and failure cleanup removes only the operation's own file.

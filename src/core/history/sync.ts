@@ -134,6 +134,8 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   }
 
   const runs: GitHubRun[] = [];
+  const runIds = new Set<number>();
+  let runPaginationChanged = false;
   let truncatedByLimit = false;
   let historyError: string | null = null;
   try {
@@ -146,17 +148,31 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
       });
       // Count rows this window refused so dropping the tail is reported even when
       // GitHub served the final page (hasNext is false).
+      const previousCount = runs.length;
       let dropped = 0;
       for (const run of result.items) {
+        // Offset pages can overlap while new runs arrive. Keep the first
+        // observation, never spend a sample slot or job request on its repeat.
+        if (runIds.has(run.id)) {
+          runPaginationChanged = true;
+          continue;
+        }
         if (runs.length >= historyConfig.maxRuns) {
           dropped += 1;
           continue;
         }
+        runIds.add(run.id);
         runs.push(run);
       }
       if (dropped > 0 || (runs.length >= historyConfig.maxRuns && result.hasNext)) truncatedByLimit = true;
       if (runs.length >= historyConfig.maxRuns) break;
       if (!result.hasNext) break;
+      // Deduplication must not turn repeating/empty next pages into an endless
+      // walk. Keep the collected evidence and disclose the unstable listing.
+      if (runs.length === previousCount) {
+        runPaginationChanged = true;
+        break;
+      }
     }
   } catch (error) {
     signal?.throwIfAborted();
@@ -420,12 +436,13 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   const historyReasons: string[] = [];
   if (historyError !== null) historyReasons.push(historyError);
   if (truncatedByLimit) historyReasons.push("RUN_LIMIT_REACHED");
+  if (runPaginationChanged) historyReasons.push("RUN_PAGINATION_CHANGED");
   if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
   if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
   const historyStatus: Dimension["status"] =
     historyError !== null
       ? "unavailable"
-      : truncatedByLimit || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
+      : truncatedByLimit || runPaginationChanged || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
         ? "partial"
         : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";

@@ -596,6 +596,46 @@ function jobResponse(runId: number, page = 1): GhResponse {
   });
 }
 
+for (const scenario of [
+  { name: "overlapping pages", pages: [[0, 1], [1, 2]], maxRuns: 3, expected: [300, 301, 302], nextOnLast: false },
+  { name: "duplicates inside a page", pages: [[0, 0, 1]], maxRuns: 4, expected: [300, 301], nextOnLast: false },
+  { name: "duplicate tail at the limit", pages: [[0, 1, 1]], maxRuns: 2, expected: [300, 301], nextOnLast: false },
+  { name: "a non-progressing next page", pages: [[0, 1], [0, 1]], maxRuns: 10, expected: [300, 301], nextOnLast: true },
+  { name: "an empty page with a next link", pages: [[0, 1], []], maxRuns: 10, expected: [300, 301], nextOnLast: true },
+]) {
+  test("counts unique runs and degrades coverage for " + scenario.name, async () => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    const runs = workflowRuns(3);
+    const jobReads: number[] = [];
+    let runReads = 0;
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/actions/runs")) {
+        const page = scenario.pages[runReads++];
+        assert.ok(page, "a page with no new runs must stop pagination");
+        const hasNext = runReads < scenario.pages.length || scenario.nextOnLast;
+        return response({ total_count: 3, workflow_runs: page.map((index) => runs[index]) },
+          hasNext ? { link: '<https://api.github.com/next>; rel="next"' } : {});
+      }
+      if (request.path.endsWith("/attempts/1/jobs")) {
+        const id = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+        jobReads.push(id);
+        return jobResponse(id);
+      }
+      return original(request, family);
+    };
+    const base = config();
+    const result = await syncRepositoryHistory({ owner: "o", repo: "r", now: NOW, transport,
+      config: { ...base, history: { ...base.history, maxRuns: scenario.maxRuns } } });
+    assert.deepEqual(result.history.runs.map((run) => Number(run.runId)), scenario.expected);
+    assert.deepEqual(jobReads.sort(), [...scenario.expected].sort(), "one job collection per unique run");
+    assert.equal(runReads, scenario.pages.length);
+    assert.equal(result.history.coverage.history.status, "partial");
+    assert.ok(result.history.coverage.history.reasons.includes("RUN_PAGINATION_CHANGED"));
+    assert.ok(!result.history.coverage.history.reasons.includes("RUN_LIMIT_REACHED"));
+  });
+}
+
 test("collects jobs with bounded concurrency while keeping repository order", async () => {
   const transport = fakeTransport();
   const original = transport.get.bind(transport);

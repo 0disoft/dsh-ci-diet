@@ -52,6 +52,14 @@ stops because a page cap was reached, the axis is at best `partial` and the reas
 `discovery` missing scope), `PULL_FILES_LIMIT_REACHED`, or
 `ARTIFACT_RUN_LIMIT_REACHED`. A truncated axis is never reported as `complete`.
 
+Run-list offset pages can overlap as repository activity changes. Sync keeps
+the first observation of each run ID, counts only unique IDs toward `maxRuns`,
+and collects each accepted run's jobs once. Any repeated ID marks history
+`partial` with `RUN_PAGINATION_CHANGED`. A page with a next link but no new
+accepted runs stops pagination with the same reason, so duplicates or empty
+pages cannot exhaust the budget without advancing the sample. This does not
+claim an atomic snapshot of GitHub's live listing.
+
 The machine-readable policy is `contracts/coverage-policy.json`. It is the
 authority. The table below is the composed result when one axis is
 `partial` / `unavailable`; the `full` case evaluates each rule's individual
