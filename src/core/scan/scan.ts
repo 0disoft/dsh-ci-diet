@@ -1,5 +1,5 @@
-import { sha256Hex } from "../../shared/cdj1.ts";
 import { buildCoverage } from "../analysis/coverage.ts";
+import { reportIdFor } from "../analysis/report-id.ts";
 import { assertValidDocument } from "../contracts/validate.ts";
 import type { AnalysisReport, Coverage, RepositoryBinding } from "../contracts/schema.ts";
 import { DEFAULT_CONFIG } from "../data/default-config.ts";
@@ -32,11 +32,6 @@ export interface StaticScanResult {
   readonly workflows: readonly WorkflowDefinition[];
   readonly skipped: readonly SkippedWorkflow[];
   readonly warnings: readonly string[];
-}
-
-function reportIdFor(binding: RepositoryBinding, generatedAt: string, hashes: readonly string[]): string {
-  const seed = [binding.bindingId, generatedAt, ...hashes].join("\n");
-  return "r_" + sha256Hex(seed).slice(0, 24);
 }
 
 function coverageFor(
@@ -143,10 +138,9 @@ export function runStaticScan(options: StaticScanOptions): StaticScanResult {
     .map((workflow) => "workflow:" + workflow.path + "@" + workflow.sha256)
     .sort();
 
-  const report: AnalysisReport = {
+  const content: Omit<AnalysisReport, "reportId"> = {
     schemaVersion: 2,
     provenance: "observed",
-    reportId: reportIdFor(bindingResult.binding, generatedAt, inputHashes),
     bindingId: bindingResult.binding.bindingId,
     engineVersion: ENGINE_VERSION,
     generatedAt,
@@ -159,6 +153,7 @@ export function runStaticScan(options: StaticScanOptions): StaticScanResult {
     parentReportId: null,
     pricingSnapshot: PRICING_SNAPSHOT,
   };
+  const report: AnalysisReport = { ...content, reportId: reportIdFor(content) };
 
   assertValidDocument("AnalysisReport", report);
   return {

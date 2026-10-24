@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Static scans now share content-based report IDs with history reports. Changes
+  to selected rules, coverage failures or workflow paths no longer overwrite a
+  different report produced at the same timestamp with the same source hashes.
+
 - Plan status compare-and-set now holds the store write lock while reading and
   checking the revision as well as writing it. A writer that commits while an
   approval is waiting for the lock can no longer have its newer status replaced

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { runStaticScan } from "../../src/core/scan/scan.ts";
 import type { StaticScanOptions, StaticScanResult } from "../../src/core/scan/scan.ts";
+import { PatchStore } from "../../src/core/patch/store.ts";
 
 const fixture = fileURLToPath(new URL("../fixtures/repos/static-scan/", import.meta.url));
 const generatedAt = "2026-10-20T00:00:00.000Z";
@@ -153,3 +154,33 @@ test("produces a stable report id for identical inputs", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+for (const changed of ["rules", "coverage", "path"] as const) {
+  test("static report identity preserves distinct " + changed + " at the same timestamp", () => {
+    const root = mkdtempSync(join(tmpdir(), "ci-diet-scan-identity-"));
+    try {
+      const directory = join(root, ".github", "workflows");
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "ci.yml"), "on: pull_request\njobs: {}\n");
+      const options: StaticScanOptions = {
+        workspaceRoot: root, generatedAt, enabledRules: ["CD004"], maxWorkflowBytes: 128,
+        commandRunner: { run: () => ({ stdout: "https://github.com/owner/repo.git" }) },
+      };
+      const first = runStaticScan(options).report;
+      const store = PatchStore.open(join(root, "state"));
+      store.saveReport(first);
+      if (changed === "coverage") writeFileSync(join(directory, "skipped.yml"), "#".repeat(129));
+      if (changed === "path") renameSync(join(directory, "ci.yml"), join(directory, "renamed.yml"));
+      const nextOptions = changed === "rules" ? { ...options, enabledRules: ["CD008"] as const } : options;
+      const second = runStaticScan(nextOptions).report;
+      assert.deepEqual(first.inputHashes, second.inputHashes, "source hashes alone cannot distinguish these reports");
+      store.saveReport(second);
+      assert.deepEqual(store.readReport(first.reportId), first, "a later scan must not overwrite earlier evidence");
+      assert.notEqual(first.reportId, second.reportId);
+      assert.deepEqual(store.readReport(second.reportId), second);
+      assert.equal(runStaticScan(nextOptions).report.reportId, second.reportId, "identical content stays deterministic");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}

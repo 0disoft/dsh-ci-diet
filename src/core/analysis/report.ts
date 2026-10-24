@@ -1,6 +1,7 @@
 /** Build an observed report from GitHub run history and the local workflows. */
-import { digestOf, sha256Hex } from "../../shared/cdj1.ts";
+import { digestOf } from "../../shared/cdj1.ts";
 import { buildCoverage } from "./coverage.ts";
+import { reportIdFor } from "./report-id.ts";
 import { assertValidDocument } from "../contracts/validate.ts";
 import type { AnalysisReport, Config, JobInput, RepositoryBinding, RuleResult } from "../contracts/schema.ts";
 import { PRICING_SNAPSHOT } from "../data/index.ts";
@@ -25,12 +26,6 @@ export interface HistoryReportInput {
 export interface HistoryReportResult {
   readonly report: AnalysisReport;
   readonly evaluations: readonly RuleEvaluation[];
-}
-
-function reportIdFor(content: Omit<AnalysisReport, "reportId">): string {
-  // Include the result, not just run ids: observations and configuration can
-  // change within one timestamp. JSON also preserves valid fractional metrics.
-  return "r_" + sha256Hex(JSON.stringify(content)).slice(0, 24);
 }
 
 function jobsFrom(history: HistoryBundle, removals: readonly RuleRemoval[]): JobInput[] {
