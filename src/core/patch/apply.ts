@@ -99,7 +99,11 @@ function assertRegularFile(path: string): void {
 function dependencyHashNow(binding: RepositoryBinding, workflowPath: string, text: string): string {
   try {
     const workflow = parseWorkflow(workflowPath, text);
-    return digestOf({ dependencies: collectDependencies(binding.workspaceRoot, workflow).dependencies });
+    const collection = collectDependencies(binding.workspaceRoot, workflow);
+    // An unchanged hashable subset cannot authorize unreviewed files that the
+    // collector could not pin (size/file limits or unreadable dependencies).
+    if (collection.unresolved.length > 0) return "sha256:unresolved";
+    return digestOf({ dependencies: collection.dependencies });
   } catch {
     // Bytes that cannot be parsed cannot match the approved dependency set.
     return "sha256:unparsable";

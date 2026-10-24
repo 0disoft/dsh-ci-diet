@@ -78,6 +78,54 @@ test("a file that exceeds the dependency cap inside a local action is unresolved
   assert.ok(collection.dependencies.some((entry) => entry.ref.endsWith("action.yml")));
 });
 
+for (const incomplete of [false, true]) {
+  test("apply " + (incomplete ? "refuses an incomplete" : "accepts a complete") + " local-action dependency collection", async (t) => {
+    const space = workspace(BINARY_WORKFLOW);
+    t.after(() => rmSync(space.root, { recursive: true, force: true }));
+    const action = join(space.root, ".github", "actions", "binary");
+    mkdirSync(action, { recursive: true });
+    writeFileSync(join(action, "action.yml"), "runs:\n  using: node20\n  main: run.js\n");
+    writeFileSync(join(action, "run.js"), "console.log('run')\n");
+    const workflow = parseWorkflow(space.path, space.text);
+    const before = collectDependencies(space.root, workflow);
+    assert.deepEqual(before.unresolved, []);
+    const binding = createLocalBinding(space.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    const attestation = createAttestation({
+      bindingId: binding.bindingId, workflowPath: space.path, workflowHash: workflow.sha256,
+      dependencyHash: dependencyHashOf(before.dependencies), scope: "job", jobKey: "build", stepKey: null,
+      claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+      evidenceRefs: ["test:dependency-completeness"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+    });
+    const built = buildPatchPlan({
+      binding, workflow, text: space.text,
+      edits: [planTimeoutEdit(space.text, workflow, workflow.jobs[0]!, 15).edit!],
+      attestations: [attestation], policies: buildPolicySnapshots({ binding, protection: null, retention: null, now: NOW }),
+      blockers: [], coverageWriteAllowed: true, dependencies: before.dependencies, now: NOW,
+    });
+    const store = PatchStore.open(join(space.root, ".ci-diet"));
+    store.saveBinding(binding);
+    store.saveAttestation(attestation);
+    store.savePlan(built.plan, { coverageWriteAllowed: true, reportId: null });
+    const approval = approvePlan({ store, planId: built.plan.planId, confirmation: approvalConfirmation(built.plan),
+      subjectId: "tester", channel: "human-cli", now: NOW });
+    if (incomplete) {
+      writeFileSync(join(action, "blob.bin"), Buffer.alloc(2 * 1024 * 1024 + 1));
+      const after = collectDependencies(space.root, workflow);
+      assert.deepEqual(after.dependencies, before.dependencies, "the hashable subset is unchanged");
+      assert.deepEqual(after.unresolved, [".github/actions/binary/blob.bin (file too large)"]);
+    }
+    const result = await applyPlan({ store, planId: built.plan.planId, now: NOW, subjectId: "tester" });
+    assert.equal(result.state, incomplete ? "not_applied" : "applied");
+    if (incomplete) {
+      assert.deepEqual(result.reasons, ["DEPENDENCY_HASH_MISMATCH"]);
+      assert.equal(readFileSync(join(space.root, space.path), "utf8"), space.text);
+      assert.equal(store.readNonce(built.plan.planId)?.nonceId, approval.nonce.nonceId);
+      assert.deepEqual(store.listChanges(), []);
+      assert.equal(store.readBackup(store.changeIdFor(built.plan.planId, NOW)), null);
+    }
+  });
+}
+
 const SCRIPT_WORKFLOW = [
   "on: pull_request",
   "jobs:",
