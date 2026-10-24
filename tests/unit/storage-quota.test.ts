@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { acquireStoreLock, withStoreWriteLock } from "../../src/core/patch/locks.ts";
 import { appliedBackupConfirmToken, PatchStore, StoreCorruptionError, StoreQuotaError } from "../../src/core/patch/store.ts";
 import type { AnalysisReport, AppliedChange, RepositoryBinding } from "../../src/core/contracts/schema.ts";
-import type { HistoryBundle } from "../../src/core/history/model.ts";
+import type { HistoryBundle, HistoryPull } from "../../src/core/history/model.ts";
 import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { buildHistoryReport } from "../../src/core/analysis/report.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
@@ -81,6 +81,74 @@ function withRoot<T>(run: (root: string) => T): T {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+for (const generation of [false, true]) {
+  test("history preserves pull requests after reopening " + (generation ? "a generation" : "a legacy-path snapshot"), () => {
+    withRoot((root) => {
+      const state = join(root, "state");
+      const store = PatchStore.open(state);
+      const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+      const pulls = new Map<number, HistoryPull>([
+        [7, { number: 7, baseBranch: "main", headBranch: "docs", files: ["README.md", "docs/notes/한글.md"] }],
+        [8, { number: 8, baseBranch: "main", headBranch: "feature", files: null }],
+      ]);
+      const snapshot = { ...history(NOW.toISOString()), pulls };
+      if (generation) store.saveHistorySnapshot(binding, snapshot, reportFor(binding, snapshot));
+      else store.saveHistory(binding.bindingId, snapshot);
+      const loaded = PatchStore.open(state).readLatestHistory(binding.bindingId);
+      assert.ok(loaded);
+      assert.ok(loaded.pulls instanceof Map, "the storage boundary must restore the runtime Map");
+      assert.equal(loaded.pulls.size, 2);
+      assert.deepEqual([...loaded.pulls], [...pulls]);
+      const analyze = (value: HistoryBundle) => buildHistoryReport({ binding, workflows: [], history: value,
+        config: DEFAULT_CONFIG, generatedAt: snapshot.requestedTo, enabledRules: ["CD003"] }).report;
+      assert.deepEqual(analyze(loaded), analyze(snapshot), "reanalysis uses the same pull-request evidence");
+    });
+  });
+}
+
+test("legacy lost pull requests remain readable but require a fresh sync for complete evidence", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const bindingId = "b_legacy_pulls";
+    const base = history(NOW.toISOString());
+    const pulls = new Map<number, HistoryPull>([[7, { number: 7, baseBranch: "main", headBranch: "docs", files: ["README.md"] }]]);
+    const snapshot = { ...base, pulls, coverage: { ...base.coverage,
+      changedFiles: { ...base.coverage.changedFiles, status: "complete" as const, fetched: 1, expected: 1, reasons: [] },
+    } };
+    const path = join(store.root, "snapshots", "history", bindingId + ".json");
+    const oldBytes = JSON.stringify(snapshot);
+    writeFileSync(path, oldBytes);
+    const loaded = store.readLatestHistory(bindingId);
+    assert.ok(loaded);
+    assert.equal(loaded.pulls.size, 0);
+    assert.equal(loaded.coverage.changedFiles.status, "unavailable");
+    assert.ok(loaded.coverage.changedFiles.reasons.includes("LEGACY_PULLS_UNAVAILABLE"));
+    assert.equal(readFileSync(path, "utf8"), oldBytes, "reading never rewrites old evidence");
+    store.saveHistory(bindingId, snapshot);
+    const refreshed = store.readLatestHistory(bindingId)!;
+    assert.deepEqual([...refreshed.pulls], [...pulls]);
+    assert.equal(refreshed.coverage.changedFiles.status, "complete");
+  });
+});
+
+test("malformed pull request entries fail closed without deleting the stored evidence", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const path = join(store.root, "snapshots", "history", "b_bad_pulls.json");
+    const pull = { number: 7, baseBranch: "main", headBranch: "private-marker", files: ["README.md"] };
+    for (const pulls of [null, [[7]], [[7, pull], [7, pull]], [[8, pull]], [[7, { ...pull, files: [123] }]], [[1.5, pull]]]) {
+      const contents = JSON.stringify({ ...history(NOW.toISOString()), pulls });
+      writeFileSync(path, contents);
+      assert.throws(() => store.readLatestHistory("b_bad_pulls"), (error: unknown) => {
+        assert.ok(error instanceof StoreCorruptionError);
+        assert.doesNotMatch(error.message, /private-marker/);
+        return true;
+      });
+      assert.equal(readFileSync(path, "utf8"), contents);
+    }
+  });
+});
 
 test("an older overlapping sync cannot publish a partial snapshot", () => {
   withRoot((root) => {

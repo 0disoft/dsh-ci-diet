@@ -3,6 +3,8 @@ import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import { dirname, join, sep } from "node:path";
 import type { AnalysisReport, AppliedChange, Attestation, PatchPlan, PlanStatus, RepositoryBinding } from "../contracts/schema.ts";
 import type { HistoryBundle } from "../history/model.ts";
+import { historyFromRecord, historyRecord } from "../history/storage.ts";
+import type { HistoryRecord } from "../history/storage.ts";
 import { assertValidDocument, validationErrors } from "../contracts/validate.ts";
 import type { DocumentKind } from "../contracts/validate.ts";
 import { digestOf } from "../../shared/cdj1.ts";
@@ -489,7 +491,7 @@ export class PatchStore {
       // Reject unrelated roots before loading their potentially large payloads.
       // Matching snapshots still require the complete generation validation below.
       if (binding !== null && includeBinding !== undefined && !includeBinding(binding)) return null;
-      const history = this.readJson<HistoryBundle>(join(directory, "history.json"));
+      const history = this.readHistory(join(directory, "history.json"));
       const report = this.readJson<AnalysisReport>(join(directory, "report.json"), "AnalysisReport");
       if (
         binding !== null && history !== null && report !== null
@@ -885,7 +887,7 @@ export class PatchStore {
     return this.withWriteLock(() => {
       const current = this.readLatestHistory(bindingId);
       if (current !== null && Date.parse(current.requestedTo) > Date.parse(history.requestedTo)) return false;
-      this.writeJsonUnlocked(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"), history);
+      this.writeJsonUnlocked(this.path("snapshots", "history", requireId(bindingId, "bindingId") + ".json"), historyRecord(history));
       return true;
     });
   }
@@ -910,7 +912,7 @@ export class PatchStore {
       try {
         this.ensureDirectory(directory);
         this.writeJsonUnlocked(join(directory, "binding.json"), binding);
-        this.writeJsonUnlocked(join(directory, "history.json"), history);
+        this.writeJsonUnlocked(join(directory, "history.json"), historyRecord(history));
         this.writeJsonUnlocked(join(directory, "report.json"), report);
         const pointer: SnapshotPointer = {
           generationId,
@@ -932,10 +934,20 @@ export class PatchStore {
   readLatestHistory(bindingId: string): HistoryBundle | null {
     const id = requireId(bindingId, "bindingId");
     const snapshot = this.readCurrentSnapshot(id);
-    const legacy = this.readJson<HistoryBundle>(this.path("snapshots", "history", id + ".json"));
+    const legacy = this.readHistory(this.path("snapshots", "history", id + ".json"));
     if (snapshot === null) return legacy;
     if (legacy === null) return snapshot.history;
     return Date.parse(legacy.requestedTo) > Date.parse(snapshot.history.requestedTo) ? legacy : snapshot.history;
+  }
+
+  private readHistory(path: string): HistoryBundle | null {
+    const record = this.readJson<HistoryRecord>(path);
+    if (record === null) return null;
+    try {
+      return historyFromRecord(record);
+    } catch {
+      throw new StoreCorruptionError(path, "HistoryBundle pull requests mismatch");
+    }
   }
 
   saveChange(change: AppliedChange): void {
