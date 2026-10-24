@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseWorkflow } from "../../src/core/workflow/parse.ts";
@@ -558,6 +560,74 @@ function blockReplacement(root: string, file: string): () => void {
   const dir = join(root, ".github", "workflows");
   chmodSync(dir, 0o555);
   return () => chmodSync(dir, 0o755);
+}
+
+for (const operation of ["apply", "revert"] as const) {
+  test(operation + " preserves edits made after its final journal write", async (t) => {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    const edited = readFileSync(f.file, "utf8") + "# concurrent user edit\n";
+    const saveChange = f.store.saveChange.bind(f.store);
+    let injected = false;
+    t.mock.method(f.store, "saveChange", (change: AppliedChange) => {
+      saveChange(change);
+      if (change.state === (operation === "apply" ? "APPLYING" : "REVERTING")) {
+        injected = true;
+        writeFileSync(f.file, edited);
+      }
+    });
+    const changeId = applied?.change?.changeId ?? f.store.changeIdFor(f.plan.planId, f.now);
+    await assert.rejects(operation === "apply"
+      ? applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : revertChange({ store: f.store, changeId, now: f.now }), /WRITE_CONFLICT/);
+    assert.equal(injected, true);
+    assert.equal(readFileSync(f.file, "utf8"), edited);
+    assert.equal(f.store.readChange(changeId)?.state, operation === "apply" ? "RECOVERY_REQUIRED" : "REVERTING");
+    assert.notEqual(f.store.readBackup(changeId), null);
+    assert.deepEqual(readdirSync(join(f.root, ".github", "workflows")), ["ci.yml"]);
+    t.mock.restoreAll();
+    assert.equal((await revertChange({ store: f.store, changeId, now: f.now })).state, "CONFLICT");
+    assert.equal(readFileSync(f.file, "utf8"), edited);
+  });
+
+  test(operation + " rechecks the target after a failed rename before retrying", async (t) => {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    approvePlan({ store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+      subjectId: "tester", channel: "human-cli", now: f.now });
+    const applied = operation === "revert"
+      ? await applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+      : null;
+    const edited = readFileSync(f.file, "utf8") + "# user edit during rename contention\n";
+    const changeId = applied?.change?.changeId ?? f.store.changeIdFor(f.plan.planId, f.now);
+    const rename = fs.renameSync;
+    let attempts = 0;
+    const mocked = t.mock.method(fs, "renameSync", (...args: Parameters<typeof renameSync>) => {
+      if (args[1] === f.file && ++attempts === 1) {
+        writeFileSync(f.file, edited);
+        throw Object.assign(new Error("simulated rename contention"), { code: "EPERM" });
+      }
+      return rename(...args);
+    });
+    syncBuiltinESMExports();
+    try {
+      await assert.rejects(operation === "apply"
+        ? applyPlan({ store: f.store, planId: f.plan.planId, now: f.now, subjectId: "tester" })
+        : revertChange({ store: f.store, changeId, now: f.now }), /WRITE_CONFLICT/);
+    } finally {
+      mocked.mock.restore();
+      syncBuiltinESMExports();
+    }
+    assert.equal(attempts, 1, "a conflict must prevent the next rename attempt");
+    assert.equal(readFileSync(f.file, "utf8"), edited);
+    assert.notEqual(f.store.readBackup(changeId), null);
+    assert.deepEqual(readdirSync(join(f.root, ".github", "workflows")), ["ci.yml"]);
+  });
 }
 
 test("a failed replacement leaves the change not applied and keeps the approval retryable", async (t) => {

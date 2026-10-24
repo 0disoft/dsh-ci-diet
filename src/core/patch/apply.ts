@@ -228,7 +228,7 @@ function releaseWriterLease(lease: string, token: string): void {
   releaseLock(lease, token);
 }
 
-async function replaceAtomically(path: string, text: string, mode: number, signal?: AbortSignal): Promise<string> {
+async function replaceAtomically(path: string, text: string, mode: number, expectedHash: string, signal?: AbortSignal): Promise<string> {
   throwIfAborted(signal);
   const temporary = path + ".ci-diet-" + process.pid + "-" + Date.now().toString(36) + ".tmp";
   let renamed = false;
@@ -252,6 +252,14 @@ async function replaceAtomically(path: string, text: string, mode: number, signa
     }
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
+      // Journal writes, fsync and retry waits can outlive the caller's recheck.
+      // Refuse a changed target on every attempt, outside the retry catch: a
+      // source conflict must never turn into an unconditional later overwrite.
+      // This narrows the race; the read and rename are not an OS-level CAS.
+      assertRegularFile(path);
+      if (textHash(readFileSync(path, "utf8")) !== expectedHash) {
+        throw new Error("WRITE_CONFLICT: target changed before replacement");
+      }
       try {
         renameSync(temporary, path);
         renamed = true;
@@ -570,7 +578,7 @@ async function commitApply(
   const mode = statSync(target).mode;
   let afterHash: string;
   try {
-    afterHash = await replaceAtomically(target, inspection.text, mode, options.signal);
+    afterHash = await replaceAtomically(target, inspection.text, mode, inspection.beforeHash, options.signal);
   } catch (error) {
     return handleReplaceFailure(options, plan, applying, target, inspection.beforeHash, inspection.hash, reference, error);
   }
@@ -681,7 +689,7 @@ export async function revertChange(options: {
         options.store.saveChange({ ...change, state: "REVERTING", updatedAt: iso(options.now) });
       }
       const mode = statSync(target).mode;
-      const restoredHash = await replaceAtomically(target, backup.beforeText, mode, options.signal);
+      const restoredHash = await replaceAtomically(target, backup.beforeText, mode, change.after.hash, options.signal);
       if (restoredHash !== change.before.hash) {
         options.store.saveChange({ ...change, state: "RECOVERY_REQUIRED", updatedAt: iso(options.now) });
         return { state: "RECOVERY_REQUIRED", reason: "RESTORE_HASH_MISMATCH" };
