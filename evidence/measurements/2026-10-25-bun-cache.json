@@ -1,0 +1,358 @@
+{
+  "collectedAt": "2026-10-25T13:01:55.554Z",
+  "collectionMethod": "Read-only gh api via ci-diet compare; existing manually selected runs; no new CI",
+  "workflowVerification": [
+    {
+      "phase": "before",
+      "runId": 40016328106,
+      "commit": "30e645cf064172ce448ae8ab5c563012e9e935a0",
+      "workflowSha256": "eb9fe82a27163bd589b8adb6c47b1591d3a30a27543fea59d30e7448c3125dfd",
+      "matchesLocalCommit": true
+    },
+    {
+      "phase": "after",
+      "runId": 40017821322,
+      "commit": "e4dd3ac6f8f23199ffac2f82b6d6b58c3e348911",
+      "workflowSha256": "d692654e74ce16d992ad03210eab6309b1b5b7a4d559a02150689ad5d6f540a3",
+      "matchesLocalCommit": true
+    }
+  ],
+  "comparison": {
+    "schemaVersion": 1,
+    "before": {
+      "id": 40016328106,
+      "attempt": 1,
+      "repository": "0disoft/dsh-ci-diet",
+      "workflow": ".github/workflows/ci.yml",
+      "branch": "main",
+      "event": "push",
+      "sha": "30e645cf064172ce448ae8ab5c563012e9e935a0",
+      "jobs": [
+        {
+          "name": "check",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "seconds": 62,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1
+            },
+            {
+              "name": "Run actions/checkout@v7",
+              "seconds": 1
+            },
+            {
+              "name": "Run actions/setup-node@v7",
+              "seconds": 5
+            },
+            {
+              "name": "Run oven-sh/setup-bun@v2",
+              "seconds": 1
+            },
+            {
+              "name": "Cache Bun dependency downloads",
+              "seconds": 1
+            },
+            {
+              "name": "Run bun install --frozen-lockfile",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run typecheck",
+              "seconds": 4
+            },
+            {
+              "name": "Run bun run lint",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:types",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:data",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run test:core",
+              "seconds": 38
+            },
+            {
+              "name": "Run bun run test:docs",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:contracts",
+              "seconds": 1
+            },
+            {
+              "name": "Run bun run build",
+              "seconds": 3
+            },
+            {
+              "name": "Run bun run smoke:node",
+              "seconds": 0
+            },
+            {
+              "name": "Post Cache Bun dependency downloads",
+              "seconds": 3
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@v2",
+              "seconds": 0
+            },
+            {
+              "name": "Post Run actions/setup-node@v7",
+              "seconds": 0
+            },
+            {
+              "name": "Post Run actions/checkout@v7",
+              "seconds": 0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0
+            }
+          ]
+        }
+      ]
+    },
+    "after": {
+      "id": 40017821322,
+      "attempt": 1,
+      "repository": "0disoft/dsh-ci-diet",
+      "workflow": ".github/workflows/ci.yml",
+      "branch": "main",
+      "event": "push",
+      "sha": "e4dd3ac6f8f23199ffac2f82b6d6b58c3e348911",
+      "jobs": [
+        {
+          "name": "check",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "seconds": 35,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1
+            },
+            {
+              "name": "Run actions/checkout@v7",
+              "seconds": 0
+            },
+            {
+              "name": "Run actions/setup-node@v7",
+              "seconds": 5
+            },
+            {
+              "name": "Run oven-sh/setup-bun@v2",
+              "seconds": 1
+            },
+            {
+              "name": "Run bun install --frozen-lockfile",
+              "seconds": 1
+            },
+            {
+              "name": "Run bun run typecheck",
+              "seconds": 3
+            },
+            {
+              "name": "Run bun run lint",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:types",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:data",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run test:core",
+              "seconds": 17
+            },
+            {
+              "name": "Run bun run test:docs",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run check:contracts",
+              "seconds": 0
+            },
+            {
+              "name": "Run bun run build",
+              "seconds": 3
+            },
+            {
+              "name": "Run bun run smoke:node",
+              "seconds": 0
+            },
+            {
+              "name": "Post Run oven-sh/setup-bun@v2",
+              "seconds": 1
+            },
+            {
+              "name": "Post Run actions/setup-node@v7",
+              "seconds": 0
+            },
+            {
+              "name": "Post Run actions/checkout@v7",
+              "seconds": 0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0
+            }
+          ]
+        }
+      ]
+    },
+    "comparable": true,
+    "blockers": [],
+    "warnings": [
+      "SINGLE_PAIR_NOT_CAUSAL_PROOF",
+      "RUNNER_IMAGE_AND_CACHE_STATE_UNVERIFIED",
+      "SOURCE_CHANGED_REVIEW_DIFF_AND_TEST_SCOPE"
+    ],
+    "beforeRunnerSeconds": 62,
+    "afterRunnerSeconds": 35,
+    "observedReductionSeconds": 27,
+    "observedReductionPercent": 43.54838709677419,
+    "actualBilledUsd": null,
+    "verifiedCausalSavings": false,
+    "jobs": [
+      {
+        "name": "check",
+        "beforeSeconds": 62,
+        "afterSeconds": 35,
+        "steps": [
+          {
+            "name": "Set up job",
+            "beforeSeconds": 1,
+            "afterSeconds": 1,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run actions/checkout@v7",
+            "beforeSeconds": 1,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 1
+          },
+          {
+            "name": "Run actions/setup-node@v7",
+            "beforeSeconds": 5,
+            "afterSeconds": 5,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run oven-sh/setup-bun@v2",
+            "beforeSeconds": 1,
+            "afterSeconds": 1,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Cache Bun dependency downloads",
+            "beforeSeconds": 1,
+            "afterSeconds": null,
+            "observedReductionSeconds": null
+          },
+          {
+            "name": "Run bun install --frozen-lockfile",
+            "beforeSeconds": 0,
+            "afterSeconds": 1,
+            "observedReductionSeconds": -1
+          },
+          {
+            "name": "Run bun run typecheck",
+            "beforeSeconds": 4,
+            "afterSeconds": 3,
+            "observedReductionSeconds": 1
+          },
+          {
+            "name": "Run bun run lint",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run bun run check:types",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run bun run check:data",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run bun run test:core",
+            "beforeSeconds": 38,
+            "afterSeconds": 17,
+            "observedReductionSeconds": 21
+          },
+          {
+            "name": "Run bun run test:docs",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run bun run check:contracts",
+            "beforeSeconds": 1,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 1
+          },
+          {
+            "name": "Run bun run build",
+            "beforeSeconds": 3,
+            "afterSeconds": 3,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Run bun run smoke:node",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Post Cache Bun dependency downloads",
+            "beforeSeconds": 3,
+            "afterSeconds": null,
+            "observedReductionSeconds": null
+          },
+          {
+            "name": "Post Run oven-sh/setup-bun@v2",
+            "beforeSeconds": 0,
+            "afterSeconds": 1,
+            "observedReductionSeconds": -1
+          },
+          {
+            "name": "Post Run actions/setup-node@v7",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Post Run actions/checkout@v7",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          },
+          {
+            "name": "Complete job",
+            "beforeSeconds": 0,
+            "afterSeconds": 0,
+            "observedReductionSeconds": 0
+          }
+        ],
+        "addedSteps": []
+      }
+    ]
+  }
+}

@@ -23,10 +23,12 @@ CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发�
 | CD003 | 仅文档变更仍执行重型检查 | 仅解释，默认关闭 |
 | CD004 | 过大的矩阵 | 仅解释 |
 | CD005 | 缺少 `timeout-minutes` 的 job | timeout 编辑，默认关闭 |
-| CD006 | 未启用 npm 缓存却运行 `npm ci` 的 `actions/setup-node@v3` 或 `@v4` job | 两个 setup-node 输入，默认开启 |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | 过长的 artifact 保留时间 | 保留时间编辑 |
 
-CD001 针对因出现较新提交而重叠、已被取代的 PR 运行。CD005 为异常运行设置上限，不会缩短正常 job 的运行时间。CD008 改变 artifact 的存储保留时间，与 runner 分钟无关。CD003 和 CD005 在通过质量门槛前默认关闭。CD006 是面向一种狭窄 npm 形态的默认静态规则：它为 setup-node 打开下载缓存，`npm ci` 和所有测试仍会运行。缓存预热后可能减少下载，但在比较冷缓存和热缓存运行之前，不声称节省时间或费用。
+CD001 针对因出现较新提交而重叠、已被取代的 PR 运行。CD005 为异常运行设置上限，不会缩短正常 job 的运行时间。CD008 改变 artifact 的存储保留时间，与 runner 分钟无关。CD003 和 CD005 在通过质量门槛前默认关闭。
+
+CD006 还支持经过验证的 npm/pnpm 配置，以及使用 `oven-sh/setup-bun@v2`、随后执行 `bun install --frozen-lockfile` 并且采用受跟踪的文本文件 `bun.lock` 的 Bun 作业。Bun 会增加一个下载缓存步骤；安装和测试仍会运行。缓存恢复/保存的开销可能超过其收益。请参阅[当前缓存防护](docs/spec/rules.md#bun-dependency-cache-variant)和[一个实测示例](docs/measurements/2026-10-25-cache-review.md)。下面的 npm 示例展示了其中一种受支持的配置。
 
 ## 安装与升级
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 把 `PLAN_ID` 换成 plan 输出的 id，把 `CONFIRMATION` 换成 digest 的最后 12 个字符，把 `CHANGE_ID` 换成 apply 输出的 id。每个值都作为字面参数传入，不要输入尖括号。`approve` 创建一次性批准，`apply` 只改写一个 workflow 文件中计划好的字节范围，`revert` 恢复该变更的备份。检查结果 diff，并按需运行仓库检查。CI Diet 不会提交、推送、部署、运行 workflow、修改分支保护或删除 artifact。
 
-对于符合条件的仅 PR CI，CD001 示例中的 `ci-only` 和 `replace-safe` 是人工 attestation。它们表示操作者已经审查取消运行的语义，不是绕过开关。CD005 需要测量得到的 `--job` 和 `--minutes`；CD008 需要 `--job`、目标 step 从 0 开始的数字 `--step` 数组索引以及 artifact claims。CD006 需要 `--job` 和 setup-node 步骤从 0 开始的 `--step` 索引，不需要 claims。两个步骤规则中的数字 step 都是数组索引，不是步骤名称令牌。
+对于符合条件的仅 PR CI，CD001 示例中的 `ci-only` 和 `replace-safe` 是人工 attestation。它们表示操作者已经审查取消运行的语义，不是绕过开关。CD005 需要测量得到的 `--job` 和 `--minutes`；CD008 需要 `--job`、目标 step 从 0 开始的数字 `--step` 数组索引以及 artifact claims。CD006 需要 `--job` 和 setup-node/setup-bun 步骤从 0 开始的 `--step` 索引，不需要 claims。两个步骤规则中的数字 step 都是数组索引，不是步骤名称令牌。
 
 ## 状态与限制
 

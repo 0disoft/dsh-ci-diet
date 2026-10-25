@@ -23,10 +23,12 @@ El scan estático lee el YAML de los workflows en un checkout de destino. La sin
 | CD003 | Comprobaciones pesadas para cambios que solo afectan a la documentación | solo explicación; desactivada por defecto |
 | CD004 | Matrices de gran tamaño | solo explicación |
 | CD005 | Jobs sin `timeout-minutes` | modificación del timeout; desactivada por defecto |
-| CD006 | Jobs `actions/setup-node@v3` o `@v4` que ejecutan `npm ci` sin caché de npm | dos entradas de setup-node; activada por defecto |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | Retención prolongada de artefactos | modificación de la retención |
 
-CD001 ayuda a tratar las ejecuciones de PR solapadas que han quedado obsoletas. CD005 limita las ejecuciones anómalas; no reduce el tiempo de ejecución normal de un job. CD008 cambia la retención del almacenamiento de artefactos, no los minutos de runner. CD003 y CD005 permanecen desactivadas hasta que superen sus controles de calidad. CD006 es una regla estática activada por defecto para una forma estrecha de npm: añade la caché de descargas de setup-node mientras `npm ci` y todas las pruebas se siguen ejecutando. La caché puede reducir descargas cuando está caliente; no se afirma ningún ahorro de tiempo ni de dinero hasta comparar ejecuciones en frío y en caliente.
+CD001 ayuda a tratar las ejecuciones de PR solapadas que han quedado obsoletas. CD005 limita las ejecuciones anómalas; no reduce el tiempo de ejecución normal de un job. CD008 cambia la retención del almacenamiento de artefactos, no los minutos de runner. CD003 y CD005 permanecen desactivadas hasta que superen sus controles de calidad.
+
+CD006 también admite configuraciones verificadas de npm/pnpm y trabajos de Bun que usan `oven-sh/setup-bun@v2` seguido de `bun install --frozen-lockfile` con un `bun.lock` de texto versionado. Bun añade un paso de caché de descargas; la instalación y las pruebas se siguen ejecutando. La sobrecarga de restaurar y guardar la caché puede superar el beneficio. Consulta las [condiciones actuales de caché](docs/spec/rules.md#bun-dependency-cache-variant) y [un ejemplo medido](docs/measurements/2026-10-25-cache-review.md). El ejemplo de npm de abajo muestra una de las formas admitidas.
 
 ## Instalación y actualización
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Sustituye `PLAN_ID` por el ID que imprime el plan, `CONFIRMATION` por sus últimos 12 caracteres del digest y `CHANGE_ID` por el ID que imprime apply. Cada valor es un argumento literal; no escribas los corchetes angulares. `approve` crea una aprobación de un solo uso, `apply` reescribe únicamente el rango de bytes planificado en un archivo de workflow y `revert` restaura la copia de seguridad de ese cambio. Revisa el diff resultante y ejecuta las comprobaciones del repositorio según sea necesario. CI Diet no hace commits, push ni despliegues, no ejecuta workflows, no cambia la protección de ramas ni elimina artefactos.
 
-Para una CI apta que solo se ejecuta en PRs, el ejemplo de CD001 usa `ci-only` y `replace-safe` como declaraciones humanas. Indican que la persona operadora ha revisado la semántica de cancelación; no son interruptores de omisión. CD005 necesita un `--job` y un `--minutes` medidos, y CD008 necesita `--job`, un índice numérico basado en cero del array `--step` para el paso objetivo y declaraciones sobre artefactos. CD006 necesita `--job` y el índice basado en cero `--step` del paso setup-node; no usa declaraciones. En ambas reglas de paso, el número es un índice del array y no un token con el nombre del paso.
+Para una CI apta que solo se ejecuta en PRs, el ejemplo de CD001 usa `ci-only` y `replace-safe` como declaraciones humanas. Indican que la persona operadora ha revisado la semántica de cancelación; no son interruptores de omisión. CD005 necesita un `--job` y un `--minutes` medidos, y CD008 necesita `--job`, un índice numérico basado en cero del array `--step` para el paso objetivo y declaraciones sobre artefactos. CD006 necesita `--job` y el índice basado en cero `--step` del paso setup-node/setup-bun; no usa declaraciones. En ambas reglas de paso, el número es un índice del array y no un token con el nombre del paso.
 
 ## Estado y limitaciones
 

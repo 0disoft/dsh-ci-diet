@@ -23,10 +23,12 @@ Static scan लक्षित checkout के workflow YAML को पढ़त
 | CD003 | केवल docs बदलने पर भारी checks | केवल explanation; default में बंद |
 | CD004 | बहुत बड़ी matrices | केवल explanation |
 | CD005 | `timeout-minutes` रहित jobs | timeout बदलाव; default में बंद |
-| CD006 | npm cache के बिना `npm ci` चलाने वाले `actions/setup-node@v3` या `@v4` jobs | दो setup-node inputs; default में चालू |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | लंबी artifact retention | retention बदलाव |
 
-CD001 नए commit से superseded होकर overlap करते PR runs में मदद करता है। CD005 असामान्य runs पर सीमा लगाता है; सामान्य job runtime कम नहीं करता। CD008 artifact storage retention बदलता है, runner minutes नहीं। CD003 और CD005 अपने quality gates पास होने तक बंद रहते हैं। CD006 एक संकीर्ण npm आकार के लिए default static नियम है: यह setup-node download cache चालू करता है और `npm ci` तथा हर test पहले की तरह चलता रहता है। cache गर्म होने पर downloads घट सकते हैं, पर cold और warm runs की तुलना होने तक समय या पैसे की बचत का दावा नहीं किया जाता।
+CD001 नए commit से superseded होकर overlap करते PR runs में मदद करता है। CD005 असामान्य runs पर सीमा लगाता है; सामान्य job runtime कम नहीं करता। CD008 artifact storage retention बदलता है, runner minutes नहीं। CD003 और CD005 अपने quality gates पास होने तक बंद रहते हैं।
+
+CD006 सत्यापित npm/pnpm सेटअप और ऐसे Bun जॉब्स का भी समर्थन करता है जो `oven-sh/setup-bun@v2` का उपयोग करते हैं और उसके बाद ट्रैक किए गए टेक्स्ट `bun.lock` के साथ `bun install --frozen-lockfile` चलाते हैं। Bun एक डाउनलोड-कैश चरण जोड़ता है; इंस्टॉलेशन और टेस्ट अब भी चलते हैं। कैश को बहाल करने/सहेजने का ओवरहेड लाभ से अधिक हो सकता है। [वर्तमान कैश गार्ड](docs/spec/rules.md#bun-dependency-cache-variant) और [एक मापा गया उदाहरण](docs/measurements/2026-10-25-cache-review.md) देखें। नीचे दिया गया npm उदाहरण समर्थित रूपों में से एक को दर्शाता है।
 
 ## Install और upgrade
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 `PLAN_ID` की जगह plan का दिखाया id, `CONFIRMATION` की जगह digest के अंतिम 12 characters और `CHANGE_ID` की जगह apply का दिखाया id लगाएँ। सभी values literal arguments हैं; angle brackets न लिखें। `approve` single-use approval बनाता है, `apply` केवल एक workflow file की planned byte range बदलता है और `revert` उस change का backup बहाल करता है। परिणामी diff देखें और ज़रूरत के अनुसार repository checks चलाएँ। CI Diet commit, push, deploy, workflow run, branch protection बदलाव या artifact deletion नहीं करता।
 
-केवल PR CI के योग्य CD001 उदाहरण में `ci-only` और `replace-safe` human attestations हैं। ये बताते हैं कि operator ने cancellation semantics की समीक्षा की; ये bypass switches नहीं हैं। CD005 को measured `--job` और `--minutes` चाहिए, और CD008 को `--job`, target step का शून्य से शुरू होने वाला numeric `--step` array index और artifact claims चाहिए। CD006 को `--job` और setup-node step का शून्य से शुरू होने वाला `--step` index चाहिए; इसमें claims नहीं हैं। दोनों step नियमों में numeric step array index है, step name token नहीं।
+केवल PR CI के योग्य CD001 उदाहरण में `ci-only` और `replace-safe` human attestations हैं। ये बताते हैं कि operator ने cancellation semantics की समीक्षा की; ये bypass switches नहीं हैं। CD005 को measured `--job` और `--minutes` चाहिए, और CD008 को `--job`, target step का शून्य से शुरू होने वाला numeric `--step` array index और artifact claims चाहिए। CD006 को `--job` और setup-node/setup-bun step का शून्य से शुरू होने वाला `--step` index चाहिए; इसमें claims नहीं हैं। दोनों step नियमों में numeric step array index है, step name token नहीं।
 
 ## State और सीमाएँ
 

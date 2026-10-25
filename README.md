@@ -23,10 +23,12 @@ The static scan reads workflow YAML in a target checkout. The optional history s
 | CD003 | Heavy checks for docs-only changes | explanation only; off by default |
 | CD004 | Oversized matrices | explanation only |
 | CD005 | Jobs without `timeout-minutes` | timeout edit; off by default |
-| CD006 | `actions/setup-node@v3`–`@v7` jobs running `npm ci` or `pnpm install --frozen-lockfile` without download caching | two setup-node inputs; on by default |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | Long artifact retention | retention edit |
 
-CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. CD006 is a default static rule for literal npm/pnpm install shapes: it adds setup-node's download cache while `npm ci` and every test still run. A cache can reduce downloads after it warms up; no time or money saving is claimed until cold and warm runs are compared.
+CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass.
+
+CD006 also supports verified npm/pnpm setups and Bun jobs using `oven-sh/setup-bun@v2` followed by `bun install --frozen-lockfile` with a tracked text `bun.lock`. Bun adds a download-cache step; installation and tests still run. Cache restore/save overhead can outweigh the benefit. See the [current cache guards](docs/spec/rules.md#bun-dependency-cache-variant) and [a measured example](docs/measurements/2026-10-25-cache-review.md). The npm example below demonstrates one supported shape.
 
 ## Install and upgrade
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Replace `PLAN_ID` with the id printed by the plan, `CONFIRMATION` with its 12-character digest tail, and `CHANGE_ID` with the id printed by apply. Every value is a literal argument; do not type angle brackets. `approve` creates a single-use approval, `apply` rewrites only the planned byte range in one workflow file, and `revert` restores that change’s backup. Review the resulting diff and run the repository’s checks as needed. CI Diet does not commit, push, deploy, run workflows, change branch protection, or delete artifacts.
 
-For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as human attestations. They state the operator’s review of cancellation semantics; they are not bypass switches. CD005 needs a measured `--job` and `--minutes`, and CD008 needs `--job`, a zero-based numeric `--step` array index for the target step, and artifact claims. CD006 needs `--job` and the zero-based `--step` index of the setup-node step; it has no claims. In both step rules, the numeric step is an array index, not a step-name token.
+For eligible PR-only CI, the CD001 example uses `ci-only` and `replace-safe` as human attestations. They state the operator’s review of cancellation semantics; they are not bypass switches. CD005 needs a measured `--job` and `--minutes`, and CD008 needs `--job`, a zero-based numeric `--step` array index for the target step, and artifact claims. CD006 needs `--job` and the zero-based `--step` index of the setup-node/setup-bun step; it has no claims. In both step rules, the numeric step is an array index, not a step-name token.
 
 ## State and limitations
 

@@ -23,10 +23,12 @@ Le scan statique lit le YAML des workflows dans un checkout cible. La synchronis
 | CD003 | Vérifications lourdes pour des changements documentaires | explication uniquement ; désactivée par défaut |
 | CD004 | Matrices surdimensionnées | explication uniquement |
 | CD005 | Tâches sans `timeout-minutes` | modification du délai d’expiration ; désactivée par défaut |
-| CD006 | Tâches `actions/setup-node@v3` ou `@v4` qui lancent `npm ci` sans cache npm | deux entrées setup-node ; activée par défaut |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | Rétention prolongée des artefacts | modification de la rétention |
 
-CD001 aide à traiter les exécutions de PR qui se chevauchent et sont devenues obsolètes. CD005 limite les exécutions anormales ; elle ne réduit pas la durée d’exécution normale d’une tâche. CD008 modifie la rétention du stockage des artefacts, et non les minutes de runner. CD003 et CD005 restent désactivées jusqu’à ce qu’elles réussissent leurs contrôles de qualité. CD006 est une règle statique active par défaut pour une forme npm étroite : elle ajoute le cache de téléchargement de setup-node tandis que `npm ci` et tous les tests s’exécutent toujours. Le cache peut réduire les téléchargements une fois alimenté ; aucun gain de temps ni d’argent n’est affirmé avant de comparer des exécutions à froid et à chaud.
+CD001 aide à traiter les exécutions de PR qui se chevauchent et sont devenues obsolètes. CD005 limite les exécutions anormales ; elle ne réduit pas la durée d’exécution normale d’une tâche. CD008 modifie la rétention du stockage des artefacts, et non les minutes de runner. CD003 et CD005 restent désactivées jusqu’à ce qu’elles réussissent leurs contrôles de qualité.
+
+CD006 prend également en charge les configurations npm/pnpm vérifiées et les jobs Bun qui utilisent `oven-sh/setup-bun@v2` suivi de `bun install --frozen-lockfile`, avec un fichier texte `bun.lock` versionné. Bun ajoute une étape de cache de téléchargement ; l’installation et les tests s’exécutent toujours. La surcharge de restauration et d’enregistrement du cache peut dépasser le gain. Voir les [garde-fous actuels du cache](docs/spec/rules.md#bun-dependency-cache-variant) et [un exemple mesuré](docs/measurements/2026-10-25-cache-review.md). L’exemple npm ci-dessous illustre l’une des formes prises en charge.
 
 ## Installation et mise à jour
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Remplacez `PLAN_ID` par l’identifiant affiché par le plan, `CONFIRMATION` par les 12 derniers caractères de son digest et `CHANGE_ID` par l’identifiant affiché par apply. Chaque valeur est un argument littéral ; ne saisissez pas de chevrons. `approve` crée une approbation à usage unique, `apply` ne réécrit que la plage d’octets prévue dans un fichier de workflow et `revert` restaure la sauvegarde de cette modification. Examinez le diff obtenu et lancez les vérifications du dépôt selon vos besoins. CI Diet ne fait aucun commit, push ni déploiement, n’exécute aucun workflow, ne modifie pas la protection des branches et ne supprime aucun artefact.
 
-Pour une CI éligible qui ne s’exécute que sur les PR, l’exemple CD001 utilise `ci-only` et `replace-safe` comme attestations humaines. Elles indiquent que l’opérateur a examiné la sémantique d’annulation ; ce ne sont pas des interrupteurs de contournement. CD005 nécessite un `--job` et un `--minutes` mesurés, et CD008 nécessite `--job`, un index numérique de tableau `--step` commençant à zéro pour l’étape cible, ainsi que des déclarations concernant les artefacts. CD006 nécessite `--job` et l’index `--step` commençant à zéro de l’étape setup-node ; elle ne demande aucune déclaration. Pour les deux règles d’étape, le nombre est un index de tableau, pas un jeton fondé sur le nom de l’étape.
+Pour une CI éligible qui ne s’exécute que sur les PR, l’exemple CD001 utilise `ci-only` et `replace-safe` comme attestations humaines. Elles indiquent que l’opérateur a examiné la sémantique d’annulation ; ce ne sont pas des interrupteurs de contournement. CD005 nécessite un `--job` et un `--minutes` mesurés, et CD008 nécessite `--job`, un index numérique de tableau `--step` commençant à zéro pour l’étape cible, ainsi que des déclarations concernant les artefacts. CD006 nécessite `--job` et l’index `--step` commençant à zéro de l’étape setup-node/setup-bun ; elle ne demande aucune déclaration. Pour les deux règles d’étape, le nombre est un index de tableau, pas un jeton fondé sur le nom de l’étape.
 
 ## État et limites
 

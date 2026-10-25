@@ -23,10 +23,12 @@ CI Diet는 낭비 가능성이 있는 GitHub Actions 작업을 찾고, 각 발�
 | CD003 | 문서만 바뀐 변경의 무거운 검사 | 설명만, 기본 꺼짐 |
 | CD004 | 과대한 매트릭스 | 설명만 |
 | CD005 | `timeout-minutes`가 없는 job | timeout 편집, 기본 꺼짐 |
-| CD006 | npm 캐시 없이 `npm ci`를 실행하는 `actions/setup-node@v3` 또는 `@v4` job | setup-node 입력 두 개, 기본 켜짐 |
+| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
 | CD008 | 긴 artifact 보존 기간 | 보존 기간 편집 |
 
-CD001은 겹쳐서 대체된 PR 실행에 도움을 줍니다. CD005는 비정상 실행의 상한을 두는 규칙이며 정상 job 실행 시간 자체를 줄이지 않습니다. CD008은 artifact 저장 보존 기간을 바꾸며 러너 분과는 관계가 없습니다. CD003과 CD005는 품질 기준을 통과할 때까지 기본으로 꺼져 있습니다. CD006은 좁은 npm 형태를 위한 기본 정적 규칙입니다. setup-node 다운로드 캐시를 켜고 `npm ci`와 모든 테스트는 그대로 실행합니다. 캐시가 데워지면 다운로드가 줄 수 있지만, cold와 warm 실행을 비교하기 전에는 시간이나 금액 절감을 주장하지 않습니다.
+CD001은 겹쳐서 대체된 PR 실행에 도움을 줍니다. CD005는 비정상 실행의 상한을 두는 규칙이며 정상 job 실행 시간 자체를 줄이지 않습니다. CD008은 artifact 저장 보존 기간을 바꾸며 러너 분과는 관계가 없습니다. CD003과 CD005는 품질 기준을 통과할 때까지 기본으로 꺼져 있습니다.
+
+CD006은 검증된 npm/pnpm 구성과, `oven-sh/setup-bun@v2`를 사용한 뒤 Git으로 관리하는 텍스트 `bun.lock`과 함께 `bun install --frozen-lockfile`을 실행하는 Bun 작업도 지원합니다. Bun은 다운로드 캐시 단계를 추가하지만, 설치와 테스트는 그대로 실행합니다. 캐시 복원·저장에 걸리는 시간이 절감 시간보다 클 수 있습니다. [현재 캐시 적용 조건](docs/spec/rules.md#bun-dependency-cache-variant)과 [실측 예시](docs/measurements/2026-10-25-cache-review.md)를 참고하세요. 아래 npm 예시는 지원하는 구성 중 하나입니다.
 
 ## 설치와 업그레이드
 
@@ -118,7 +120,7 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 `PLAN_ID`에는 plan이 출력한 id, `CONFIRMATION`에는 digest 마지막 12자, `CHANGE_ID`에는 apply가 출력한 id를 넣습니다. 모든 값은 그대로 바꿔 넣는 인자이며 꺾쇠괄호를 직접 입력하지 않습니다. `approve`는 1회용 승인을 만들고, `apply`는 workflow 파일 하나의 계획된 바이트 범위만 고치며, `revert`는 그 변경의 백업을 복원합니다. 결과 diff를 검토하고 필요하면 저장소 검사를 실행합니다. CI Diet는 커밋, 푸시, 배포, workflow 실행, 브랜치 보호 변경, artifact 삭제를 하지 않습니다.
 
-대상이 PR 전용 CI인 CD001 예시의 `ci-only`와 `replace-safe`는 사람의 attestation입니다. 취소 의미를 운영자가 검토했다는 진술이며 우회 스위치가 아닙니다. CD005에는 측정된 `--job`과 `--minutes`가 필요하고, CD008에는 `--job`, 대상 step의 0부터 시작하는 숫자 `--step` 배열 인덱스, artifact claims가 필요합니다. CD006에는 `--job`과 setup-node step의 0부터 시작하는 `--step` 인덱스가 필요하며 claims는 없습니다. 두 step 규칙의 숫자 step은 step 이름 토큰이 아니라 배열 인덱스입니다.
+대상이 PR 전용 CI인 CD001 예시의 `ci-only`와 `replace-safe`는 사람의 attestation입니다. 취소 의미를 운영자가 검토했다는 진술이며 우회 스위치가 아닙니다. CD005에는 측정된 `--job`과 `--minutes`가 필요하고, CD008에는 `--job`, 대상 step의 0부터 시작하는 숫자 `--step` 배열 인덱스, artifact claims가 필요합니다. CD006에는 `--job`과 setup-node/setup-bun step의 0부터 시작하는 `--step` 인덱스가 필요하며 claims는 없습니다. 두 step 규칙의 숫자 step은 step 이름 토큰이 아니라 배열 인덱스입니다.
 
 ## 상태와 한계
 

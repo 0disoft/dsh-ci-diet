@@ -186,7 +186,7 @@ Except for CD006, a plan requires a patch-eligible finding in the latest saved r
 | CD006 | none | Root checkout → setup-node v3/v4 → `npm ci`, committed valid root manifests, no existing cache inputs; no history |
 | CD008 | artifact purpose and consumer minimum days | Artifact retention evidence above the proposed value and a fresh retention policy |
 
-CD005 caps abnormal runs and does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 are disabled by default until their quality gates pass. CD006 is enabled by default, edits only the two setup-node cache inputs, and does not claim a saving before cold and warm runs are compared.
+CD005 caps abnormal runs and does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 are disabled by default until their quality gates pass. CD006 is enabled by default: npm/pnpm variants edit setup-node cache inputs, while the Bun variant inserts a guarded download-cache step and identifies setup-bun. Installation and tests still run. No saving is claimed before cold and warm runs are compared.
 
 ## Exit codes
 
@@ -309,3 +309,7 @@ are before samples and solid lines are after samples. All job time includes
 cache restore/save. Failure and earlier-attempt times are excluded from means.
 Blocked comparisons show reasons and no reduction. Expand measurement limits
 for selection bias and other warnings. Actual billing remains unknown.
+
+See the [measured cache-removal example](../measurements/2026-10-25-cache-review.md)
+for a real run pair where cache overhead exceeded installation time, and why its
+overall runner-time difference cannot be attributed to the cache alone.
