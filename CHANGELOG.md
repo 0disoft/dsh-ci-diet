@@ -5,6 +5,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Prepare each run's job identities, sorted signature and totals once per
+  change-effect measurement, including saved-measurement validation. A 10-by-10
+  batch now indexes 20 runs instead of 200, reducing job identity reads from
+  4,000 to 400 for 20 jobs per run. Indexes never persist across measurements.
 - Expand diagnostic matrices only for job keys not yet reported, preserving
   first-observed matrix summaries while avoiding repeated include/exclude work
   across runs of the same workflow.

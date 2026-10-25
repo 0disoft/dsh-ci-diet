@@ -156,12 +156,13 @@ test("measurement rejects unrelated workflow versions, branch/event mixing and c
 });
 
 test("10 by 10 measurement keeps each run's steps once without building pairwise step diffs", () => {
-  let stepReads = 0;
+  let stepReads = 0, labelReads = 0;
   const steps = Array.from({ length: 6 }, (_, i) => ({ name: "measured_step_" + i, seconds: 2 }));
   const sample = (id: number, before: boolean) => ({ id, attempt: 1, conclusion: "success",
     workflowHash: before ? change.before.hash : change.after.hash,
     observation: { id, attempt: 1, repository: "owner/repo", workflow, branch: "main", event: "push", sha: String(id),
-      jobs: Array.from({ length: 20 }, (_, i) => ({ name: "job_" + i, labels: ["ubuntu-latest"], seconds: before ? 60 : 50,
+      jobs: Array.from({ length: 20 }, (_, i) => ({ name: "job_" + i,
+        get labels() { labelReads++; return ["ubuntu-latest"]; }, seconds: before ? 60 : 50,
         get steps() { stepReads++; return steps; } })) } });
   const before = Array.from({ length: 10 }, (_, i) => sample(i + 1, true));
   const after = Array.from({ length: 10 }, (_, i) => sample(i + 101, false));
@@ -169,6 +170,7 @@ test("10 by 10 measurement keeps each run's steps once without building pairwise
   assert.equal(effect.comparisons.length, 100);
   assert.equal(effect.observedReductionSeconds, 200);
   assert.ok(effect.comparisons.every((pair) => pair.comparable && pair.observedReductionSeconds === 200));
+  assert.equal(labelReads, 20 * 20, "index each job once per run, not once per pair");
   assert.equal(stepReads, 0, "batch calculation must not construct per-pair step diffs");
   const json = JSON.stringify(effect);
   assert.equal(stepReads, 20 * 20, "serialization reads each job's steps once across 20 runs");
@@ -178,6 +180,12 @@ test("10 by 10 measurement keeps each run's steps once without building pairwise
   assert.equal(blocked.comparable, false);
   assert.equal(blocked.observedReductionSeconds, null);
   assert.ok(blocked.blockers.includes("DIFFERENT_BRANCH"), "check all pairs, including the final sample");
+  before[0]!.observation.jobs[0]!.seconds = 80;
+  assert.equal(measureChangeEffect(change, before, after).comparisons[0]!.observedReductionSeconds, 220,
+    "a new measurement must recompute totals even for reused observation objects");
+  before[0]!.observation.jobs[0]!.name = "changed";
+  assert.ok(measureChangeEffect(change, before, after).blockers.includes("DIFFERENT_JOBS_OR_RUNNERS"),
+    "a new measurement must also recompute job identities");
 });
 
 test("legacy measurement caches normalize from samples without mutating cached data", async () => {

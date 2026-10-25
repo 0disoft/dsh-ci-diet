@@ -1,5 +1,5 @@
 import type { AppliedChange } from "../contracts/schema.ts";
-import { compareRunSummary, type RunObservation } from "./run-comparison.ts";
+import { createRunSummaryComparator, type RunObservation } from "./run-comparison.ts";
 
 export interface ChangeEffectRun {
   readonly id: number;
@@ -30,9 +30,10 @@ export function measureChangeEffect(change: AppliedChange, before: readonly Chan
   if (left.length === 0 || right.length === 0) blockers.push("SUCCESSFUL_SAMPLES_REQUIRED");
   // Raw observations live once in each phase. Pairs refer to them by identity
   // and contain totals only, avoiding B*A copies of all jobs and step diffs.
+  const compareSummary = createRunSummaryComparator();
   const comparisons = left.flatMap((a) => right.map((b) => ({
     beforeRunId: a.id, beforeAttempt: a.attempt, afterRunId: b.id, afterAttempt: b.attempt,
-    ...compareRunSummary(a, b),
+    ...compareSummary(a, b),
   })));
   for (const pair of comparisons) blockers.push(...pair.blockers);
   const comparable = blockers.length === 0;
