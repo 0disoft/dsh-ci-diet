@@ -9,6 +9,7 @@ import { PatchStore, textHash } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 import type { ApprovalNonce, StoredPlan } from "./store.ts";
 import { buildPolicySnapshots } from "./plan.ts";
+import { concurrencyGroup, semanticCheck } from "./edits.ts";
 import { semanticProblems } from "./semantic.ts";
 import type { PatchRule } from "./eligibility.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
@@ -539,6 +540,12 @@ async function inspectApply(
   }
   const original = parseWorkflow(plan.payload.workflowPath, beforeText);
   const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
+  for (const edit of plan.payload.edits) {
+    const problem = semanticCheck(original, applied.text, edit, {
+      group: concurrencyGroup(binding.repositoryId, plan.payload.workflowPath),
+    });
+    if (problem !== null) problems.push(problem);
+  }
   if (problems.length > 0) {
     const warnings = options.store.appendSummaryEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
     return { kind: "refused", result: { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };

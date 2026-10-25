@@ -316,7 +316,8 @@ export function semanticCheck(
   const job = reparsed.jobs.find((candidate) => candidate.key === jobKey[1]);
   if (job === undefined) return "EDIT_RESULT_INVALID: edited job disappeared";
   if (edit.ruleId === "CD005") {
-    if (job.timeoutMinutes !== expected.minutes) return "EDIT_RESULT_INVALID: timeout minutes mismatch";
+    if (!Number.isInteger(job.timeoutMinutes) || job.timeoutMinutes === null || job.timeoutMinutes < TIMEOUT_MINUTES_MIN || job.timeoutMinutes > TIMEOUT_MINUTES_MAX) return "EDIT_RESULT_INVALID: timeout out of bounds";
+    if (expected.minutes !== undefined && job.timeoutMinutes !== expected.minutes) return "EDIT_RESULT_INVALID: timeout minutes mismatch";
     return null;
   }
   if (edit.ruleId === "CD006") {
@@ -335,6 +336,8 @@ export function semanticCheck(
   if (retention === undefined || retention.kind !== "literal") {
     return "EDIT_RESULT_INVALID: retention-days missing";
   }
+  const days = Number(retention.literal);
+  if (!Number.isInteger(days) || days < 1 || days > PROPOSED_RETENTION_DAYS) return "EDIT_RESULT_INVALID: retention out of bounds";
   if (expected.days !== undefined && retention.literal !== String(expected.days)) {
     return "EDIT_RESULT_INVALID: retention-days mismatch";
   }

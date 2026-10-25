@@ -1403,3 +1403,24 @@ test("expired unused approvals can be renewed, while active or used approvals ca
   await revertChange({ store: f.store, changeId: applied.change!.changeId, now });
   assert.throws(() => approvePlan({ ...input, now: new Date(now.getTime() + 2000) }), /PLAN_ALREADY_USED/);
 });
+
+
+test("apply validates approved stored concurrency values before backups or writes", async (t) => {
+  for (const replacement of ["concurrency:\n  group: shared\n  cancel-in-progress: true", "concurrency:\n  group: shared\n  cancel-in-progress: false"]) {
+    const f = setup();
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const { applyEdits } = await import("../../src/core/patch/edits.ts");
+    const { digestOf } = await import("../../src/shared/cdj1.ts");
+    const edits = [{ ...f.plan.payload.edits[0]!, replacementUtf8: replacement }];
+    const payload = { ...f.plan.payload, edits, resultHash: applyEdits(f.text, edits).hash };
+    const digest = digestOf(payload);
+    const plan = { ...f.plan, payload, planDigest: digest, planId: "p_" + digest.slice(7, 31) };
+    f.store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+    approvePlan({ store: f.store, planId: plan.planId, confirmation: approvalConfirmation(plan), subjectId: "tester", channel: "human-cli", now: f.now });
+    const result = await applyPlan({ store: f.store, planId: plan.planId, subjectId: "tester", now: f.now });
+    assert.equal(result.state, "not_applied");
+    assert.ok(result.reasons.includes("EDIT_OUT_OF_SCOPE"));
+    assert.equal(readFileSync(f.file, "utf8"), f.text);
+    assert.equal(f.store.listChanges().length, 0);
+  }
+});
