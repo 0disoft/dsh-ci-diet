@@ -4,7 +4,7 @@ import { sourceHashOf } from "../../core/patch/plan.ts";
 import { RequestBudget } from "./budget.ts";
 import { contentsSegments, ownerRepoPath } from "./endpoints.ts";
 import { GhTransport, type GhRunner } from "./transport.ts";
-import { collectRunObservation } from "./run-observation.ts";
+import { collectAttemptJobs } from "./run-observation.ts";
 
 function record(value: unknown): Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_RUN_DATA");
@@ -20,7 +20,7 @@ export async function collectChangeEffect(repository: string, change: AppliedCha
     || new Set(ids).size !== ids.length || ids.some((id) => !Number.isSafeInteger(id) || id < 1)) throw new Error("INVALID_RUN_SELECTION");
   if (change.state !== "APPLIED") throw new Error("CHANGE_NOT_APPLIED");
   const base = ownerRepoPath(parts[0]!, parts[1]!);
-  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 60, definitions: 40, jobs: 0, policyAndFiles: 0 }),
+  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 60, definitions: 40, jobs: 200, policyAndFiles: 0 }),
     retries: 0, timeoutMs: 15_000, maxRetryWaitMs: 0, ...options });
   const hashes = new Map<string, string>();
   const fileHash = async (ref: string): Promise<string> => {
@@ -40,11 +40,12 @@ export async function collectChangeEffect(repository: string, change: AppliedCha
     for (const id of runIds) {
       const path = base + "/actions/runs/" + id;
       const run = record((await transport.get({ path }, "discovery")).body);
-      if (run.id !== id || String(record(run.repository).full_name).toLowerCase() !== repository.toLowerCase()
+      const runRepository = record(run.repository);
+      if (run.id !== id || typeof runRepository.full_name !== "string" || runRepository.full_name.toLowerCase() !== repository.toLowerCase()
         || run.path !== change.workflowPath || run.status !== "completed"
         || !Number.isSafeInteger(run.run_attempt) || (run.run_attempt as number) < 1
         || typeof run.conclusion !== "string" || typeof run.head_sha !== "string" || !/^[0-9a-f]{40}$/i.test(run.head_sha)) throw new Error("RUN_IDENTITY_MISMATCH");
-      if (!["push", "workflow_dispatch", "pull_request"].includes(String(run.event))) throw new Error("WORKFLOW_REF_UNVERIFIABLE");
+      if (typeof run.event !== "string" || !["push", "workflow_dispatch", "pull_request"].includes(run.event)) throw new Error("WORKFLOW_REF_UNVERIFIABLE");
       let pullIdentity: unknown = null;
       let definitionRefs = [run.head_sha];
       if (run.event === "pull_request") {
@@ -73,11 +74,16 @@ export async function collectChangeEffect(repository: string, change: AppliedCha
       scope = runScope;
       const hash = await fileHash(definitionRefs[definitionRefs.length - 1]!);
       if (hash !== expectedHash) throw new Error("WORKFLOW_HASH_MISMATCH:" + id);
-      const observation = run.conclusion === "success" ? await collectRunObservation(repository, id, options) : null;
-      if (observation !== null && (observation.sha !== run.head_sha || observation.attempt !== run.run_attempt
-        || observation.branch !== run.head_branch || observation.event !== run.event)) throw new Error("RUN_CHANGED_DURING_COLLECTION");
+      // The same metadata guards cover definition and job collection. Do not
+      // nest another complete observation collector with two more metadata GETs.
+      const observation = run.conclusion === "success" ? {
+        id, attempt: run.run_attempt as number, repository: runRepository.full_name,
+        workflow: change.workflowPath, branch: run.head_branch, event: run.event, sha: run.head_sha,
+        jobs: await collectAttemptJobs(base, id, run.run_attempt as number, transport),
+      } : null;
       const check = record((await transport.get({ path }, "discovery")).body);
-      if (check.run_attempt !== run.run_attempt || check.head_sha !== run.head_sha || check.status !== run.status || check.conclusion !== run.conclusion
+      if (check.id !== run.id || check.path !== run.path || record(check.repository).full_name !== runRepository.full_name
+        || check.run_attempt !== run.run_attempt || check.head_sha !== run.head_sha || check.status !== run.status || check.conclusion !== run.conclusion
         || check.event !== run.event || check.head_branch !== run.head_branch
         || JSON.stringify(check.pull_requests) !== JSON.stringify(run.pull_requests)) throw new Error("RUN_CHANGED_DURING_COLLECTION");
       result.push({ id, attempt: run.run_attempt as number, conclusion: run.conclusion, workflowHash: hash, definitionRefs, observation });

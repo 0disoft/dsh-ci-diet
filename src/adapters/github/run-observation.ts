@@ -22,17 +22,10 @@ function seconds(start: unknown, end: unknown): number {
   return (to - from) / 1000;
 }
 
-/** Bounded collection: two metadata GETs and at most ten attempt-specific job pages. */
-export async function collectRunObservation(repository: string, runId: number, options: { runner?: GhRunner; signal?: AbortSignal } = {}): Promise<RunObservation> {
-  const parts = repository.split("/");
-  if (parts.length !== 2 || !Number.isSafeInteger(runId) || runId < 1) throw new Error("INVALID_RUN_REQUEST");
-  const base = ownerRepoPath(parts[0]!, parts[1]!);
-  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 2, jobs: 10, definitions: 0, policyAndFiles: 0 }),
-    retries: 0, timeoutMs: 15_000, maxRetryWaitMs: 0, ...options });
-  const run = record((await transport.get({ path: base + "/actions/runs/" + runId }, "discovery")).body);
-  if (integer(run.id) !== runId || string(record(run.repository).full_name).toLowerCase() !== repository.toLowerCase()) throw new Error("RUN_IDENTITY_MISMATCH");
-  if (run.status !== "completed" || run.conclusion !== "success") throw new Error("RUN_NOT_SUCCESSFUL");
-  const attempt = integer(run.run_attempt);
+/** Callers validate run metadata before/after; base comes from ownerRepoPath. */
+export async function collectAttemptJobs(base: string, runId: number, attempt: number, transport: GhTransport): Promise<JobObservation[]> {
+  integer(runId);
+  integer(attempt);
   const collected: unknown[] = [];
   const ids = new Set<number>();
   let expected: number | null = null;
@@ -76,6 +69,21 @@ export async function collectRunObservation(repository: string, runId: number, o
     });
     jobs.push({ name: string(job.name), labels: job.labels.map(string), seconds: seconds(job.started_at, job.completed_at), steps });
   }
+  return jobs;
+}
+
+/** Bounded collection: two metadata GETs and at most ten attempt-specific job pages. */
+export async function collectRunObservation(repository: string, runId: number, options: { runner?: GhRunner; signal?: AbortSignal } = {}): Promise<RunObservation> {
+  const parts = repository.split("/");
+  if (parts.length !== 2 || !Number.isSafeInteger(runId) || runId < 1) throw new Error("INVALID_RUN_REQUEST");
+  const base = ownerRepoPath(parts[0]!, parts[1]!);
+  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 2, jobs: 10, definitions: 0, policyAndFiles: 0 }),
+    retries: 0, timeoutMs: 15_000, maxRetryWaitMs: 0, ...options });
+  const run = record((await transport.get({ path: base + "/actions/runs/" + runId }, "discovery")).body);
+  if (integer(run.id) !== runId || string(record(run.repository).full_name).toLowerCase() !== repository.toLowerCase()) throw new Error("RUN_IDENTITY_MISMATCH");
+  if (run.status !== "completed" || run.conclusion !== "success") throw new Error("RUN_NOT_SUCCESSFUL");
+  const attempt = integer(run.run_attempt);
+  const jobs = await collectAttemptJobs(base, runId, attempt, transport);
   // A re-run starting during collection changes the attempt; never mix its metadata and jobs.
   const check = record((await transport.get({ path: base + "/actions/runs/" + runId }, "discovery")).body);
   if (check.run_attempt !== attempt || check.status !== "completed" || check.conclusion !== "success") throw new Error("RUN_CHANGED_DURING_COLLECTION");

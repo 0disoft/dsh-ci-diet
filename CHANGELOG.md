@@ -5,6 +5,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Share attempt-specific job collection between `compare` and `measure` instead
+  of fetching each successful run's metadata twice before and twice after its
+  jobs. Measurement retains one before/after check including immutable PR
+  metadata, and all job pages share its bounded request ledger. A mocked
+  20-successful-run collection uses 62 GETs instead of 102 (39.2% fewer) with
+  two workflow definitions and one job page per run; results remain unchanged.
 - Store before/after measurement observations once and keep compact scope/timing
   summaries per run pair. A synthetic 10-by-10 run fixture with 100 jobs and 20
   steps per job shrinks pretty-printed JSON from 83,238,162 to 4,655,562 bytes

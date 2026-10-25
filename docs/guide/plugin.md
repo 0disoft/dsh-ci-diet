@@ -311,6 +311,13 @@ samples and aggregate metrics are revalidated and returned in v2 form without
 rewriting the cache. The separate `compare` command still includes detailed
 job/step differences.
 
+Collection reads each selected run's metadata once before collecting its
+workflow definition and jobs, then once afterward to reject changed attempts,
+SHAs, scope or PR snapshots. Successful runs use at most ten attempt-specific
+job pages each. All measurement requests share one bounded ledger: 60 metadata
+and merge-commit reads, 40 workflow-definition reads and 200 job-page reads.
+Repeated immutable workflow SHAs reuse their definition hash within the request.
+
 CD006 Bun cache plans use the setup-bun step index, require a tracked text `bun.lock`, and preserve frozen installation and tests. Custom Bun configuration stays review-only; see the [rule specification](../spec/rules.md#bun-dependency-cache-variant). Cache restore/save overhead can exceed its benefit.
 
 ### Measured effects in DSH

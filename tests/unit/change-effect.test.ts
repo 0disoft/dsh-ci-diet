@@ -22,12 +22,13 @@ const change: AppliedChange = { schemaVersion: 2, provenance: "observed", change
   after: { path: workflow, hash: sourceHashOf(afterText), bytes: Buffer.byteLength(afterText) },
   approvalChannel: "human-cli", approvalReference: "nonce_measure", updatedAt: "2026-10-25T00:00:00Z" };
 
-function api(options: { wrongHash?: boolean; wrongScope?: boolean; changedAttempt?: boolean; pull?: boolean; noSuccess?: boolean; slower?: boolean } = {}) {
+function api(options: { wrongHash?: boolean; wrongScope?: boolean; changedAttempt?: boolean; pull?: boolean; noSuccess?: boolean; slower?: boolean; beforeRunIds?: readonly number[] } = {}) {
   const calls: string[][] = [], seen = new Map<number, number>();
   const runner: GhRunner = async (args) => {
     calls.push([...args]);
     const path = args.find((arg) => arg.startsWith("/repos/"))!;
     const id = Number(/\/runs\/(\d+)/.exec(path)?.[1]);
+    const isBefore = options.beforeRunIds?.includes(id) ?? id === 1;
     const conclusion = options.noSuccess || id === 3 ? "failure" : "success";
     const count = seen.get(id) ?? 0;
     if (!path.includes("/jobs")) seen.set(id, count + 1);
@@ -36,7 +37,7 @@ function api(options: { wrongHash?: boolean; wrongScope?: boolean; changedAttemp
       const before = args.includes("ref=" + "a".repeat(40)) || args.some((arg) => arg.includes("ref=" + "a".repeat(40)));
       body = { type: "file", encoding: "base64", content: Buffer.from(before ? beforeText : options.wrongHash ? "tampered" : afterText).toString("base64") };
     } else if (path.includes("/jobs")) {
-      const end = id === 1 ? "00:01:00" : options.slower ? "00:01:30" : "00:00:50";
+      const end = isBefore ? "00:01:00" : options.slower ? "00:01:30" : "00:00:50";
       body = { total_count: 1, jobs: [{ id: id * 10, name: "check", labels: ["ubuntu-latest"], status: "completed", conclusion: "success",
         started_at: "2026-10-25T00:00:00Z", completed_at: "2026-10-25T" + end + "Z", steps: [
           { name: "test", status: "completed", conclusion: "success", started_at: "2026-10-25T00:00:00Z", completed_at: "2026-10-25T00:00:20Z" },
@@ -45,13 +46,31 @@ function api(options: { wrongHash?: boolean; wrongScope?: boolean; changedAttemp
     } else {
       body = { id, repository: { full_name: "owner/repo" }, path: workflow, status: "completed", conclusion,
         run_attempt: options.changedAttempt && count > 0 ? 3 : id === 3 ? 2 : 1,
-        head_sha: (id === 1 ? "a" : "b").repeat(40), head_branch: options.wrongScope && id === 3 ? "other" : "main",
+        head_sha: (isBefore ? "a" : "b").repeat(40), head_branch: options.wrongScope && id === 3 ? "other" : "main",
         event: options.pull ? "pull_request" : "push" };
     }
     return { exitCode: 0, stdout: "HTTP/2.0 200 OK\r\n\r\n" + JSON.stringify(body), stderr: "" };
   };
   return { runner, calls };
 }
+
+test("20-run measurement shares metadata checks instead of collecting each successful run twice", async (t) => {
+  const before = [1, ...Array.from({ length: 9 }, (_, i) => i + 4)];
+  const after = Array.from({ length: 10 }, (_, i) => i + 13);
+  const mock = api({ beforeRunIds: before });
+  const report = await collectChangeEffect("owner/repo", change, before, after, { runner: mock.runner });
+  const paths = mock.calls.map((args) => args.find((arg) => arg.startsWith("/repos/"))!);
+  const metadata = paths.filter((path) => /\/actions\/runs\/\d+$/.test(path)).length;
+  const jobs = paths.filter((path) => path.includes("/jobs")).length;
+  const definitions = paths.filter((path) => path.includes("/contents/")).length;
+  t.diagnostic(JSON.stringify({ metadata, jobs, definitions, total: paths.length }));
+  assert.equal(report.observedReductionSeconds, 10);
+  assert.equal(report.comparisons.length, 100);
+  assert.equal(metadata, 40, "one metadata read before and one after each selected run");
+  assert.equal(jobs, 20);
+  assert.equal(definitions, 2);
+  assert.equal(paths.length, 62);
+});
 
 test("applied-change measurement links exact file hashes and includes full runner overhead and reliability", async () => {
   const mock = api();
@@ -75,6 +94,51 @@ test("applied-change measurement links exact file hashes and includes full runne
   const duplicate = measureChangeEffect(change, report.before.runs, report.before.runs);
   assert.equal(duplicate.observedReductionSeconds, null);
   assert.ok(duplicate.blockers.includes("DUPLICATE_RUN"));
+});
+
+test("shared collection still checks metadata after jobs and rejects every identity or scope change", async () => {
+  const changes = [{ run_attempt: 2 }, { head_sha: "c".repeat(40) }, { status: "in_progress" }, { conclusion: "failure" },
+    { event: "workflow_dispatch" }, { head_branch: "other" }, { pull_requests: [] }, { id: 999 },
+    { path: ".github/workflows/other.yml" }, { repository: { full_name: "other/repo" } }];
+  for (const update of changes) {
+    const mock = api();
+    let jobsRead = false;
+    const runner: GhRunner = async (...args) => {
+      const response = await mock.runner(...args);
+      const path = args[0].find((arg) => arg.startsWith("/repos/"))!;
+      if (path.includes("/jobs")) jobsRead = true;
+      if (jobsRead && path.endsWith("/actions/runs/1")) {
+        const body = JSON.parse(response.stdout.split("\r\n\r\n")[1]!);
+        return { ...response, stdout: "HTTP/2.0 200 OK\r\n\r\n" + JSON.stringify({ ...body, ...update }) };
+      }
+      return response;
+    };
+    await assert.rejects(collectChangeEffect("owner/repo", change, [1], [2], { runner }), /RUN_CHANGED_DURING_COLLECTION/);
+    assert.equal(jobsRead, true);
+    assert.ok(!mock.calls.some((args) => args.some((arg) => arg.endsWith("/actions/runs/2"))));
+  }
+});
+
+test("shared measurement transport collects every job page before its final metadata check", async () => {
+  const mock = api();
+  const runner: GhRunner = async (...args) => {
+    const response = await mock.runner(...args);
+    const path = args[0].find((arg) => arg.startsWith("/repos/"))!;
+    if (!path.includes("/jobs")) return response;
+    const second = /[?&]page=2(?:&|$)/.test(path);
+    const body = JSON.parse(response.stdout.split("\r\n\r\n")[1]!);
+    body.total_count = 2;
+    body.jobs[0].id += second ? 1 : 0;
+    body.jobs[0].name = second ? "build" : "check";
+    return { ...response, stdout: "HTTP/2.0 200 OK\r\n" + (second ? "" : 'Link: <https://api.github.com/jobs?page=2>; rel="next"\r\n')
+      + "\r\n" + JSON.stringify(body) };
+  };
+  const effect = await collectChangeEffect("owner/repo", change, [1], [2], { runner });
+  assert.equal(effect.before.runs[0]!.observation!.jobs.length, 2);
+  assert.equal(effect.observedReductionSeconds, 20);
+  const paths = mock.calls.map((args) => args.find((arg) => arg.startsWith("/repos/"))!);
+  assert.equal(paths.filter((path) => path.includes("/jobs")).length, 4);
+  assert.equal(paths.filter((path) => /\/actions\/runs\/\d+$/.test(path)).length, 4);
 });
 
 test("measurement rejects unrelated workflow versions, branch/event mixing and changing attempts", async () => {
