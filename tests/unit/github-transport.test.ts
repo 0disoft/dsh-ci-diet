@@ -29,6 +29,21 @@ function runnerFrom(...responses: Array<string | Error>): { runner: GhRunner; ca
   return { runner, calls };
 }
 
+for (const scenario of [
+  { filter: { createdAfter: "2026-10-13T00:00:00Z" }, expected: ">=2026-10-13T00:00:00Z" },
+  { filter: { createdBefore: "2026-10-20T00:00:00Z" }, expected: "<=2026-10-20T00:00:00Z" },
+  { filter: { createdAfter: "2026-10-13T00:00:00Z", createdBefore: "2026-10-20T00:00:00Z" },
+    expected: "2026-10-13T00:00:00Z..2026-10-20T00:00:00Z" },
+]) {
+  it("encodes an inclusive run creation filter: " + scenario.expected, async () => {
+    const { runner, calls } = runnerFrom(httpResponse(200, { workflow_runs: [], total_count: 0 }));
+    const client = new GitHubClient(new GhTransport({ budget: budget(), runner }), "owner", "repo");
+    await client.runs({ page: 1, perPage: 100, ...scenario.filter });
+    const path = calls[0]!.find((arg) => arg.startsWith("/repos/"))!;
+    assert.equal(new URL("https://api.github.com" + path).searchParams.get("created"), scenario.expected);
+  });
+}
+
 describe("read-only endpoint allowlist", () => {
   it("accepts the documented repository resources", () => {
     const base = ownerRepoPath("0disoft", "dsh-ci-diet");

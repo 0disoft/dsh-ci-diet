@@ -96,6 +96,42 @@ function config() {
   return { ...DEFAULT_CONFIG, history: { ...DEFAULT_CONFIG.history, lookbackDays: 7, maxRuns: 100 } };
 }
 
+for (const createdAt of ["2026-10-13T00:00:00Z", "2026-10-19T10:00:00Z", "2026-10-20T00:00:00Z"]) {
+  test("a fixed history window keeps its run slot when a new run arrives: " + createdAt, async () => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    const requestedJobs: string[] = [];
+    const template = { id: 100, name: "CI", path: ".github/workflows/ci.yml", workflow_id: 7,
+      head_sha: "abc123", head_branch: "main", event: "push", run_attempt: 1,
+      conclusion: "success", pull_requests: [] };
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/actions/runs")) {
+        // Emulate GitHub's created filter: a run arriving during sync is newer
+        // than the frozen window and otherwise takes the only maxRuns slot.
+        const created = request.query?.created ?? "";
+        const [from, to] = created.includes("..") ? created.split("..") : [created.slice(2), undefined];
+        const items = [
+          { ...template, id: 200, created_at: "2026-10-20T00:00:01Z" },
+          { ...template, created_at: createdAt },
+          { ...template, id: 50, created_at: "2026-10-12T23:59:59Z" },
+        ].filter((run) => Date.parse(run.created_at) >= Date.parse(from!)
+          && (to === undefined || Date.parse(run.created_at) <= Date.parse(to)));
+        return response({ total_count: items.length, workflow_runs: items });
+      }
+      if (/\/attempts\/\d+\/jobs$/.test(request.path)) requestedJobs.push(request.path);
+      return original(request, family);
+    };
+    const settings = config();
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", now: NOW, transport,
+      config: { ...settings, history: { ...settings.history, maxRuns: 1 } } });
+    assert.deepEqual(history.runs.map((run) => run.runId), ["100"]);
+    assert.deepEqual(requestedJobs, ["/repos/o/r/actions/runs/100/attempts/1/jobs"]);
+    assert.equal(history.coverage.history.status, "complete");
+    assert.equal(history.requestedFrom, "2026-10-13T00:00:00.000Z");
+    assert.equal(history.requestedTo, NOW.toISOString());
+  });
+}
+
 for (const resource of ["jobs", "pull-files"]) {
   test("malformed " + resource + " cannot become complete empty evidence", async () => {
     const transport = fakeTransport();

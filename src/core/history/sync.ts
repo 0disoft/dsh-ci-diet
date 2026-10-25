@@ -145,6 +145,9 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
         page,
         perPage: PAGE_SIZE,
         createdAfter: isoSeconds(requestedFrom),
+        // Keep every page in the recorded window: new runs must not displace
+        // in-window evidence or consume its maxRuns and request budget.
+        createdBefore: isoSeconds(requestedTo),
       });
       // Count rows this window refused so dropping the tail is reported even when
       // GitHub served the final page (hasNext is false).

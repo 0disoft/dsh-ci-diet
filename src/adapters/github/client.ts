@@ -138,10 +138,16 @@ export class GitHubClient {
   }
 
   async runs(
-    options: { page: number; perPage: number; createdAfter?: string; branch?: string; event?: string; status?: string },
+    options: { page: number; perPage: number; createdAfter?: string; createdBefore?: string; branch?: string; event?: string; status?: string },
   ): Promise<Page<GitHubRun>> {
     const query: Record<string, string> = { page: String(options.page), per_page: String(options.perPage) };
-    if (options.createdAfter !== undefined) query.created = ">=" + options.createdAfter;
+    if (options.createdAfter !== undefined && options.createdBefore !== undefined) {
+      query.created = options.createdAfter + ".." + options.createdBefore;
+    } else if (options.createdAfter !== undefined) {
+      query.created = ">=" + options.createdAfter;
+    } else if (options.createdBefore !== undefined) {
+      query.created = "<=" + options.createdBefore;
+    }
     if (options.branch !== undefined) query.branch = options.branch;
     if (options.event !== undefined) query.event = options.event;
     if (options.status !== undefined) query.status = options.status;

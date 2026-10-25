@@ -76,6 +76,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- History sync bounds every run-list page by both the lookback start and its
+  recorded end time. Runs created during collection no longer displace evidence
+  inside the window or spend its run slots and downstream request budget.
+
 - Cache pruning does not enter a symbolic-link or Windows-junction cache root,
   preventing deletion of files outside the state store. Cache entries and nested
   size walks also ignore links, avoiding cyclic traversal, external byte counts,

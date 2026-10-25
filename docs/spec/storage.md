@@ -130,6 +130,12 @@ Default history is `lookbackDays=7`, `maxRuns=100`, `maxRequests=400`, and
 `concurrentRequests=4`. Extending to 14 days and 200 runs keeps the request
 budget independent; it is not silently increased.
 
+Each sync fixes an inclusive run-creation window from `requestedFrom` through
+`requestedTo` and sends both bounds in GitHub's `created` filter on every page.
+Runs created after that end time belong to the next sync, so they cannot consume
+this window's `maxRuns` slots or its job/definition request budget. This bounds
+run selection by creation time; job status and duration updates remain live.
+
 `concurrentRequests` is the maximum number of GitHub requests in flight at once;
 it bounds the parallel jobs, workflow-definition, and pull-request reads without
 changing the sequential discovery and policy stages. `maxRequests` caps the total
