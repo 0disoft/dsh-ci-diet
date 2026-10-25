@@ -65,7 +65,10 @@ function collectDifferences(
   const afterIsObject = isPlainObject(after);
   if (beforeIsObject && afterIsObject) {
     for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
-      collectDifferences(before[key], after[key], [...path, key], allowed, out);
+      // Missing YAML keys must stay missing, even when Object.prototype has one.
+      const beforeValue = Object.hasOwn(before, key) ? before[key] : undefined;
+      const afterValue = Object.hasOwn(after, key) ? after[key] : undefined;
+      collectDifferences(beforeValue, afterValue, [...path, key], allowed, out);
     }
     return;
   }

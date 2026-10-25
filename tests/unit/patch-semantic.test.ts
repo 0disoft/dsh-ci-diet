@@ -17,6 +17,35 @@ const WORKFLOW = [
   "          MODE: fast",
 ].join("\n");
 
+for (const scope of [
+  { path: "__proto__", marker: "__proto__: {}\n", insert: (text: string) => "__proto__: {}\n" + text },
+  { path: "jobs.build.steps[0].env.__proto__", marker: "          __proto__: {}\n",
+    insert: (text: string) => text.replace("          MODE: fast\n", "          MODE: fast\n          __proto__: {}\n") },
+]) {
+  for (const kind of ["added", "missing"] as const) {
+    test("reports an own mapping key " + kind + " outside the edit: " + scope.path, () => {
+      const baseline = WORKFLOW + "\n";
+      const originalText = kind === "added" ? baseline : scope.insert(baseline);
+      const original = parseWorkflow(PATH, originalText);
+      const planned = planConcurrencyEdit(originalText, original, "git:" + "a".repeat(32));
+      assert.ok(planned.edit);
+      const applied = applyEdits(originalText, [planned.edit]);
+      const resultText = kind === "added" ? scope.insert(applied.text) : applied.text.replace(scope.marker, "");
+      assert.deepEqual(semanticProblems({ original, originalText, resultText, edits: [planned.edit] }),
+        [kind + " outside the allowed edit paths: " + scope.path]);
+    });
+  }
+}
+
+test("preserves an unchanged own proto key beside a legitimate edit", () => {
+  const originalText = "__proto__: {}\n" + WORKFLOW;
+  const original = parseWorkflow(PATH, originalText);
+  const planned = planConcurrencyEdit(originalText, original, "git:" + "a".repeat(32));
+  assert.ok(planned.edit);
+  const applied = applyEdits(originalText, [planned.edit]);
+  assert.deepEqual(semanticProblems({ original, originalText, resultText: applied.text, edits: [planned.edit] }), []);
+});
+
 test("rejects a legacy CD005 edit on a reusable-workflow caller even inside its allowed path", () => {
   const text = "on: pull_request\njobs:\n  build:\n    uses: ./.github/workflows/build.yml\n";
   const original = parseWorkflow(PATH, text);

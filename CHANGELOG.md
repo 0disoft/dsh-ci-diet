@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Patch semantic validation reads only own mapping properties when comparing
+  documents. Adding or removing an empty `__proto__` mapping outside the claimed
+  edit paths is now rejected instead of being mistaken for an unchanged inherited
+  object, including inside an existing step environment.
+
 - Job-name indexing expands each matrix once and shares the combinations across
   literal, template, and default names. Named matrix jobs no longer repeat their
   Cartesian expansion and include/exclude processing; ambiguous names still
