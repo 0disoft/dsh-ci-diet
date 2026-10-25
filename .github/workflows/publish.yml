@@ -24,9 +24,10 @@ jobs:
         with:
           bun-version: latest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
+          package-manager-cache: false
 
       # npm below 11.15 has no OIDC exchange path. Do not set NODE_AUTH_TOKEN
       # and do not pass registry-url to setup-node; either makes npm prefer a
@@ -40,7 +41,7 @@ jobs:
         run: node scripts/check-release-tag.mjs "$RELEASE_TAG"
 
       - name: Cache Bun dependency downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ steps.bun.outputs.bun-version }}-${{ hashFiles('bun.lock') }}
