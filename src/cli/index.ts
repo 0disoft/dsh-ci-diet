@@ -326,7 +326,7 @@ function parseArgs(argv: readonly string[]): Options {
 }
 
 function stateDirOf(options: Options): string {
-  return options.stateDir ?? defaultStateDir();
+  return options.stateDir ?? defaultStateDir(context.env);
 }
 
 /** Open the store with the product quota and warn once when it crosses the threshold. */
