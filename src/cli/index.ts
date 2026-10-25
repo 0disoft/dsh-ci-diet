@@ -473,6 +473,7 @@ async function sync(options: Options, locale: Locale): Promise<number> {
   const showProgress = context.stderr.isTTY === true && !options.json;
   let progressPrinted = false;
   const syncResult = await syncRepositoryHistory({
+    enabledRules: options.rules ?? undefined,
     owner,
     repo: repository,
     config,

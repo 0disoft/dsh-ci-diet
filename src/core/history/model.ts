@@ -34,6 +34,8 @@ export interface HistoryRun {
   readonly attempt: number;
   readonly conclusion: string | null;
   readonly pullRequestNumbers: readonly number[];
+  /** File evidence pinned to this run, never the PR's current diff. */
+  readonly pullDiffs?: readonly { readonly number: number; readonly baseSha: string; readonly headSha: string; readonly files: readonly string[] | null }[];
   readonly jobs: readonly HistoryJob[];
   readonly definition: WorkflowDefinition | null;
   readonly definitionResolution: "resolved" | "unresolved";

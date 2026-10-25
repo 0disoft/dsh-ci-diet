@@ -999,3 +999,26 @@ test("caps the total request budget with maxRequests", async () => {
   assert.equal(result.budget.limit, 250);
   assert.equal(result.budget.remaining, 250);
 });
+
+
+test("CD003 fetches an immutable run diff once per base/head pair", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  const baseSha = "b".repeat(40), headSha = "a".repeat(40);
+  let compares = 0;
+  transport.get = async (request, family) => {
+    const result = await original(request, family).catch((error) => {
+      if (!request.path.includes("/compare/")) throw error;
+      return response({ base_commit: { sha: baseSha }, files: [{ filename: "src/old.ts", previous_filename: "README.md" }] });
+    });
+    if (request.path.endsWith("/actions/runs")) {
+      const body = result.body as { workflow_runs: Record<string, unknown>[] };
+      for (const run of body.workflow_runs) { run.head_sha = headSha; run.pull_requests = [{ number: 5, base: { sha: baseSha }, head: { sha: headSha } }]; }
+    }
+    if (request.path.includes("/compare/")) { compares++; assert.ok(request.path.endsWith(baseSha + "..." + headSha)); }
+    return result;
+  };
+  const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport, enabledRules: ["CD003"] });
+  assert.equal(compares, 1);
+  assert.deepEqual(history.runs[0]!.pullDiffs?.[0]?.files, ["src/old.ts", "README.md"]);
+});

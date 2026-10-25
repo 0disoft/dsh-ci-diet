@@ -20,6 +20,8 @@ export interface GitHubWorkflow {
 
 export interface GitHubPullReference {
   readonly number: number;
+  readonly base?: { readonly sha: string };
+  readonly head?: { readonly sha: string };
 }
 
 export interface GitHubRun {
@@ -195,6 +197,22 @@ export class GitHubClient {
     const buffer = Buffer.from(body.content.replace(/\s/g, ""), "base64");
     if (buffer.byteLength > MAX_CONTENT_BYTES) return null;
     return { path, sha: body.sha ?? ref, text: buffer.toString("utf8") };
+  }
+
+  /** Compare immutable refs; GitHub exposes at most 300 files, so the cap is unknown. */
+  async changedFilesAt(baseSha: string, headSha: string): Promise<readonly string[] | null> {
+    if (![baseSha, headSha].every((sha) => /^[a-f0-9]{40}$/i.test(sha))) return null;
+    const response = await this.get({ path: this.base + "/compare/" + baseSha + "..." + headSha,
+      query: { per_page: "1", page: "1" } }, "policyAndFiles");
+    const body = response.body as { files?: GitHubPullFile[]; base_commit?: { sha?: string } } | null;
+    if (!Array.isArray(body?.files) || body.files.length >= 300 || body.base_commit?.sha !== baseSha) return null;
+    const files: string[] = [];
+    for (const file of body.files) {
+      if (typeof file.filename !== "string" || (file.previous_filename !== undefined && typeof file.previous_filename !== "string")) return null;
+      files.push(file.filename);
+      if (file.previous_filename !== undefined) files.push(file.previous_filename);
+    }
+    return files;
   }
 
   async pull(number: number): Promise<{ number: number; baseBranch: string; headBranch: string }> {

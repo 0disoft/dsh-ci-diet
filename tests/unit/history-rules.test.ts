@@ -106,6 +106,7 @@ function run(id: string, options: {
     attempt: 1,
     conclusion: "success",
     pullRequestNumbers: options.pullRequestNumbers ?? [7],
+    pullDiffs: (options.pullRequestNumbers ?? [7]).map((number) => ({ number, baseSha: "b".repeat(40), headSha: options.sha ?? "a".repeat(40), files: ["README.md"] })),
     jobs: options.jobs ?? [],
     definition: options.definition === undefined ? definition(PR_ONLY) : options.definition,
     definitionResolution: "resolved",
@@ -358,7 +359,8 @@ test("CD003 attributes heavy jobs on documentation-only pull requests", () => {
 
 test("CD003 ignores pull requests that touch product code", () => {
   const pulls = new Map([[7, { number: 7, baseBranch: "main", headBranch: "feature", files: ["README.md", "src/index.ts"] }]]);
-  const history = bundle([run("401", { jobs: [job("j5", "401", "2026-10-19T00:00:00.000Z", 120000)] })], pulls);
+  const productRun = run("401", { jobs: [job("j5", "401", "2026-10-19T00:00:00.000Z", 120000)] });
+  const history = bundle([{ ...productRun, pullDiffs: [{ number: 7, baseSha: "b".repeat(40), headSha: productRun.headSha, files: ["src/index.ts"] }] }], pulls);
   const evaluation = rule(evaluateRules(context(history), ["CD003"]), "CD003");
   assert.equal(evaluation.results[0]?.outcome, "no_finding");
 });
@@ -642,3 +644,12 @@ test("CD005 keeps definition hashes and job keys in separate cohorts", () => {
   assert.equal(cd005Recommendations(history, ".github/workflows/pr.yml", testDefinition.sha256, "lint").length, 0);
 });
 
+
+
+test("CD003 ignores a current documentation-only PR when the run diff is absent or for another head", () => {
+  const r = run("900", { jobs: [job("j900", "900", "2026-10-19T00:00:00Z", 120000)] });
+  const pulls = new Map([[7, { number: 7, baseBranch: "main", headBranch: "feature", files: ["README.md"] }]]);
+  for (const pullDiffs of [undefined, [{ number: 7, baseSha: "b".repeat(40), headSha: "c".repeat(40), files: ["README.md"] }]]) {
+    assert.equal(rule(evaluateRules(context(bundle([{ ...r, pullDiffs }], pulls)), ["CD003"]), "CD003").findings.length, 0);
+  }
+});

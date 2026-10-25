@@ -63,7 +63,7 @@ export function historyInputHash(context: RuleContext, ruleId: string): string {
       .map((workflow) => ({ path: workflow.path, sha256: workflow.sha256 }))
       .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0)),
     runs: (context.history?.runs ?? [])
-      .map((run) => ({ runId: run.runId, headSha: run.headSha, attempt: run.attempt }))
+      .map((run) => ({ runId: run.runId, headSha: run.headSha, attempt: run.attempt, ...(ruleId === "CD003" ? { pullDiffs: run.pullDiffs ?? [] } : {}) }))
       .sort((a, b) => (a.runId < b.runId ? -1 : a.runId > b.runId ? 1 : 0)),
   });
 }

@@ -71,6 +71,7 @@ function workflowFilePath(run: GitHubRun, knownPaths: ReadonlyMap<number, string
 }
 
 export interface SyncOptions {
+  readonly enabledRules?: readonly string[];
   readonly owner: string;
   readonly repo: string;
   readonly config: Config;
@@ -469,6 +470,38 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
     signal?.throwIfAborted();
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
     missingScopes.push(missingScope({ family: "policyAndFiles", resource: "actions.artifacts", reason: failureReason(error, "ARTIFACTS_UNAVAILABLE"), resumable: true }));
+  }
+
+  if (options.enabledRules?.includes("CD003")) {
+    const unique = new Map<string, { base: string; head: string }>();
+    for (const { run } of collectedRuns) for (const pull of run.pull_requests ?? []) {
+      if (pull.base !== undefined && pull.head?.sha === run.head_sha
+        && /^[a-f0-9]{40}$/i.test(pull.base.sha) && /^[a-f0-9]{40}$/i.test(pull.head.sha)) {
+        unique.set(pull.base.sha + "..." + pull.head.sha, { base: pull.base.sha, head: pull.head.sha });
+      }
+    }
+    const filesByRef = new Map<string, readonly string[] | null>();
+    await mapWithConcurrency([...unique], concurrency, async ([key, refs]) => {
+      try { filesByRef.set(key, await effectiveClient.changedFilesAt(refs.base, refs.head)); }
+      catch (error) {
+        signal.throwIfAborted();
+        if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
+        filesByRef.set(key, null);
+      }
+    });
+    for (let i = 0; i < historyRuns.length; i++) {
+      const run = collectedRuns[i]!.run;
+      const pullDiffs = (run.pull_requests ?? []).flatMap((pull) => {
+        if (pull.base === undefined || pull.head?.sha !== run.head_sha) return [];
+        return [{ number: pull.number, baseSha: pull.base.sha, headSha: pull.head.sha,
+          files: filesByRef.get(pull.base.sha + "..." + pull.head.sha) ?? null }];
+      });
+      historyRuns[i] = { ...historyRuns[i]!, pullDiffs };
+      if (run.event === "pull_request" && (pullDiffs.length === 0 || pullDiffs.some((diff) => diff.files === null))) {
+        missingScopes.push(missingScope({ family: "policyAndFiles", resource: "compare.files", runId: String(run.id),
+          reason: "RUN_DIFF_UNVERIFIED", resumable: true }));
+      }
+    }
   }
 
   const unresolvedDefinitions = historyRuns.filter((run) => run.definitionResolution === "unresolved").length;

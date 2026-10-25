@@ -64,13 +64,14 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
   };
 
   const findings: Finding[] = [];
-  for (const [number, pull] of context.history.pulls) {
-    if (pull.files === null || pull.files.length === 0) continue;
-    const allDocs = pull.files.every(nonProductDoc);
-    if (!allDocs) continue;
+  for (const number of context.history.pulls.keys()) {
     const pullRuns = runsByPull.get(number);
     if (pullRuns === undefined) continue;
     for (const run of pullRuns) {
+      const diff = run.pullDiffs?.find((item) => item.number === number && item.headSha === run.headSha
+        && /^[a-f0-9]{40}$/i.test(item.baseSha));
+      const files = diff?.files;
+      if (files === undefined || files === null || files.length === 0 || !files.every(nonProductDoc)) continue;
       if (run.definition === null || !isAnalyzable(run.definition)) continue;
       const heavy = heavyTotals(run);
       if (heavy.count === 0) continue;
@@ -86,7 +87,7 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
           workflowHash: run.definition.sha256,
           title: "Documentation-only pull request #" + number + " ran heavy checks",
           renderedText:
-            "Pull request #" + number + " changed only non-product documentation (" + pull.files.join(", ") + "), yet " +
+            "Pull request #" + number + " changed only non-product documentation (" + files.join(", ") + "), yet " +
             heavy.count + " job(s) ran for at least " + CD003_HEAVY_SECONDS + " seconds each (" + heavySeconds.toFixed(1) + " runner seconds total). " +
             "CI Diet does not generate path filters in v0.1: a workflow-level paths skip can leave a required check Pending.",
           message: {
@@ -94,7 +95,7 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
             textKey: "finding.CD003.text",
             params: {
               pullRequest: number,
-              files: pull.files.join(", "),
+              files: files.join(", "),
               heavy: heavy.count,
               seconds: CD003_HEAVY_SECONDS,
               total: heavySeconds.toFixed(1),
@@ -112,7 +113,7 @@ function evaluateCd003(context: RuleContext): RuleEvaluation {
           standaloneRunnerSeconds: observed
             ? knownSeconds(heavySeconds, "observed runner seconds of heavy jobs on the documentation-only pull request")
             : unknownSeconds("history or changed files are partial", "COVERAGE_SUBSET"),
-          identity: { workflowPath: run.workflowPath, pullRequest: number, runId: run.runId, files: pull.files },
+          identity: { workflowPath: run.workflowPath, pullRequest: number, runId: run.runId, files: files },
         }),
       );
     }

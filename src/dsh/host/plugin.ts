@@ -339,7 +339,7 @@ export function apply(ctx: Context, config: Config) {
       const days = args.days ?? settings.config.history.lookbackDays;
       if (!Number.isSafeInteger(days) || days < HISTORY_LOOKBACK_DAYS_MIN || days > HISTORY_LOOKBACK_DAYS_MAX) throw new Error("days must be an integer between " + HISTORY_LOOKBACK_DAYS_MIN + " and " + HISTORY_LOOKBACK_DAYS_MAX);
       const syncConfig = { ...settings.config, history: { ...settings.config.history, lookbackDays: days } };
-      const synced = await syncRepositoryHistory({ owner, repo, config: syncConfig, now: new Date(), signal: exec.signal });
+      const synced = await syncRepositoryHistory({ owner, repo, enabledRules: settings.enabledRules, config: syncConfig, now: new Date(), signal: exec.signal });
       exec.signal.throwIfAborted();
       const binding = createLocalBinding(root, new Date().toISOString(), { repositoryFullName: synced.history.repositoryFullName }).binding;
       const built = buildHistoryReport({ binding, workflows, history: synced.history, config: syncConfig, enabledRules: settings.enabledRules, generatedAt: new Date().toISOString() });
