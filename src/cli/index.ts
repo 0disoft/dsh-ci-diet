@@ -718,6 +718,7 @@ function approveCommand(options: Options, locale: Locale): number {
     confirmation: options.confirm,
     subjectId: options.subject,
     channel: "human-cli",
+    approvalTtlSeconds: options.config.apply.approvalTtlSeconds,
     now: now(),
   });
   for (const warning of result.warnings ?? []) writeErr(warning + "\n");

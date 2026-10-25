@@ -75,6 +75,7 @@ interface ReviewPlan {
   readonly ruleId: string;
   readonly state: string;
   readonly expiresAt: string;
+  readonly approvalExpiresAt: string;
   readonly sourceValid: boolean;
   readonly blockers: readonly string[];
   readonly diff: readonly ReviewDiffLine[];
@@ -219,6 +220,7 @@ function normalizePlan(value: unknown): ReviewPlan | null {
     ruleId: textOf(value.ruleId),
     state: textOf(value.state, "unknown"),
     expiresAt: textOf(value.expiresAt),
+    approvalExpiresAt: textOf(value.approvalExpiresAt),
     sourceValid: value.sourceValid === true,
     blockers: stringsOf(value.blockers),
     diff,
@@ -359,6 +361,11 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
   const [confirmations, setConfirmations] = React.useState<Record<string, string>>({});
   const [revertId, setRevertId] = React.useState("");
   const generationRef = React.useRef(0);
+  const [, tick] = React.useState(0);
+  React.useEffect(() => {
+    const timer = setInterval(() => tick((value) => value + 1), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   async function load(currentSession: string, generation: number, preserveError = false): Promise<void> {
     if (generationRef.current !== generation) return;
@@ -590,14 +597,15 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
           const suffix = digestSuffix(plan.digest);
           const digestMatches = suffix.length > 0 && entered.trim() === suffix;
           const expired = planExpired(plan.expiresAt);
+          const approvalExpired = plan.state === "approved" && planExpired(plan.approvalExpiresAt);
           const approvalBlocked = expired
-            || plan.state === "approved"
+            || (plan.state === "approved" && !approvalExpired)
             || !plan.sourceValid
             || plan.blockers.length > 0
             || !review.localApplyEnabled;
           const approveDisabled = busy || approvalBlocked || !digestMatches;
           const confirmDisabled = busy || approvalBlocked;
-          const canApply = !busy && !expired && plan.state === "approved" && plan.sourceValid && plan.blockers.length === 0 && review.localApplyEnabled;
+          const canApply = !busy && !expired && !approvalExpired && plan.state === "approved" && plan.sourceValid && plan.blockers.length === 0 && review.localApplyEnabled;
           const applyReason = !review.localApplyEnabled
             ? t("plan.localApplyOff")
             : expired
@@ -606,6 +614,8 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
               ? t("plan.sourceBlocked")
               : plan.blockers.length > 0
                 ? t("plan.blocked")
+                : approvalExpired
+                  ? t("plan.approvalExpired")
                 : plan.state !== "approved"
                   ? t("plan.needsApproval")
                   : null;
@@ -629,6 +639,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
             ),
             React.createElement("p", { className: "ci-diet-group-desc ci-diet-review-wrap" }, t("plan.digest") + ": " + plan.digest),
             React.createElement("p", { className: "ci-diet-group-desc" }, t("plan.expires") + ": " + plan.expiresAt),
+            approvalExpired ? React.createElement("p", { role: "status" }, t("plan.approvalExpired")) : null,
             React.createElement(
               "div",
               { className: "ci-diet-review-blockers" },

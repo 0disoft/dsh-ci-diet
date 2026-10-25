@@ -1385,3 +1385,21 @@ test("an aborted revert keeps the applied change until a retry finishes it", asy
   assert.equal(reverted.state, "REVERTED");
   assert.equal(readFileSync(fixture.file, "utf8"), fixture.text);
 });
+
+
+test("expired unused approvals can be renewed, while active or used approvals cannot", async (t) => {
+  const f = setup();
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const input = { store: f.store, planId: f.plan.planId, confirmation: approvalConfirmation(f.plan),
+    subjectId: "tester", channel: "human-ui" as const, approvalTtlSeconds: 1, now: f.now };
+  const first = approvePlan(input);
+  assert.throws(() => approvePlan(input), /PLAN_ALREADY_APPROVED/);
+  const now = new Date(f.now.getTime() + 1000);
+  const renewed = approvePlan({ ...input, now });
+  assert.notEqual(first.nonce.nonceId, renewed.nonce.nonceId);
+  const applied = await applyPlan({ store: f.store, planId: f.plan.planId, subjectId: "tester", now });
+  assert.equal(applied.state, "applied");
+  assert.equal(applied.change!.approvalChannel, "human-ui");
+  await revertChange({ store: f.store, changeId: applied.change!.changeId, now });
+  assert.throws(() => approvePlan({ ...input, now: new Date(now.getTime() + 2000) }), /PLAN_ALREADY_USED/);
+});

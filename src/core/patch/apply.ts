@@ -312,6 +312,7 @@ function changeRecord(
   beforeText: string,
   afterText: string,
   approvalReference: string,
+  approvalChannel: ApprovalNonce["channel"],
   now: Date,
 ): AppliedChange {
   return {
@@ -333,7 +334,7 @@ function changeRecord(
       hash: textHash(afterText),
       bytes: Buffer.byteLength(afterText, "utf8"),
     },
-    approvalChannel: "human-cli",
+    approvalChannel,
     approvalReference,
     updatedAt: iso(now),
   };
@@ -469,7 +470,7 @@ function handleReplaceFailure(
 
 type ApplyInspection =
   | { readonly kind: "refused"; readonly result: ApplyResult }
-  | { readonly kind: "ready"; readonly beforeText: string; readonly beforeHash: string; readonly text: string; readonly hash: string };
+  | { readonly kind: "ready"; readonly beforeText: string; readonly beforeHash: string; readonly text: string; readonly hash: string; readonly approvalChannel: ApprovalNonce["channel"] };
 
 /**
  * Read-only decision phase: bring the target, approval, and journal up to date,
@@ -542,7 +543,7 @@ async function inspectApply(
     const warnings = options.store.appendSummaryEvent({ type: "edit_out_of_scope", planId: plan.planId, problems }, options.now);
     return { kind: "refused", result: { state: "not_applied", reasons: ["EDIT_OUT_OF_SCOPE"], change: null, resultText: null, ...(warnings.length > 0 ? { warnings } : {}) } };
   }
-  return { kind: "ready", beforeText, beforeHash, text: applied.text, hash: applied.hash };
+  return { kind: "ready", beforeText, beforeHash, text: applied.text, hash: applied.hash, approvalChannel: nonce!.channel };
 }
 
 /**
@@ -579,7 +580,7 @@ async function commitApply(
   }
 
   const reference = plan.status.approvalNonceId ?? "";
-  const prepared = changeRecord(plan, changeId, "PREPARED", binding, inspection.beforeText, inspection.text, reference, options.now);
+  const prepared = changeRecord(plan, changeId, "PREPARED", binding, inspection.beforeText, inspection.text, reference, inspection.approvalChannel, options.now);
   try {
     options.store.saveChange(prepared);
   } catch (error) {

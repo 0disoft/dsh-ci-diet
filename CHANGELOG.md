@@ -5,6 +5,8 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Allow explicit renewal of expired, unused approvals; show approval expiry in review and preserve the actual approval channel in change journals.
+
 ### Changed
 
 - The DSH CI Diet settings page uses five focused tabs instead of a long stack

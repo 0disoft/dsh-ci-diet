@@ -79,7 +79,10 @@ export class ReviewService {
     if (plan.provenance !== "observed") blockers.push("SYNTHETIC_PLAN");
     if (plan.payload.ruleIds.some((id) => !settings.engine.config.apply.allowedRules.includes(id))) blockers.push("RULE_NOT_ALLOWED");
     if ((usedPlans ?? new Set(store.listChanges().filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId))).has(plan.planId)) blockers.push("PLAN_ALREADY_USED");
-    return { id: plan.planId, digest: plan.planDigest, workflowPath: plan.payload.workflowPath,
+    const nonce = plan.status.state === "approved" ? store.readNonce(plan.planId) : null;
+    const approvalExpiresAt = nonce === null ? null : new Date(Date.parse(nonce.createdAt)
+      + settings.engine.config.apply.approvalTtlSeconds * 1000).toISOString();
+    return { approvalExpiresAt, id: plan.planId, digest: plan.planDigest, workflowPath: plan.payload.workflowPath,
       ruleId: plan.payload.ruleIds.join(", "), state: plan.status.state, expiresAt: plan.payload.expiresAt,
       sourceValid, blockers: [...new Set(blockers)], diff };
   }
@@ -126,7 +129,7 @@ export class ReviewService {
     if (preview.blockers.length > 0) throw new Error(preview.blockers.join(", "));
     const store = PatchStore.open(stateDir, settings.engine.config.storage);
     if (request.action === "approve") {
-      const approved = approvePlan({ store, planId: id, confirmation: request.confirmation ?? "", subjectId, channel: "human-ui", now: new Date() });
+      const approved = approvePlan({ store, planId: id, confirmation: request.confirmation ?? "", subjectId, channel: "human-ui", approvalTtlSeconds: settings.engine.config.apply.approvalTtlSeconds, now: new Date() });
       return { state: approved.plan.status.state, warnings: approved.warnings ?? [] };
     }
     // A separate explicit Apply click consumes the single-use approval. All

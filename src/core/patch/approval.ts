@@ -3,7 +3,7 @@ import type { ApprovalNonce, PatchStore } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 import { acquireStoreLock } from "./apply.ts";
 import type { Clock, IdSource } from "../support/clock.ts";
-import { APPROVE_LOCK_WAIT_MS } from "../policy/constants.ts";
+import { APPROVE_LOCK_WAIT_MS, DEFAULT_APPROVAL_TTL_SECONDS } from "../policy/constants.ts";
 
 export interface ApproveInput {
   readonly store: PatchStore;
@@ -12,6 +12,7 @@ export interface ApproveInput {
   readonly subjectId: string;
   readonly channel: "human-ui" | "human-cli";
   readonly now: Date;
+  readonly approvalTtlSeconds?: number;
   /** Optional time source for lock bookkeeping; defaults to the system clock. */
   readonly clock?: Clock;
   /** Optional id source for lock tokens; defaults to crypto.randomUUID. */
@@ -48,7 +49,17 @@ function approveLocked(input: ApproveInput): ApproveResult {
   const stored = input.store.readPlan(input.planId);
   if (stored === null) throw new Error("PLAN_NOT_FOUND: " + input.planId);
   const plan = stored.plan;
-  if (plan.status.state === "approved") throw new Error("PLAN_ALREADY_APPROVED: " + input.planId);
+  const previous = input.store.readNonce(plan.planId);
+  if (input.store.listChanges().some((change) => change.planId === plan.planId && change.state !== "NOT_APPLIED")) {
+    throw new Error("PLAN_ALREADY_USED: " + input.planId);
+  }
+  if (plan.status.state === "approved") {
+    if (previous === null || previous.nonceId !== plan.status.approvalNonceId || previous.planDigest !== plan.planDigest) {
+      throw new Error("NONCE_INVALID: approval record missing or mismatched");
+    }
+    const until = Date.parse(previous.createdAt) + (input.approvalTtlSeconds ?? DEFAULT_APPROVAL_TTL_SECONDS) * 1000;
+    if (!Number.isFinite(until) || input.now.getTime() < until) throw new Error("PLAN_ALREADY_APPROVED: " + input.planId);
+  }
   if (input.now.getTime() >= Date.parse(plan.payload.expiresAt)) throw new Error("PLAN_EXPIRED: " + plan.payload.expiresAt);
   if (input.confirmation.trim() !== approvalConfirmation(plan)) throw new Error("NONCE_INVALID: confirmation does not match the plan digest");
   const at = input.now.toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -75,7 +86,8 @@ function approveLocked(input: ApproveInput): ApproveResult {
     input.store.updatePlanStatus(plan.planId, approved.status, plan.status.revision);
   } catch (error) {
     // Do not leave a nonce that names a status this approval never published.
-    input.store.consumeNonce(plan.planId, nonce.nonceId);
+    if (previous !== null) input.store.saveNonce(plan.planId, previous);
+    else input.store.consumeNonce(plan.planId, nonce.nonceId);
     throw error;
   }
   const warnings = input.store.appendSummaryEvent({ type: "approved", planId: plan.planId, nonceId: nonce.nonceId, channel: input.channel }, input.now);
