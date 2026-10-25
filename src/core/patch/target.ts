@@ -5,7 +5,6 @@ import { PROPOSED_RETENTION_DAYS } from "../rules/cd008.ts";
 import { sourceHashOf } from "./plan.ts";
 import type { PatchRule } from "./eligibility.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
-import { npmCacheTargets } from "../rules/npm-cache.ts";
 
 const UPLOAD_ARTIFACT = /^actions\/upload-artifact@/i;
 const TIMEOUT_REF = /^workflow:(.+)#jobs\.([^.]+)\.timeout-minutes$/;
@@ -103,7 +102,7 @@ export function targetReasons(input: TargetInput): string[] {
   if (request.stepIndex === null) return [...reasons, "TARGET_REQUIRED"];
   if (target.stepIndex !== request.stepIndex) reasons.push("TARGET_NOT_ON_FINDING");
   if (request.rule === "CD006") {
-    if (!npmCacheTargets(input.workflow).some((t) => t.job.key === request.jobKey && t.step.index === request.stepIndex)) reasons.push("NPM_CACHE_PREREQUISITES_MISSING");
+    if (request.jobKey === null || input.workflow.jobs.find((job) => job.key === request.jobKey)?.steps[request.stepIndex] === undefined) reasons.push("NPM_CACHE_PREREQUISITES_MISSING");
     return reasons;
   }
   if (request.retentionDays !== PROPOSED_RETENTION_DAYS) return [...reasons, "RETENTION_NOT_FROM_EVIDENCE"];

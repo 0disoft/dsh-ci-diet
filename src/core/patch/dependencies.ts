@@ -580,9 +580,9 @@ export function collectDependencies(
     return { dependencies: [], unresolved: ["<workspace>"] };
   }
   const sink = createDependencySink(realRoot);
-  if (npmCacheTargets(workflow).length > 0) {
-    const manifests = npmCacheDependencies(realRoot);
-    if (manifests === null) sink.unresolved("npm cache manifest or lockfile missing");
+  for (const target of npmCacheTargets(workflow, realRoot)) {
+    const manifests = npmCacheDependencies(realRoot, target);
+    if (manifests === null) sink.unresolved("cache manifest or lockfile missing");
     else for (const manifest of manifests) { if (!sink.add("", manifest.ref)) sink.miss("", manifest.ref); }
   }
   for (const job of workflow.jobs) {

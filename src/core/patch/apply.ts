@@ -9,7 +9,8 @@ import { PatchStore, textHash } from "./store.ts";
 import { digestOf } from "../../shared/cdj1.ts";
 import type { ApprovalNonce, StoredPlan } from "./store.ts";
 import { buildPolicySnapshots } from "./plan.ts";
-import { concurrencyGroup, semanticCheck } from "./edits.ts";
+import { npmCacheTargets } from "../rules/npm-cache.ts";
+import { concurrencyGroup, planNpmCacheEdit, semanticCheck } from "./edits.ts";
 import { semanticProblems } from "./semantic.ts";
 import type { PatchRule } from "./eligibility.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
@@ -541,6 +542,13 @@ async function inspectApply(
   const original = parseWorkflow(plan.payload.workflowPath, beforeText);
   const problems = semanticProblems({ original, originalText: beforeText, resultText: applied.text, edits: plan.payload.edits });
   for (const edit of plan.payload.edits) {
+    if (edit.ruleId === "CD006") {
+      const target = npmCacheTargets(original, binding.workspaceRoot).find((target) =>
+        edit.semanticPath === "jobs." + target.job.key + ".steps[" + target.step.index + "].with.cache");
+      const expected = target === undefined ? null : planNpmCacheEdit(beforeText, target.job, target.step, target).edit;
+      if (expected === null || expected.startByte !== edit.startByte || expected.endByte !== edit.endByte
+        || expected.replacementUtf8 !== edit.replacementUtf8) problems.push("cache edit does not match the selected install and lockfile");
+    }
     const problem = semanticCheck(original, applied.text, edit, {
       group: concurrencyGroup(binding.repositoryId, plan.payload.workflowPath),
     });

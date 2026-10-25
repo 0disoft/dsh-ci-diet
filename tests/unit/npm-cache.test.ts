@@ -124,3 +124,59 @@ test("CLI creates an offline CD006 plan in a fresh state directory", (t) => {
   assert.equal(JSON.parse(result.stdout).payload.ruleIds[0], "CD006");
   assert.equal(readFileSync(join(root, PATH), "utf8"), SOURCE);
 });
+
+
+test("latest setup-node supports nested npm locks but respects automatic caching and opt-outs", async (t) => {
+  const root = fixture(t, SOURCE.replace("setup-node@v4", "setup-node@v7"));
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 1);
+  writeFileSync(join(root, "package.json"), '{"packageManager":"npm@11.0.0"}');
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+  writeFileSync(join(root, "package.json"), '{}');
+  mkdirSync(join(root, "app"));
+  writeFileSync(join(root, "app/package.json"), '{}');
+  writeFileSync(join(root, "app/package-lock.json"), '{"lockfileVersion":3}');
+  execFileSync("git", ["add", "--", "app/package.json", "app/package-lock.json"], { cwd: root, windowsHide: true });
+  writeFileSync(join(root, PATH), SOURCE.replace("setup-node@v4", "setup-node@v7").replace("- run: npm ci", "- run: npm ci\n        working-directory: app"));
+  const { store, now, plan } = planned(root);
+  approvePlan({ store, planId: plan.planId, now, confirmation: approvalConfirmation(plan), subjectId: "tester", channel: "human-cli" });
+  assert.equal((await applyPlan({ store, planId: plan.planId, now, subjectId: "tester" })).state, "applied");
+  assert.match(readFileSync(join(root, PATH), "utf8"), /cache-dependency-path: app\/package-lock.json/);
+});
+
+test("pnpm store caching preserves frozen installs and all test commands", async (t) => {
+  const source = SOURCE.replace("- uses: actions/setup-node@v4", "- uses: pnpm/action-setup@v4\n      - uses: actions/setup-node@v7").replace("npm ci", "pnpm install --frozen-lockfile");
+  const root = fixture(t, source);
+  writeFileSync(join(root, "pnpm-lock.yaml"), 'lockfileVersion: 9\n');
+  execFileSync("git", ["add", "--", "pnpm-lock.yaml"], { cwd: root, windowsHide: true });
+  const scan = runStaticScan({ workspaceRoot: root });
+  const finding = scan.report.findings.find((f) => f.ruleId === "CD006")!;
+  assert.ok(finding);
+  const target = npmCacheTargets(scan.workflows[0]!, root)[0]!;
+  assert.equal(target.manager, "pnpm");
+  const request = buildRequestedPlan({ binding: scan.binding, workflow: scan.workflows[0]!, text: source,
+    rule: "CD006", allowedRules: ["CD006"], jobKey: "test", stepIndex: 2, minutes: null, finding,
+    coverage: scan.report.coverage, claims: claimsFromTokens([]), history: null, evidenceRef: "test", issuedBy: { channel: "human-cli", subjectId: "tester" }, now: new Date() });
+  assert.ok(request.ok, JSON.stringify(request));
+  if (!request.ok) return;
+  const store = PatchStore.open(join(root, "state"));
+  store.saveBinding(scan.binding); store.saveAttestation(request.attestation); store.savePlan(request.plan, { coverageWriteAllowed: true, reportId: null });
+  const now = new Date();
+  approvePlan({ store, now, planId: request.plan.planId, confirmation: approvalConfirmation(request.plan), subjectId: "tester", channel: "human-cli" });
+  const applied = await applyPlan({ store, now, planId: request.plan.planId, subjectId: "tester" });
+  assert.equal(applied.state, "applied", JSON.stringify(applied));
+  assert.match(readFileSync(join(root, PATH), "utf8"), /cache: pnpm/);
+  assert.match(readFileSync(join(root, PATH), "utf8"), /pnpm install --frozen-lockfile/);
+});
+
+
+test("modern automatic-cache declarations and explicit opt-outs are preserved", (t) => {
+  const root = fixture(t);
+  for (const major of [5, 6, 7]) {
+    const source = SOURCE.replace("setup-node@v4", "setup-node@v" + major);
+    writeFileSync(join(root, "package.json"), '{"devEngines":{"packageManager":{"name":"npm"}}}');
+    assert.equal(npmCacheTargets(parseWorkflow(PATH, source), root).length, 0);
+    writeFileSync(join(root, "package.json"), '{}');
+    assert.equal(npmCacheTargets(parseWorkflow(PATH, source), root).length, 1);
+    assert.equal(npmCacheTargets(parseWorkflow(PATH, source.replace("node-version:", "package-manager-cache: false\n          node-version:")), root).length, 0);
+  }
+});

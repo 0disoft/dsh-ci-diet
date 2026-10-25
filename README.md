@@ -10,7 +10,7 @@ CI Diet finds GitHub Actions work that is likely wasted, preserves the evidence 
 
 **Installation alone does not save runner minutes.** Supported DSH deploy commands are checked automatically for savings candidates before running; workflow changes are applied only after review and approval. The DSH plugin has no approval, apply, or revert tools, and preflight itself never changes files. Its Settings pages store tool configuration and show the host's session-scoped reports and plans; they do not optimize a workflow. Approved local writes are enabled by default, but applying still requires a separate digest approval. There is no guarantee that any finding will reduce cost.
 
-`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. Preflight itself makes no network request and no automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
+`preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm/pnpm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. Preflight itself makes no network request and no automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
 ## What it does
 
@@ -23,10 +23,10 @@ The static scan reads workflow YAML in a target checkout. The optional history s
 | CD003 | Heavy checks for docs-only changes | explanation only; off by default |
 | CD004 | Oversized matrices | explanation only |
 | CD005 | Jobs without `timeout-minutes` | timeout edit; off by default |
-| CD006 | `actions/setup-node@v3` or `@v4` jobs that run `npm ci` without npm caching | two setup-node inputs; on by default |
+| CD006 | `actions/setup-node@v3`–`@v7` jobs running `npm ci` or `pnpm install --frozen-lockfile` without download caching | two setup-node inputs; on by default |
 | CD008 | Long artifact retention | retention edit |
 
-CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. CD006 is a default static rule for one narrow npm shape: it adds setup-node's download cache while `npm ci` and every test still run. A cache can reduce downloads after it warms up; no time or money saving is claimed until cold and warm runs are compared.
+CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does not reduce normal job runtime. CD008 changes artifact storage retention, not runner minutes. CD003 and CD005 remain off until their quality gates pass. CD006 is a default static rule for literal npm/pnpm install shapes: it adds setup-node's download cache while `npm ci` and every test still run. A cache can reduce downloads after it warms up; no time or money saving is claimed until cold and warm runs are compared.
 
 ## Install and upgrade
 
@@ -77,7 +77,7 @@ The plugin preview does not save a plan. Its `nextCommand` re-creates the plan t
 
 ## Offline npm cache plan (CD006)
 
-CD006 needs no run history. It matches a job at the repository root where `actions/checkout` has no user `with` options, exactly one `actions/setup-node@v3` or `@v4` step follows it without caching, and the next step's `run` is exactly `npm ci`. The root `package.json` and `package-lock.json` must be committed, regular JSON files. The plan adds only `cache: npm` and `cache-dependency-path: package-lock.json` to setup-node; it does not change Node, action versions, `npm ci`, tests, or local caching.
+CD006 needs no run history. It matches exactly one setup-node v3–v7 and an unconditional `npm ci` or `pnpm install --frozen-lockfile`, with a prior checkout and tracked package manifest/lockfile. Literal step/job/workflow working directories are supported. pnpm must be installed by a prior `pnpm/action-setup`. The plan adds only `cache` and `cache-dependency-path`; installs and tests still run. Existing cache inputs and `package-manager-cache` opt-outs are preserved, and modern setup-node automatic caching is excluded. SHA-pinned setup-node and dynamic/mixed installs remain review-only (no automatic patch).
 
 ```
 ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1

@@ -1,3 +1,4 @@
+import type { NpmCacheTarget } from "../rules/npm-cache.ts";
 import { Buffer } from "node:buffer";
 import { sha256Hex } from "../../shared/cdj1.ts";
 import type { ByteEdit } from "../contracts/schema.ts";
@@ -266,7 +267,7 @@ export function applyEdits(text: string, edits: readonly ByteEdit[]): AppliedEdi
 }
 
 /** Add only the two setup-node inputs; never insert steps or skip npm ci. */
-export function planNpmCacheEdit(text: string, job: WorkflowJob, step: WorkflowStep): EditResult {
+export function planNpmCacheEdit(text: string, job: WorkflowJob, step: WorkflowStep, target: Pick<NpmCacheTarget, "manager" | "lockfile"> = { manager: "npm", lockfile: "package-lock.json" }): EditResult {
   if (step.flow || step.withFlow || step.withEntries.some((e) => ["cache", "cache-dependency-path", "package-manager-cache"].includes(e.key))) {
     return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "cache settings already exist or use flow syntax" } };
   }
@@ -281,13 +282,13 @@ export function planNpmCacheEdit(text: string, job: WorkflowJob, step: WorkflowS
     if (first === undefined) return { edit: null, error: { code: "EDIT_AMBIGUOUS", detail: "empty with mapping" } };
     end = lineStartOf(buffer, first.keyRange.startByte);
     const keyIndent = indentAt(buffer, first.keyRange.startByte);
-    replacement = keyIndent + "cache: npm" + newline + keyIndent + "cache-dependency-path: package-lock.json" + newline;
+    replacement = keyIndent + "cache: " + target.manager + newline + keyIndent + "cache-dependency-path: " + target.lockfile + newline;
   } else {
     if (step.usesRange === null) return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "setup step has no uses line" } };
     end = lineEndOf(buffer, step.usesRange.endByte);
     // lineEndOf points after the CR on Windows; leave the original CRLF intact.
     if (buffer[end - 1] === 0x0d) end -= 1;
-    replacement = newline + indent + "with:" + newline + indent + "  cache: npm" + newline + indent + "  cache-dependency-path: package-lock.json";
+    replacement = newline + indent + "with:" + newline + indent + "  cache: " + target.manager + newline + indent + "  cache-dependency-path: " + target.lockfile;
   }
   return { edit: { kind: step.withPresent ? "insertScalar" : "insertParentMapping", startByte: end, endByte: end,
     replacementUtf8: replacement, semanticPath: "jobs." + job.key + ".steps[" + step.index + "].with.cache", ruleId: "CD006" }, error: null };
@@ -323,9 +324,12 @@ export function semanticCheck(
   if (edit.ruleId === "CD006") {
     const index = /^jobs\.[^.]+\.steps\[(\d+)\]\.with\.cache$/.exec(edit.semanticPath)?.[1];
     const step = index === undefined ? undefined : job.steps[Number(index)];
-    if (!/^actions\/setup-node@v[34](?:\.\d+){0,2}$/.test(step?.uses ?? "")) return "EDIT_RESULT_INVALID: unsupported cache action";
-    if (step?.withEntries.find((e) => e.key === "cache")?.literal !== "npm"
-      || step.withEntries.find((e) => e.key === "cache-dependency-path")?.literal !== "package-lock.json") return "EDIT_RESULT_INVALID: npm cache inputs mismatch";
+    if (!/^actions\/setup-node@v[3-7](?:\.\d+){0,2}$/.test(step?.uses ?? "")) return "EDIT_RESULT_INVALID: unsupported cache action";
+    const manager = step?.withEntries.find((e) => e.key === "cache")?.literal;
+    const lockfile = step?.withEntries.find((e) => e.key === "cache-dependency-path")?.literal;
+    if (!["npm", "pnpm"].includes(manager ?? "") || lockfile === null || lockfile === undefined
+      || !/^(?:[A-Za-z0-9_@.-]+\/)*(?:package-lock\.json|pnpm-lock\.yaml)$/.test(lockfile)
+      || lockfile.split("/").includes("..") || !(lockfile.endsWith(manager === "npm" ? "package-lock.json" : "pnpm-lock.yaml"))) return "EDIT_RESULT_INVALID: npm cache inputs mismatch";
     return null;
   }
   const stepPath = /^jobs\.[^.]+\.steps\[(\d+)\]\.with\.retention-days$/.exec(edit.semanticPath);
