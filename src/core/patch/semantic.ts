@@ -26,19 +26,30 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function deepEqual(left: unknown, right: unknown): boolean {
+type EqualityCache = WeakMap<object, WeakMap<object, boolean>>;
+
+/** Parsed trees stay immutable during a check; remember both equal and unequal pairs. */
+function deepEqual(left: unknown, right: unknown, cache: EqualityCache): boolean {
   if (left === right) return true;
+  if (typeof left !== "object" || left === null || typeof right !== "object" || right === null) return false;
+  let pairs = cache.get(left);
+  const cached = pairs?.get(right);
+  if (cached !== undefined) return cached;
+  let equal = false;
   if (Array.isArray(left) && Array.isArray(right)) {
-    if (left.length !== right.length) return false;
-    return left.every((value, index) => deepEqual(value, right[index]));
-  }
-  if (isPlainObject(left) && isPlainObject(right)) {
+    equal = left.length === right.length && left.every((value, index) => deepEqual(value, right[index], cache));
+  } else if (isPlainObject(left) && isPlainObject(right)) {
     const leftKeys = Object.keys(left);
     const rightKeys = Object.keys(right);
-    if (leftKeys.length !== rightKeys.length) return false;
-    return leftKeys.every((key) => Object.hasOwn(right, key) && deepEqual(left[key], right[key]));
+    equal = leftKeys.length === rightKeys.length
+      && leftKeys.every((key) => Object.hasOwn(right, key) && deepEqual(left[key], right[key], cache));
   }
-  return false;
+  if (pairs === undefined) {
+    pairs = new WeakMap<object, boolean>();
+    cache.set(left, pairs);
+  }
+  pairs.set(right, equal);
+  return equal;
 }
 
 function isAllowedLeaf(
@@ -59,8 +70,9 @@ function collectDifferences(
   path: PathSeg[],
   allowed: readonly (readonly PathSeg[])[],
   out: Difference[],
+  cache: EqualityCache = new WeakMap(),
 ): void {
-  if (deepEqual(before, after)) return;
+  if (deepEqual(before, after, cache)) return;
   if (isAllowedLeaf(path, allowed)) return;
   const beforeIsObject = isPlainObject(before);
   const afterIsObject = isPlainObject(after);
@@ -69,14 +81,18 @@ function collectDifferences(
       // Missing YAML keys must stay missing, even when Object.prototype has one.
       const beforeValue = Object.hasOwn(before, key) ? before[key] : undefined;
       const afterValue = Object.hasOwn(after, key) ? after[key] : undefined;
-      collectDifferences(beforeValue, afterValue, [...path, key], allowed, out);
+      path.push(key);
+      collectDifferences(beforeValue, afterValue, path, allowed, out, cache);
+      path.pop();
     }
     return;
   }
   if (Array.isArray(before) && Array.isArray(after)) {
     const length = Math.max(before.length, after.length);
     for (let index = 0; index < length; index += 1) {
-      collectDifferences(before[index], after[index], [...path, index], allowed, out);
+      path.push(index);
+      collectDifferences(before[index], after[index], path, allowed, out, cache);
+      path.pop();
     }
     return;
   }
@@ -86,19 +102,22 @@ function collectDifferences(
     const keys = Object.keys(object);
     if ((other === undefined || other === null) && keys.length > 0) {
       for (const key of keys) {
+        path.push(key);
         collectDifferences(
           beforeIsObject ? object[key] : undefined,
           beforeIsObject ? undefined : object[key],
-          [...path, key],
+          path,
           allowed,
           out,
+          cache,
         );
+        path.pop();
       }
       return;
     }
   }
   out.push({
-    path,
+    path: [...path],
     kind: before === undefined ? "added" : after === undefined ? "missing" : "changed",
   });
 }

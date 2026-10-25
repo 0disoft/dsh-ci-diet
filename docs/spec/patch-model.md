@@ -83,6 +83,13 @@ outside the declared edits fails the plan even when the recomputed `planDigest`
 is consistent, because a digest proves what was signed, not that the edit stayed
 inside its rule.
 
+Object-pair equality results are cached only for the duration of one semantic
+check. Parsed YAML trees remain immutable, and the diagnostic walk shares this
+cache so changed ancestors do not repeatedly rescan an unchanged subtree. The
+walk reuses a path stack and copies it only when recording a difference; separate
+diagnostics retain separate paths. Own-key checks, allowed-path matching and
+the distinction between missing keys and explicit values remain unchanged.
+
 ## Evidence binding
 
 A plan is built from one finding, and the finding must still describe the bytes

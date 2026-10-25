@@ -7,6 +7,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Performance
 
+- Semantic patch comparison caches object-pair equality within each check and
+  reuses a traversal path stack. Large unchanged mappings are no longer scanned
+  again at each changed ancestor, while undeclared changes keep their original
+  diagnostics. A 1,001-key fixture reduces mapping key enumeration from 8 to 2
+  for a normal timeout edit and from 10 to 4 for an undeclared sibling change.
+
 - History snapshots store repeated parsed workflow definitions once in a
   versioned table, including equal definitions collected at different commits.
   Readers restore shared definitions and reject invalid references; existing
