@@ -5,6 +5,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Keep artifact pagination completeness separate from run/job evidence, compare skipped jobs honestly, and paginate up to 1,000 jobs per attempt.
+- Revalidate stored patch values at apply and pin documentation-only evidence to each historical run's base/head SHAs.
+- Persist CLI scan reports and publish unapproved model-generated plans into the human review flow without resetting an existing approval.
+- Expand CD006 to setup-node v3–v7, literal npm/pnpm install directories and selected lockfiles, preserving automatic caching and explicit opt-outs.
+- Add read-only `measure --change` for exact-hash before/after run samples, full successful-job runner time, success rates and rerun counts, with explicit sampling/causality limits.
+
 - Allow explicit renewal of expired, unused approvals; show approval expiry in review and preserve the actual approval channel in change journals.
 
 ### Changed

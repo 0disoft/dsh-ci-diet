@@ -51,7 +51,7 @@ export const zhHans: Record<MessageKey, string> = {
   "error.BACKUP_UNAVAILABLE": "无法写入持久备份，未做任何更改。",
   "error.WRITE_CONFLICT": "文件在校验期间发生变化，请手动检查。",
   "error.COMMAND_FAILED": "命令失败。",
-  "cli.usage": "用法：ci-diet <command> [options]\n\n  compare --before-run <id> --after-run <id> --network [--format json|html]\n  scan    无需网络分析工作流文件\n  sync    通过只读 API 读取 GitHub Actions 历史（需要 --network）\n  report  以文本、JSON 或 HTML 显示已存储的报告\n  diagnose 解释 job 匹配情况与采集覆盖范围\n  prune   删除过期的报告、计划和缓存\n  --config <file> 从 JSON 文件合并存储与历史设置\n  --help  显示此帮助",
+  "cli.usage": "用法：ci-diet <command> [options]\n\n  measure --change <id> --before-runs <ids> --after-runs <ids> --network\n  compare --before-run <id> --after-run <id> --network [--format json|html]\n  scan    无需网络分析工作流文件\n  sync    通过只读 API 读取 GitHub Actions 历史（需要 --network）\n  report  以文本、JSON 或 HTML 显示已存储的报告\n  diagnose 解释 job 匹配情况与采集覆盖范围\n  prune   删除过期的报告、计划和缓存\n  --config <file> 从 JSON 文件合并存储与历史设置\n  --help  显示此帮助",
   "cli.scan.help": "用法：ci-diet scan [--cwd <path>] [--json] [--out <file>] [--rules <ids>] [--require-complete]",
   "cli.plan.help": "用法：ci-diet plan --rule <CD001|CD005|CD006|CD008> [--workflow <path>] [--job <key>] [--step <index>] [--minutes <n>] [--claims <list>] [--state-dir <path>] [--json]",
   "cli.approve.help": "用法：ci-diet approve --plan <planId> --confirm <digest tail> [--state-dir <path>]",

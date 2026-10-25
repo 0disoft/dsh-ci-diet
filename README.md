@@ -102,7 +102,7 @@ ci-diet plans --cwd . --plan PLAN_ID
 ci-diet report --cwd . --lang ko
 ```
 
-`scan` checks workflow files. `sync` reads history only after `--network`; `--repo` selects `OWNER/REPO` explicitly and `--days` adjusts the lookback within its configured bounds. `report` renders text, JSON, or HTML and writes `--out` relative to `--cwd`. `diagnose` explains job-name matching and coverage from stored history; add `--require-complete` to exit `3` for incomplete data. `prune` removes expired reports, plans, and cache entries under the state store settings. `changes` lists applied changes; `plans` reopens a saved plan. `--config FILE` merges a partial JSON configuration for any command.
+`scan` checks workflow files. `sync` reads history only after `--network`; `--repo` selects `OWNER/REPO` explicitly and `--days` adjusts the lookback within its configured bounds. `report` renders text, JSON, or HTML and writes `--out` relative to `--cwd`. `diagnose` explains job-name matching and coverage from stored history; add `--require-complete` to exit `3` for incomplete data. `prune` removes expired reports, plans, and cache entries under the state store settings. `measure --change <id> --before-runs <ids> --after-runs <ids> --network` links selected actual runs to an applied change using exact workflow hashes and reports runner-time differences plus success/rerun counts; see [measurement limits](docs/guide/plugin.md#measuring-an-applied-change). `changes` lists applied changes; `plans` reopens a saved plan. `--config FILE` merges a partial JSON configuration for any command.
 
 ## Review, approve, apply, and revert
 

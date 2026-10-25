@@ -255,3 +255,33 @@ The detailed specs and decisions remain English: [specification index](../spec/R
 ### Saved model plans
 
 `ci_diet_plan` now saves eligible plans as unapproved drafts and returns `planId`. Open **CI Diet Review** to inspect the diff, type its digest suffix, approve, and separately apply it. The model tool cannot approve or apply. The returned CLI command inspects the same saved plan instead of generating another one. Repeated publication never resets an existing approval.
+
+
+## Measuring an applied change
+
+After reviewing/applying a plan, commit and run the workflow through your normal
+process. CI Diet does not push, deploy, trigger CI, or select convenient samples.
+Use the change ID from `ci-diet changes` and run IDs from GitHub Actions:
+
+```sh
+ci-diet measure --cwd . --state-dir .ci-diet --change change_123 --before-runs 100,101 --after-runs 110,111 --network --out effect.json
+```
+
+Select at most 10 runs per phase, from the same repository, workflow, branch and
+event. The command reads the journal's repository binding, fetches workflow bytes
+at each run SHA, and requires the before/after hashes recorded by apply. This
+first slice supports `push` and `workflow_dispatch`: PR merge/base workflow refs
+cannot be verified using the run head SHA alone and are refused. Reverted changes,
+mixed versions/scopes, duplicate runs and attempts changing during collection
+are refused. It makes only read-only GitHub calls, bounded by a two-minute deadline.
+
+The JSON links the change ID, plan ID/digest and run attempts. It reports mean
+**successful-run total runner seconds** (all jobs, including cache restore/save),
+signed observed difference, selected-sample success rate, failed/other conclusions,
+rerun rate, and rerun attempt counts. Failed and previous-attempt durations are not included
+in those means; hidden step-level retries cannot be counted. These limits and
+selection bias are explicit warnings. Runs without successful comparable samples
+return JSON with null reduction and exit 3. Slower runs produce negative values.
+Byte differences caused by commit-time line-ending normalization also require new matching evidence; this slice does not normalize hashes. Actual billing and verified causal savings stay unknown/false. No report claims
+that an observed difference was caused by this patch. The output file is created
+without overwriting an existing file; this command currently has no DSH chart UI.
