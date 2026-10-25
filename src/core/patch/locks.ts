@@ -63,25 +63,36 @@ export function acquireLock(lockRoot: string, name: string, waitMs: number, mess
   const token = "lease_" + process.pid.toString(36) + "_" + clock.now().getTime().toString(36) + "_" + ids.suffix(8);
   const deadline = clock.now().getTime() + waitMs;
   for (;;) {
-    try {
-      createClaim(path, token);
-      return { release: () => releaseLock(path, token) };
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw new Error(message);
-    }
+    const acquired = tryClaim(path, token, message);
+    if (acquired !== null) return acquired;
+    let retryImmediately = false;
     const observed = readLeaseObservation(path);
     if (observed === null) {
       const age = ageOf(path, clock);
-      if (age === null) continue;
-      if (age > LEASE_CLAIM_STALE_MS && removeEmptyLockDirectory(path)) {
-        continue;
-      }
+      retryImmediately = age === null || (age > LEASE_CLAIM_STALE_MS && removeEmptyLockDirectory(path));
     } else if (!leaseOwnerAlive(observed.owner)) {
       breakStaleClaim(path, observed, token, message);
-      continue;
+      retryImmediately = true;
     }
-    if (clock.now().getTime() >= deadline) throw new Error(message);
-    sleepSync(CLAIM_POLL_MS);
+    // One recovery retry preserves zero-wait orphan recovery. Losing that
+    // retry must reach the deadline/backoff, even under continuous churn.
+    if (retryImmediately) {
+      const recovered = tryClaim(path, token, message);
+      if (recovered !== null) return recovered;
+    }
+    const remaining = deadline - clock.now().getTime();
+    if (remaining <= 0) throw new Error(message);
+    sleepSync(Math.min(CLAIM_POLL_MS, remaining));
+  }
+}
+
+function tryClaim(path: string, token: string, message: string): StoreLock | null {
+  try {
+    createClaim(path, token);
+    return { release: () => releaseLock(path, token) };
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") throw new Error(message);
+    return null;
   }
 }
 

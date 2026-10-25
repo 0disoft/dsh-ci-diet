@@ -5,6 +5,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Enforce claim-lock wait deadlines on vanished, empty-stale and dead-owner
+  recovery paths. Allow one immediate recovery retry, then check the deadline
+  and back off so repeated contention cannot spin indefinitely. Poll sleeps
+  are capped by the remaining wait; zero-wait orphan recovery still works.
 - Send only measurement summary fields and per-job durations to the Review
   browser, omitting unused steps, runner metadata and run-pair comparisons.
   A synthetic 20-run, 100-job, 20-step fixture reduces the measurement portion
