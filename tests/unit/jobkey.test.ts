@@ -5,6 +5,28 @@ import { parseWorkflow, recoverJobKey } from "../../src/core/workflow/index.ts";
 
 const FIXTURES = new URL("../fixtures/workflows/", import.meta.url);
 
+test("indexes a named matrix once and reuses it for every name lookup", (t) => {
+  const text = [
+    "on: push", "jobs:", "  build:", "    name: Build ${{ matrix.shard }}",
+    "    strategy:", "      matrix:",
+    "        shard: [" + Array.from({ length: 256 }, (_, index) => index).join(", ") + "]",
+    "    runs-on: ubuntu-latest", "",
+  ].join("\n");
+  const job = parseWorkflow("matrix-index.yml", text).jobs[0];
+  assert.ok(job?.matrix);
+  let reads = 0;
+  const include = Array.from({ length: 1000 }, (_, index) => ({
+    get color() { reads += 1; return index; },
+  }));
+  const workflowJobs = [{ ...job, matrix: { ...job.matrix, include } }];
+  assert.deepEqual(recoverJobKey("Build 0", workflowJobs)?.matrix, { shard: 0, color: 999 });
+  assert.deepEqual(recoverJobKey("Build 255", workflowJobs)?.matrix, { shard: 255, color: 999 });
+  assert.deepEqual(recoverJobKey("build (255, 999)", workflowJobs)?.matrix, { shard: 255, color: 999 });
+  assert.equal(recoverJobKey("Build 256", workflowJobs), null);
+  t.diagnostic("include value reads while indexing: " + reads);
+  assert.equal(reads, include.length);
+});
+
 async function jobs(name: string) {
   const text = await readFile(new URL(name, FIXTURES), "utf8");
   return parseWorkflow(name, text).jobs;

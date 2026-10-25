@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Job-name indexing expands each matrix once and shares the combinations across
+  literal, template, and default names. Named matrix jobs no longer repeat their
+  Cartesian expansion and include/exclude processing; ambiguous names still
+  remain unattributed and later lookups reuse the existing job-array index.
+
 - Matrix JSON objects preserve `__proto__` as an own data property during YAML
   conversion and include merging instead of replacing a row's prototype. Dotted
   name lookup and canonical equality now require own properties, preventing

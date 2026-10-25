@@ -79,26 +79,21 @@ function buildJobKeyIndex(jobs: readonly WorkflowJob[]): JobKeyIndex {
   const byMatrixName = new Map<string, JobKeyMatch | null>();
   for (const job of jobs) {
     remember(byKey, normalizeName(job.key), { key: job.key, level: "key-equals-name", matrix: null });
-    if (job.displayName === null) continue;
-    const name = normalizeName(job.displayName);
+    // All name indexes share one expansion, including the include/exclude work.
     const combinations = job.matrix === null ? null : expandMatrix(job.matrix);
-    if (job.matrix === null || combinations === null || MATRIX_EXPRESSION_ALL.test(job.displayName)) {
-      // Matrix templates expand to per-leg names below. A literal name on a
-      // matrix job is one name shared by every leg, so each combination is a
-      // distinct candidate until the leg itself is known.
-      remember(byName, name, { key: job.key, level: "name-literal", matrix: null });
-      continue;
+    if (job.displayName !== null) {
+      const name = normalizeName(job.displayName);
+      if (job.matrix === null || combinations === null || MATRIX_EXPRESSION_ALL.test(job.displayName)) {
+        // Matrix templates expand to per-leg names below. A literal name on a
+        // matrix job is one name shared by every leg, so each combination is a
+        // distinct candidate until the leg itself is known.
+        remember(byName, name, { key: job.key, level: "name-literal", matrix: null });
+      } else {
+        for (const values of combinations) {
+          remember(byName, name, { key: job.key, level: "name-literal", matrix: values });
+        }
+      }
     }
-    for (const values of combinations) {
-      remember(byName, name, { key: job.key, level: "name-literal", matrix: values });
-    }
-  }
-  // Matrix names are lowest precedence, and jobs are indexed in YAML order.
-  // Within one job a name-template match beats a default rendered name, which
-  // is the per-job order matrixMatch used before.
-  for (const job of jobs) {
-    if (job.matrix === null) continue;
-    const combinations = expandMatrix(job.matrix);
     if (combinations === null) continue;
     if (job.displayName !== null && MATRIX_EXPRESSION_ALL.test(job.displayName)) {
       for (const values of combinations) {
