@@ -136,6 +136,14 @@ Runs created after that end time belong to the next sync, so they cannot consume
 this window's `maxRuns` slots or its job/definition request budget. This bounds
 run selection by creation time; job status and duration updates remain live.
 
+Run-list completeness also checks the largest valid `total_count` reported
+across its pages against the unique runs collected. A missing next-page link
+does not prove completeness: when a shortfall has no existing limit, pagination,
+or request-error explanation, history becomes `partial` with
+`RUN_COLLECTION_INCOMPLETE`. Collected runs remain available, and the check adds
+no API requests. A later page reporting a lower total cannot erase an earlier
+shortfall; totals that are absent or invalid are not used as completeness proof.
+
 `concurrentRequests` is the maximum number of GitHub requests in flight at once;
 it bounds the parallel jobs, workflow-definition, and pull-request reads without
 changing the sequential discovery and policy stages. `maxRequests` caps the total

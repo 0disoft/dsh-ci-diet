@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- History sync no longer treats a missing next-page link as proof that all runs
+  were collected. If the unique run count falls short of the largest reported
+  `total_count`, an otherwise successful listing becomes partial with
+  `RUN_COLLECTION_INCOMPLETE`, preserving evidence while blocking writes that
+  require complete history. No extra API requests are made.
+
 - History sync bounds every run-list page by both the lookback start and its
   recorded end time. Runs created during collection no longer displace evidence
   inside the window or spend its run slots and downstream request budget.

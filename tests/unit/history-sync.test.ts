@@ -633,6 +633,44 @@ function jobResponse(runId: number, page = 1): GhResponse {
   });
 }
 
+for (const scenario of [
+  { name: "short terminal page", sizes: [20], totals: [21], complete: false },
+  { name: "empty terminal page", sizes: [0], totals: [21], complete: false },
+  { name: "a decreasing total across pages", sizes: [10, 10], totals: [21, 20], complete: false },
+  { name: "all reported runs collected", sizes: [10, 10], totals: [20, 20], complete: true },
+]) {
+  test("run listing completeness: " + scenario.name, async (t) => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    const runs = workflowRuns(20);
+    let pagesRead = 0;
+    let offset = 0;
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/actions/runs")) {
+        const page = pagesRead++;
+        assert.ok(page < scenario.sizes.length, "do not probe past a terminal page");
+        const items = runs.slice(offset, offset + scenario.sizes[page]!);
+        offset += items.length;
+        return response({ total_count: scenario.totals[page], workflow_runs: items },
+          pagesRead < scenario.sizes.length ? { link: '<https://api.github.com/next>; rel="next"' } : {});
+      }
+      if (request.path.endsWith("/attempts/1/jobs")) {
+        return jobResponse(Number(/\/runs\/(\d+)\//.exec(request.path)?.[1]));
+      }
+      return original(request, family);
+    };
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+    assert.equal(history.runs.length, offset, "keep every successfully collected run");
+    assert.equal(pagesRead, scenario.sizes.length);
+    assert.equal(history.coverage.history.status, scenario.complete ? "complete" : "partial");
+    assert.deepEqual(history.coverage.history.reasons, scenario.complete ? [] : ["RUN_COLLECTION_INCOMPLETE"]);
+    const coverage = buildCoverage({ apiVersion: "test", ghVersion: "test",
+      requestedFrom: history.requestedFrom, requestedTo: history.requestedTo }, { history: history.coverage.history });
+    assert.equal(composeCoverage(coverage, "CD001").writeAllowed, scenario.complete);
+    t.diagnostic("collected " + offset + "/" + Math.max(...scenario.totals) + "; writeAllowed=" + scenario.complete);
+  });
+}
+
 test("job pagination keeps new rows after an overlap and counts each id once", async () => {
   const transport = fakeTransport();
   const original = transport.get.bind(transport);

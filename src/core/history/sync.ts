@@ -135,6 +135,7 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
 
   const runs: GitHubRun[] = [];
   const runIds = new Set<number>();
+  let reportedRunCount = 0;
   let runPaginationChanged = false;
   let truncatedByLimit = false;
   let historyError: string | null = null;
@@ -149,6 +150,11 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
         // in-window evidence or consume its maxRuns and request budget.
         createdBefore: isoSeconds(requestedTo),
       });
+      // A terminal link is not proof of completeness: GitHub can cap a search.
+      // Keep the largest observed total so later deletions cannot hide a gap.
+      if (result.totalCount !== null && Number.isSafeInteger(result.totalCount) && result.totalCount >= 0) {
+        reportedRunCount = Math.max(reportedRunCount, result.totalCount);
+      }
       // Count rows this window refused so dropping the tail is reported even when
       // GitHub served the final page (hasNext is false).
       const previousCount = runs.length;
@@ -182,6 +188,10 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
     if (error instanceof GitHubError && error.code === "AUTH_REQUIRED") throw error;
     historyError = failureReason(error, "HISTORY_UNAVAILABLE");
   }
+  // Existing limit, churn, and error reasons already explain their incomplete
+  // collections. Flag otherwise-silent omissions without issuing extra reads.
+  const runListingIncomplete = historyError === null && !truncatedByLimit && !runPaginationChanged
+    && runs.length < reportedRunCount;
   // Discovery is finished; unused discovery quota may fund the jobs stage.
   budget.finish("discovery");
 
@@ -457,13 +467,14 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   if (historyError !== null) historyReasons.push(historyError);
   if (truncatedByLimit) historyReasons.push("RUN_LIMIT_REACHED");
   if (runPaginationChanged) historyReasons.push("RUN_PAGINATION_CHANGED");
+  if (runListingIncomplete) historyReasons.push("RUN_COLLECTION_INCOMPLETE");
   if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
   if (missingScopes.some((scope) => scope.reason === "JOB_PAGINATION_CHANGED")) historyReasons.push("JOB_PAGINATION_CHANGED");
   if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
   const historyStatus: Dimension["status"] =
     historyError !== null
       ? "unavailable"
-      : truncatedByLimit || runPaginationChanged || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
+      : truncatedByLimit || runPaginationChanged || runListingIncomplete || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
         ? "partial"
         : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";
