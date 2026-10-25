@@ -61,6 +61,17 @@ describe("patch edits", () => {
     }
   });
 
+  it("preview rejects custom timeout values outside the editor bounds and accepts both bounds", () => {
+    const definition = workflow();
+    const template = planTimeoutEdit(workflowText, definition, definition.jobs[0]!, 20).edit!;
+    for (const minutes of [0, 1, 360, 361]) {
+      const edit = { ...template, replacementUtf8: template.replacementUtf8.replace("timeout-minutes: 20", "timeout-minutes: " + minutes) };
+      const preview = () => previewEdits(definition, workflowText, [edit], { minutes });
+      if (minutes === 0 || minutes === 361) assert.throws(preview, /EDIT_OUT_OF_SCOPE/);
+      else assert.equal(parseWorkflow(definition.path, preview().resultText).jobs[0]?.timeoutMinutes, minutes);
+    }
+  });
+
   it("appends a concurrency block that reparses with the expected group", () => {
     const definition = workflow();
     const result = planConcurrencyEdit(workflowText, definition, "git:abc");

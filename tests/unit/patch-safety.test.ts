@@ -325,6 +325,28 @@ test("apply rejects a digest-consistent edit that touches another field", async 
   assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
 });
 
+for (const value of ["0", "361", "1.5", "'20'", "{ minutes: 20 }", "${{ 20 }}"]) {
+  test("apply refuses an approved digest-consistent timeout with invalid value: " + value, async (t) => {
+    const f = fixture("CD005");
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const edit = f.plan.payload.edits[0]!;
+    const edits = [{ ...edit, replacementUtf8: edit.replacementUtf8.replace("timeout-minutes: 20", "timeout-minutes: " + value) }];
+    const applied = applyEdits(WORKFLOW, edits);
+    const payload = { ...f.plan.payload, edits, resultHash: applied.hash };
+    const plan = { ...f.plan, payload, planDigest: digestOf(payload) };
+    f.store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+    approve(f.store, plan);
+    const nonce = f.store.readNonce(plan.planId);
+    const result = await applyPlan({ store: f.store, planId: plan.planId, now: NOW, subjectId: "tester" });
+    assert.equal(result.state, "not_applied");
+    assert.deepEqual(result.reasons, ["EDIT_OUT_OF_SCOPE"]);
+    assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
+    assert.deepEqual(f.store.readNonce(plan.planId), nonce);
+    assert.deepEqual(f.store.listChanges(), []);
+    assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+  });
+}
+
 test("plan state changes do not change the plan digest", () => {
   const f = fixture("CD005");
   approve(f.store, f.plan);

@@ -69,6 +69,13 @@ After applying edits, reparse and diff semantically: only allowed semantic paths
 may change, and the semantic diff must correspond exactly to `edits`, or the
 plan is not applied. A plan identical to the current value ends as a no-op.
 
+The shared preview/apply guard also checks the resulting value of every CD005
+target: `timeout-minutes` must be a literal integer from 1 through 360, using the
+same bounds as the timeout editor. Strings, expressions, mappings, fractions and
+out-of-range numbers are refused with `EDIT_OUT_OF_SCOPE`, even for a stored
+plan whose digest matches and which has fresh human approval. Apply refuses
+before creating a backup or change journal and leaves the approval nonce intact.
+
 The semantic diff covers every field a rule must not touch, including keys that
 no rule ever edits: a step's `env`, `if`, `id`, `name`, `uses`, `run`, and each
 `with` entry are compared one by one. Adding, changing, or removing any of them

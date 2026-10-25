@@ -2,6 +2,7 @@ import { parse } from "yaml";
 import type { ByteEdit } from "../contracts/schema.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
 import { parseWorkflow } from "../workflow/parse.ts";
+import { TIMEOUT_MINUTES_MAX, TIMEOUT_MINUTES_MIN } from "../policy/constants.ts";
 
 /**
  * Semantic guard for a patch plan.
@@ -165,6 +166,15 @@ export function semanticProblems(input: SemanticInput): string[] {
   const invalidTimeouts = input.original.jobs.filter((job) => job.reusableWorkflow !== null && timeoutJobs.has(job.key));
   if (invalidTimeouts.length > 0)
     return invalidTimeouts.map((job) => "timeout-minutes is not supported on a reusable workflow caller: jobs." + job.key);
+
+  // A valid digest and an allowed path do not prove that the new value is
+  // supported. Use the parsed result so strings, expressions and mappings
+  // cannot masquerade as the integer literal required by the timeout editor.
+  const invalidMinutes = reparsed.jobs.filter((job) => timeoutJobs.has(job.key)
+    && (job.timeoutMinutes === null || job.timeoutMinutes < TIMEOUT_MINUTES_MIN || job.timeoutMinutes > TIMEOUT_MINUTES_MAX));
+  if (invalidMinutes.length > 0)
+    return invalidMinutes.map((job) => "timeout-minutes must be an integer between " + TIMEOUT_MINUTES_MIN
+      + " and " + TIMEOUT_MINUTES_MAX + ": jobs." + job.key);
 
   let before: unknown;
   let after: unknown;

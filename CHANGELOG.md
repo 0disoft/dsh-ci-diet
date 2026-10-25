@@ -85,6 +85,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- The shared preview/apply semantic guard rejects CD005 timeout results that
+  are not integer literals from 1 through 360. A stored plan with a consistent
+  digest and fresh approval can no longer apply an out-of-range number, fraction,
+  quoted string, mapping or expression. Refusal precedes backups, change journals
+  and approval nonce consumption.
+
 - Apply verifies that the declared rule ids exactly match the unique rules in
   the byte edits. A schema-valid, correctly digested stored plan cannot disguise
   a retention edit as an allowed timeout rule or omit its required policy check;
