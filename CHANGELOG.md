@@ -5,6 +5,8 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+## 0.5.0 (2026-10-26)
+
 - Prepare each run's job identities, sorted signature and totals once per
   change-effect measurement, including saved-measurement validation. A 10-by-10
   batch now indexes 20 runs instead of 200, reducing job identity reads from
@@ -56,6 +58,9 @@ Keep a Changelog, and the project uses semantic versioning.
   revision-checked batch. Per-tab change counts, inline help, keyboard navigation,
   and navigation to invalid fields keep larger configurations manageable. The
   scrollable body and separate action footer follow the host light/dark theme.
+- Add 4px of right-side breathing room for settings content and tabs, and move
+  the selected tab underline 8px closer to its label while retaining 44px click
+  targets.
 
 ## 0.4.0 (2026-10-25)
 

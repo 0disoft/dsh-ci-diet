@@ -1,6 +1,6 @@
 {
   "name": "dsh-ci-diet",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Find wasted GitHub Actions runner time and propose small, reviewable local patches.",
   "keywords": [
     "dsh-plugin",

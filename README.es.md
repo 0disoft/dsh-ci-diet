@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**Estado:** alfa; `dsh-ci-diet@0.4.0` está en npm. El código fuente actual añade la pantalla de revisión **Ajustes → CI Diet Reports** a los contratos, los motores de análisis y parches, la CLI, las herramientas DSH, la página de ajustes y el informe HTML autocontenido. La pantalla de revisión ya había superado una prueba E2E en un navegador real en un commit anterior. La migración única de valores predeterminados se verificó por separado en el runtime de DSH `0.2.1-rc.2` con configEditor, SettingsForms y Loader; no fue una nueva comprobación del renderizado del navegador. El plugin de DSH ahora arranca con preflight, acceso de red para el historial y aplicación local activados.
+**Estado:** alfa; `dsh-ci-diet@0.5.0` está en npm. El código fuente actual añade la pantalla de revisión **Ajustes → CI Diet Reports** a los contratos, los motores de análisis y parches, la CLI, las herramientas DSH, la página de ajustes y el informe HTML autocontenido. La pantalla de revisión ya había superado una prueba E2E en un navegador real en un commit anterior. La migración única de valores predeterminados se verificó por separado en el runtime de DSH `0.2.1-rc.2` con configEditor, SettingsForms y Loader; no fue una nueva comprobación del renderizado del navegador. El plugin de DSH ahora arranca con preflight, acceso de red para el historial y aplicación local activados.
 
 **Valores predeterminados y migración de DSH.** Los perfiles nuevos habilitan `preflightEnabled`, `networkEnabled`, `localApplyEnabled` y CD001, CD002, CD004, CD006 y CD008. La migración de perfiles bloqueados registra `defaultsRevision: 2`. Los perfiles que ya se migraron a la revisión 1 conservan las selecciones posteriores de interruptores y reglas. Se conservan las rutas de estado, la retención, las cuotas y los datos numéricos existentes de la cuenta. CD003 y CD005 permanecen desactivados salvo que se habiliten. Las estimaciones monetarias usan automáticamente ambos datos de la cuenta; en blanco significa desconocido y un `0` explícito es válido. La facturación que se habilitó anteriormente conserva sus valores predeterminados en cero cuando se omite un valor.
 
@@ -35,14 +35,14 @@ CD006 también admite configuraciones verificadas de npm/pnpm y trabajos de Bun 
 La CLI requiere Node `^22.19.0 || >=24.0.0`. El plugin admite DSH `>=0.2.1-rc.2 <0.3.0-0` y `>=0.2.2-rc.1 <0.3.0-0`. La versión `0.3.1` se probó con DSH `0.2.1-rc.2`; DSH `0.3.0` no es compatible.
 
 ```
-npm install --global dsh-ci-diet@0.4.0
+npm install --global dsh-ci-diet@0.5.0
 ci-diet --version
 ```
 
-Si no instalas el paquete de forma global, sustituye el nombre de comando `ci-diet` por `npx dsh-ci-diet@0.4.0`, por ejemplo `npx dsh-ci-diet@0.4.0 report --cwd .`.
+Si no instalas el paquete de forma global, sustituye el nombre de comando `ci-diet` por `npx dsh-ci-diet@0.5.0`, por ejemplo `npx dsh-ci-diet@0.5.0 report --cwd .`.
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.4.0
+dsh plugin --profile web add dsh-ci-diet@0.5.0
 dsh --profile web
 ```
 

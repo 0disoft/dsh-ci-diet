@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**状态：** alpha；`dsh-ci-diet@0.4.0` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
+**状态：** alpha；`dsh-ci-diet@0.5.0` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
 
 **DSH 默认值和迁移。** 新配置档默认启用 `preflightEnabled`、`networkEnabled`、`localApplyEnabled` 以及 CD001、CD002、CD004、CD006、CD008。锁定配置档迁移会记录 `defaultsRevision: 2`。已经迁移到修订版 1 的配置档会保留之后选择的开关和规则。状态路径、保留期限、配额和现有数值型账户输入均会保留。除非主动启用，CD003 和 CD005 保持关闭。金额估算会自动使用两项账户输入；留空表示未知，显式填写 `0` 是有效的。以前启用过计费的配置档在省略某个值时，会保留其零默认值。
 
@@ -35,14 +35,14 @@ CD006 还支持经过验证的 npm/pnpm 配置，以及使用 `oven-sh/setup-bun
 CLI 需要 Node `^22.19.0 || >=24.0.0`。插件支持 DSH `>=0.2.1-rc.2 <0.3.0-0` 和 `>=0.2.2-rc.1 <0.3.0-0`。版本 `0.3.1` 已在 DSH `0.2.1-rc.2` 上验证；不支持 DSH `0.3.0`。
 
 ```
-npm install --global dsh-ci-diet@0.4.0
+npm install --global dsh-ci-diet@0.5.0
 ci-diet --version
 ```
 
-如果不希望全局安装，请把命令名 `ci-diet` 替换为 `npx dsh-ci-diet@0.4.0`，例如 `npx dsh-ci-diet@0.4.0 report --cwd .`。
+如果不希望全局安装，请把命令名 `ci-diet` 替换为 `npx dsh-ci-diet@0.5.0`，例如 `npx dsh-ci-diet@0.5.0 report --cwd .`。
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.4.0
+dsh plugin --profile web add dsh-ci-diet@0.5.0
 dsh --profile web
 ```
 
