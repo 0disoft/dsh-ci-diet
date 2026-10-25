@@ -211,3 +211,20 @@ test("exclude entries are prepared once instead of once per candidate", () => {
   assert.equal(expanded, null);
   assert.equal(entryReads, exclude.length);
 });
+
+test("include entries are prepared once and retain last-include-wins semantics", (t) => {
+  let entryReads = 0;
+  const include = Array.from({ length: 1000 }, (_, index) => ({
+    get color() { entryReads += 1; return "color-" + index; },
+  }));
+  const expanded = expandMatrix(plan({
+    axes: [{ name: "shard", values: Array.from({ length: 256 }, (_, index) => index) }],
+    include,
+  }));
+  assert.ok(expanded);
+  assert.equal(expanded.length, 256);
+  assert.deepEqual(expanded.map(row => row.shard), Array.from({ length: 256 }, (_, index) => index));
+  assert.ok(expanded.every(row => row.color === "color-999"));
+  t.diagnostic("include value enumerations: " + entryReads);
+  assert.equal(entryReads, include.length, "enumerate each include once, not twice for every matching row");
+});

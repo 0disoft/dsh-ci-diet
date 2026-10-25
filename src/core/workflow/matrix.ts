@@ -147,8 +147,11 @@ export function expandMatrix(
       added.push({ ...include });
     } else {
       let merged = false;
+      // Include values are immutable: reuse their entries for compatibility
+      // checks and merges instead of allocating both arrays for every row.
+      const entries = Object.entries(include);
       for (const combination of combinations) {
-        const compatible = Object.entries(include).every(([key, value]) => {
+        const compatible = entries.every(([key, value]) => {
           const current = combination[key];
           if (axisNames.has(key)) return current !== undefined && canonicalEqual(current, value);
           // A non-axis key exists only because an earlier include added it; GitHub
@@ -156,7 +159,7 @@ export function expandMatrix(
           return true;
         });
         if (!compatible) continue;
-        for (const [key, value] of Object.entries(include)) {
+        for (const [key, value] of entries) {
           if (axisNames.has(key)) continue;
           combination[key] = value;
         }

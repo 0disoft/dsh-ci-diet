@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Matrix include merging prepares each include's entries once, reusing them for
+  compatibility checks and updates across all combinations. This avoids two
+  entry-array allocations per matching row while preserving axis compatibility,
+  last-include-wins behavior, include-only rows, and the expansion cap.
+
 - Workflow discovery rejects canonical paths on a different Windows drive or
   UNC share before inspecting or reading the target file. Parent directory
   links can no longer bypass the workspace boundary through an absolute
