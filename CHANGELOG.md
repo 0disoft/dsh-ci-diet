@@ -5,6 +5,8 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+## 0.5.1 (2026-10-26)
+
 - Resolve the settings form from the current profile's active `dsh-ci-diet`
   inventory entry instead of requiring the installation ID `ciDiet.bootstrap`.
   Explain missing, inactive, duplicate, unreachable, and unexposed settings

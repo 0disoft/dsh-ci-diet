@@ -5,7 +5,7 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in version 0.5.0. The CLI, the DSH model tools, the
+Status: implemented in version 0.5.1. The CLI, the DSH model tools, the
 DSH Web Settings screen, and the **Settings → CI Diet Reports** review screen are
 available. The review screen passed a real-browser E2E check before release.
 The plugin defaults preflight, network access, and local apply to on; installation

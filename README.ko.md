@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**상태:** 알파. `dsh-ci-diet@0.5.0`이 npm에 게시되어 있습니다. 현재 소스 트리에는 기존 계약, 분석·패치 엔진, CLI, DSH 도구, 설정 화면, 자체 완결형 HTML 보고서와 함께 **설정 → CI Diet Reports** 검토 화면이 추가되어 있습니다. 검토 화면은 앞선 커밋에서 실제 브라우저 E2E를 통과했습니다. 1회 기본값 마이그레이션은 DSH `0.2.1-rc.2`의 configEditor, SettingsForms, Loader 런타임에서 별도로 검증했으며 새 브라우저 화면 렌더를 확인한 것은 아닙니다. 이제 DSH 플러그인은 preflight, 이력용 네트워크 접근, 로컬 적용이 기본으로 켜진 상태에서 시작합니다.
+**상태:** 알파. `dsh-ci-diet@0.5.1`이 npm에 게시되어 있습니다. 현재 소스 트리에는 기존 계약, 분석·패치 엔진, CLI, DSH 도구, 설정 화면, 자체 완결형 HTML 보고서와 함께 **설정 → CI Diet Reports** 검토 화면이 추가되어 있습니다. 검토 화면은 앞선 커밋에서 실제 브라우저 E2E를 통과했습니다. 1회 기본값 마이그레이션은 DSH `0.2.1-rc.2`의 configEditor, SettingsForms, Loader 런타임에서 별도로 검증했으며 새 브라우저 화면 렌더를 확인한 것은 아닙니다. 이제 DSH 플러그인은 preflight, 이력용 네트워크 접근, 로컬 적용이 기본으로 켜진 상태에서 시작합니다.
 
 **DSH 기본값과 마이그레이션.** 새 프로필은 `preflightEnabled`, `networkEnabled`, `localApplyEnabled`와 CD001, CD002, CD004, CD006, CD008이 켜진 상태로 시작합니다. 프로필 잠금 안에서 마이그레이션하고 `defaultsRevision: 2`를 기록합니다. 이미 버전 1 마이그레이션을 마친 프로필은 이후에 바꾼 스위치와 규칙 선택을 유지합니다. 상태 경로, 보관 기간, 쿼터와 기존에 입력한 계정 숫자 값도 보존합니다. CD003과 CD005는 직접 켜기 전까지 꺼져 있습니다. 포함 분과 사용 분을 모두 입력하면 비용 추정에 자동 반영하며, 빈 값은 미입력이고 명시적인 `0`은 유효합니다. 구버전에서 비용 추정을 켰다면 생략한 값의 기존 기본값 0도 유지합니다.
 
@@ -35,14 +35,14 @@ CD006은 검증된 npm/pnpm 구성과, `oven-sh/setup-bun@v2`를 사용한 뒤 G
 CLI에는 Node `^22.19.0 || >=24.0.0`이 필요합니다. 플러그인은 DSH `>=0.2.1-rc.2 <0.3.0-0` 및 `>=0.2.2-rc.1 <0.3.0-0`을 지원합니다. `0.3.1`은 DSH `0.2.1-rc.2`에서 검증했고 DSH `0.3.0`은 지원하지 않습니다.
 
 ```
-npm install --global dsh-ci-diet@0.5.0
+npm install --global dsh-ci-diet@0.5.1
 ci-diet --version
 ```
 
-전역 설치를 원하지 않으면 `ci-diet` 명령 이름 자리에 `npx dsh-ci-diet@0.5.0`을 넣습니다. 예를 들어 `npx dsh-ci-diet@0.5.0 report --cwd .`처럼 실행합니다.
+전역 설치를 원하지 않으면 `ci-diet` 명령 이름 자리에 `npx dsh-ci-diet@0.5.1`을 넣습니다. 예를 들어 `npx dsh-ci-diet@0.5.1 report --cwd .`처럼 실행합니다.
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.5.0
+dsh plugin --profile web add dsh-ci-diet@0.5.1
 dsh --profile web
 ```
 
