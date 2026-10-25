@@ -1,6 +1,6 @@
 import * as React from "react";
 import { RULE_CHOICES, SETTINGS_FIELDS, SETTINGS_GROUPS, collectSettingsEdits } from "./fields.ts";
-import type { SettingsDraftValue } from "./fields.ts";
+import type { SettingGroupId, SettingsDraftValue } from "./fields.ts";
 import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 import { installStyles } from "./styles.ts";
 import { ReviewPage } from "./review.ts";
@@ -107,6 +107,8 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
   const [failed, setFailed] = React.useState(false);
   const [pinnedRevision, setPinnedRevision] = React.useState<number | null>(null);
   const [conflict, setConflict] = React.useState(false);
+  const [activeGroup, setActiveGroup] = React.useState<SettingGroupId>("general");
+  const [showHelp, setShowHelp] = React.useState(false);
 
   const disabled = !snapshot.writable || saving;
 
@@ -148,7 +150,11 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
     if (form === undefined || disabled) return;
     const batch = collectSettingsEdits(draft, t, resets);
     setErrors({ ...batch.errors });
-    if (Object.keys(batch.errors).length > 0) return;
+    if (Object.keys(batch.errors).length > 0) {
+      const invalidField = SETTINGS_FIELDS.find((field) => batch.errors[field.key] !== undefined);
+      if (invalidField !== undefined) setActiveGroup(invalidField.group);
+      return;
+    }
     const ops = batch.ops.map((op) => (op.op === "set"
       ? { op: "set" as const, path: op.path, value: op.value }
       : { op: "unset" as const, path: op.path }));
@@ -178,9 +184,17 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
   if (snapshot.status === "unavailable" || form === undefined) return React.createElement("div", { className: "ci-diet-notice" }, t("page.unavailable"));
   const readOnly = !snapshot.writable;
 
+  const changedKeys = new Set([...Object.keys(draft), ...resets]);
+  const valueOf = (key: string) => draft[key] !== undefined ? draft[key] : snapshot.value?.[key];
+  const recommendedReady = ["preflightEnabled", "networkEnabled", "localApplyEnabled"].every((key) => valueOf(key) === true)
+    && ["CD001", "CD002", "CD004", "CD006", "CD008"].every((id) => {
+      const rules = valueOf("rules");
+      return Array.isArray(rules) && rules.includes(id);
+    }) && !resets.some((key) => ["preflightEnabled", "networkEnabled", "localApplyEnabled", "rules"].includes(key));
+
   const body = SETTINGS_GROUPS.map((group) => {
     const rows = SETTINGS_FIELDS.filter((field) => field.group === group).map((field) => {
-      const raw = draft[field.key] !== undefined ? draft[field.key] : snapshot.value?.[field.key];
+      const raw = valueOf(field.key);
       const overridden = isOverridden(snapshot.user, field.key);
       const label = t("field." + field.key);
       const selected = Array.isArray(raw) ? raw.filter((id): id is string => typeof id === "string") : [];
@@ -202,6 +216,9 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
               onChange: (event: { target: { value: string } }) => edit(field.key, event.target.value),
               className: "ci-diet-input",
               "aria-label": label,
+              "aria-invalid": errors[field.key] !== undefined,
+              "aria-describedby": errors[field.key] ? "ci-diet-error-" + field.key : undefined,
+              placeholder: field.key === "stateDir" ? t("page.defaultLocation") : undefined,
             });
       return React.createElement(
         "div",
@@ -210,7 +227,11 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
           "div",
           { className: "ci-diet-row-text" },
           React.createElement("label", { htmlFor: "ci-diet-" + field.key, className: "ci-diet-label" }, label),
-          overridden
+          field.kind === "switch" && field.group === "general"
+            ? React.createElement("p", { className: "ci-diet-field-help" }, t("help." + field.key)) : null,
+          resets.includes(field.key)
+            ? React.createElement("span", { className: "ci-diet-badge" }, t("page.resetPending")) : null,
+          overridden && !resets.includes(field.key)
             ? React.createElement(
                 "span",
                 { className: "ci-diet-badge" },
@@ -228,51 +249,87 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
                 ),
               )
             : null,
-          errors[field.key] ? React.createElement("span", { className: "ci-diet-error" }, errors[field.key]) : null,
+          errors[field.key] ? React.createElement("span", { className: "ci-diet-error", id: "ci-diet-error-" + field.key, role: "alert" }, errors[field.key]) : null,
         ),
         control,
       );
     });
     return React.createElement(
       "section",
-      { key: group, className: "ci-diet-group" },
-      React.createElement("div", { className: "ci-diet-group-head" },
+      { key: group, className: "ci-diet-group", role: "tabpanel", id: "ci-diet-panel-" + group,
+        "aria-labelledby": "ci-diet-tab-" + group, hidden: activeGroup !== group, tabIndex: 0 },
+      group === "general" ? React.createElement("p", {
+        className: "ci-diet-recommended", "data-ready": recommendedReady,
+      }, t(recommendedReady ? "page.recommendedReady" : "page.recommendedPartial")) : null,
+      group !== "general" ? React.createElement("div", { className: "ci-diet-group-head" },
         React.createElement("h3", { className: "ci-diet-group-title" }, t("group." + group + ".title")),
         React.createElement("p", { className: "ci-diet-group-desc" }, t("group." + group + ".desc")),
-      ),
+      ) : null,
       rows,
+      group === "general" ? React.createElement("p", { className: "ci-diet-scope-note" }, t("page.scopeNote")) : null,
     );
   });
 
   return React.createElement(
     "div",
-    { className: "ci-diet-page" },
+    { className: "ci-diet-page ci-diet-settings-page" },
+    React.createElement("header", { className: "ci-diet-settings-header" },
+      React.createElement("h2", { className: "ci-diet-title" }, t("page.title")),
+      React.createElement("div", { className: "ci-diet-heading-row" },
+        React.createElement("p", { className: "ci-diet-intro" }, t("page.intro")),
+        React.createElement("button", { type: "button", className: "ci-diet-help",
+          "aria-expanded": showHelp, "aria-controls": "ci-diet-settings-help",
+          onClick: () => setShowHelp((current) => !current),
+        }, t("page.help")),
+      ),
+    ),
+    React.createElement("div", { className: "ci-diet-tabs", role: "tablist", "aria-label": t("page.tabLabel") },
+      ...SETTINGS_GROUPS.map((group, index) => {
+        const count = SETTINGS_FIELDS.filter((field) => field.group === group && changedKeys.has(field.key)).length;
+        return React.createElement("button", {
+          type: "button", role: "tab", className: "ci-diet-tab", id: "ci-diet-tab-" + group,
+          "aria-controls": "ci-diet-panel-" + group, "aria-selected": activeGroup === group,
+          tabIndex: activeGroup === group ? 0 : -1,
+          onClick: () => setActiveGroup(group),
+          onKeyDown: (event: { key: string; preventDefault(): void; currentTarget: {
+            parentElement: { querySelectorAll(selector: string): { [index: number]: { focus(): void } } } | null;
+          } }) => {
+            const next = event.key === "Home" ? 0 : event.key === "End" ? SETTINGS_GROUPS.length - 1
+              : event.key === "ArrowRight" ? (index + 1) % SETTINGS_GROUPS.length
+              : event.key === "ArrowLeft" ? (index + SETTINGS_GROUPS.length - 1) % SETTINGS_GROUPS.length : null;
+            if (next === null) return;
+            event.preventDefault();
+            setActiveGroup(SETTINGS_GROUPS[next]!);
+            event.currentTarget.parentElement?.querySelectorAll('[role="tab"]')[next]?.focus();
+          },
+        }, t("tab." + group), count > 0 ? React.createElement("span", { className: "ci-diet-tab-count" }, count) : null);
+      }),
+    ),
     React.createElement(
       "div",
-      { className: "ci-diet-body" },
-      React.createElement("h2", { className: "ci-diet-title" }, t("page.title")),
-      React.createElement("p", { className: "ci-diet-intro" }, t("page.intro")),
-      React.createElement(
-        "div",
-        { className: "ci-diet-meta" },
+      { key: activeGroup, className: "ci-diet-body" },
+      showHelp ? React.createElement("div", { className: "ci-diet-meta", id: "ci-diet-settings-help" },
         React.createElement("div", { className: "ci-diet-meta-key" }, t("page.scopeLabel")),
         React.createElement("div", null, t("page.scope")),
         React.createElement("div", { className: "ci-diet-meta-key" }, t("page.appliesLabel")),
         React.createElement("div", null, t("page.applies")),
-      ),
+      ) : null,
       readOnly ? React.createElement("div", { className: "ci-diet-notice" }, t("page.readOnly")) : null,
       ...body,
     ),
     React.createElement(
       "div",
       { className: "ci-diet-actions" },
-      React.createElement("button", { type: "button", className: "ci-diet-save", disabled: disabled || readOnly, onClick: () => { void save(); } }, saving ? t("page.saving") : t("page.save")),
+      React.createElement("button", { type: "button", className: "ci-diet-save", disabled: disabled || readOnly || changedKeys.size === 0, onClick: () => { void save(); } }, saving ? t("page.saving") : t("page.save")),
       React.createElement("button", {
         type: "button",
         className: "ci-diet-discard",
         disabled: disabled || readOnly || (Object.keys(draft).length === 0 && resets.length === 0),
         onClick: () => { setDraft({}); setResets([]); setErrors({}); setSaved(false); setFailed(false); setConflict(false); setPinnedRevision(null); },
       }, t("page.discard")),
+      changedKeys.size > 0 ? React.createElement("span", { className: "ci-diet-change-count" }, t("page.changes", { count: changedKeys.size })) : null,
+      React.createElement("span", { className: "ci-diet-apply-note" }, t("page.applies")),
+      Object.keys(errors).length > 0 ? React.createElement("span", { className: "ci-diet-status", role: "alert" }, t("page.validationFailed")) : null,
       failed ? React.createElement("span", { className: "ci-diet-status", role: "alert" }, t(conflict ? "page.conflict" : "page.saveFailed")) : null,
       !failed && saved ? React.createElement("span", { className: "ci-diet-status", role: "status" }, t("page.saved")) : null,
     ),

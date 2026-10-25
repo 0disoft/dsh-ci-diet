@@ -5,6 +5,14 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+### Changed
+
+- The DSH CI Diet settings page uses five focused tabs instead of a long stack
+  of cards. Edits and staged resets survive tab changes and save in one atomic
+  revision-checked batch. Per-tab change counts, inline help, keyboard navigation,
+  and navigation to invalid fields keep larger configurations manageable. The
+  scrollable body and separate action footer follow the host light/dark theme.
+
 ## 0.4.0 (2026-10-25)
 
 ### Performance

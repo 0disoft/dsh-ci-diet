@@ -247,7 +247,7 @@ test("the action bar sits outside the scrolling page body", () => {
     mutate: async () => true,
   };
   const tree = renderPage(fake.react, loaded.sections[0]!.component, { form, t: (key: string) => key });
-  const page = findElement(tree, (element) => element.props.className === "ci-diet-page");
+  const page = findElement(tree, (element) => element.props.className === "ci-diet-page ci-diet-settings-page");
   assert.ok(page !== undefined, "the page frame is missing");
   const children = page.props.children as FakeElement[];
   assert.ok(Array.isArray(children), "the page frame needs its body and footer");
@@ -452,4 +452,95 @@ test("the draft discard action is named as a discarding action in every language
   assert.notEqual(DICTIONARIES.ko["page.discard"], "되돌리기");
   assert.equal(DICTIONARIES.zh["page.discard"], "放弃更改");
   assert.equal(DICTIONARIES["zh-Hans"]["page.discard"], "放弃更改");
+});
+
+
+test("tabs keep edits across groups and save one batch against the first revision", async () => {
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  let revision = 7;
+  const calls: { ops: unknown[]; revision: number | undefined }[] = [];
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision,
+      value: { stateDir: "", historyMaxRuns: 100, storageReportDays: 90 } }),
+    subscribe: () => () => {},
+    mutate: async (ops: unknown[], expected?: number) => { calls.push({ ops, revision: expected }); return false; },
+  };
+  const render = () => renderPage(fake.react, loaded.sections[0]!.component, { form, t: (key: string) => key });
+  const clickTab = (group: string) => {
+    const tab = findElement(render(), (e) => e.props.id === "ci-diet-tab-" + group)!;
+    (tab.props.onClick as () => void)();
+  };
+  const edit = (key: string, value: string) => {
+    const input = findElement(render(), (e) => e.props.id === "ci-diet-" + key)!;
+    (input.props.onChange as (event: unknown) => void)({ target: { value } });
+  };
+  clickTab("history"); edit("historyMaxRuns", "50");
+  revision = 8;
+  clickTab("storage"); edit("storageReportDays", "30");
+  clickTab("history");
+  let tree = render();
+  assert.equal(findElement(tree, (e) => e.props.id === "ci-diet-historyMaxRuns")!.props.value, "50");
+  for (const group of ["general", "rules", "history", "storage", "billing"]) {
+    const panel = findElement(tree, (e) => e.props.id === "ci-diet-panel-" + group)!;
+    assert.equal(panel.props.hidden, group !== "history");
+    assert.equal(panel.props["aria-labelledby"], "ci-diet-tab-" + group);
+  }
+  const save = findElement(tree, (e) => e.props.className === "ci-diet-save")!;
+  await (save.props.onClick as () => void)(); await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.revision, 7);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0]!.ops)), [
+    { op: "set", path: ["historyMaxRuns"], value: 50 },
+    { op: "set", path: ["storageReportDays"], value: 30 },
+  ]);
+  tree = render();
+  assert.ok(findElement(tree, (e) => e.props.children === "page.conflict"));
+  clickTab("storage");
+  assert.equal(findElement(render(), (e) => e.props.id === "ci-diet-storageReportDays")!.props.value, "30");
+  const discard = findElement(render(), (e) => e.props.className === "ci-diet-discard")!;
+  (discard.props.onClick as () => void)();
+  assert.equal(findElement(render(), (e) => e.props.id === "ci-diet-storageReportDays")!.props.value, "90");
+});
+
+test("saving an invalid field in another tab opens that tab and makes no mutation", () => {
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  let writes = 0;
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision: 1, value: { historyLookbackDays: 7 } }),
+    subscribe: () => () => {}, mutate: async () => { writes++; return true; },
+  };
+  const render = () => renderPage(fake.react, loaded.sections[0]!.component, { form, t: (key: string) => key });
+  const input = findElement(render(), (e) => e.props.id === "ci-diet-historyLookbackDays")!;
+  (input.props.onChange as (event: unknown) => void)({ target: { value: "31" } });
+  const save = findElement(render(), (e) => e.props.className === "ci-diet-save")!;
+  (save.props.onClick as () => void)();
+  const tree = render();
+  assert.equal(writes, 0);
+  assert.equal(findElement(tree, (e) => e.props.id === "ci-diet-panel-history")!.props.hidden, false);
+  assert.equal(findElement(tree, (e) => e.props.id === "ci-diet-historyLookbackDays")!.props["aria-invalid"], true);
+  assert.ok(findElement(tree, (e) => e.props.id === "ci-diet-error-historyLookbackDays"));
+});
+
+test("tab keyboard navigation wraps and focuses the selected tab", () => {
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  const form = { getSnapshot: () => ({ status: "ready", writable: true, revision: 1, value: {} }),
+    subscribe: () => () => {}, mutate: async () => true };
+  const render = () => renderPage(fake.react, loaded.sections[0]!.component, { form, t: (key: string) => key });
+  let focused = -1;
+  let prevented = 0;
+  const tabs = Array.from({ length: 5 }, (_, index) => ({ focus: () => { focused = index; } }));
+  const send = (id: string, key: string) => {
+    const tab = findElement(render(), (e) => e.props.id === "ci-diet-tab-" + id)!;
+    (tab.props.onKeyDown as (event: unknown) => void)({ key, preventDefault: () => { prevented++; },
+      currentTarget: { parentElement: { querySelectorAll: () => tabs } } });
+  };
+  send("general", "ArrowLeft");
+  assert.equal(focused, 4);
+  assert.equal(findElement(render(), (e) => e.props.id === "ci-diet-tab-billing")!.props["aria-selected"], true);
+  send("billing", "Home"); assert.equal(focused, 0);
+  send("general", "End"); assert.equal(focused, 4);
+  assert.equal(prevented, 3);
 });
