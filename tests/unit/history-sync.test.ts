@@ -6,7 +6,7 @@ import { GitHubError } from "../../src/adapters/github/errors.ts";
 import type { GhResponse, GhRunner, GhTransport } from "../../src/adapters/github/transport.ts";
 import { DeadlineExceededError } from "../../src/core/support/deadline.ts";
 import { composeCoverage, buildCoverage } from "../../src/core/analysis/coverage.ts";
-import { cd005Recommendations } from "../../src/core/rules/cd005.ts";
+import { cd005, cd005Recommendations } from "../../src/core/rules/cd005.ts";
 
 const WORKFLOW = [
   "name: CI",
@@ -668,6 +668,93 @@ for (const scenario of [
       requestedFrom: history.requestedFrom, requestedTo: history.requestedTo }, { history: history.coverage.history });
     assert.equal(composeCoverage(coverage, "CD001").writeAllowed, scenario.complete);
     t.diagnostic("collected " + offset + "/" + Math.max(...scenario.totals) + "; writeAllowed=" + scenario.complete);
+  });
+}
+
+for (const scenario of [
+  { name: "short terminal page", sizes: [1], totals: [2], complete: false },
+  { name: "empty terminal page", sizes: [0], totals: [1], complete: false },
+  { name: "decreasing total", sizes: [1, 1], totals: [3, 2], complete: false },
+  { name: "complete multi-page listing", sizes: [1, 1], totals: [2, 2], complete: true },
+  { name: "genuinely empty listing", sizes: [0], totals: [0], complete: true },
+]) {
+  test("job listing completeness: " + scenario.name, async () => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    let reads = 0;
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/attempts/1/jobs")) {
+        const page = reads++;
+        assert.ok(page < scenario.sizes.length, "never probe beyond the terminal page");
+        const body = jobResponse(100, page + 1).body as { jobs: unknown[] };
+        return response({ total_count: scenario.totals[page], jobs: body.jobs.slice(0, scenario.sizes[page]) },
+          reads < scenario.sizes.length ? { link: '<https://api.github.com/next>; rel="next"' } : {});
+      }
+      return original(request, family);
+    };
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+    assert.equal(reads, scenario.sizes.length);
+    assert.equal(history.runs[0]?.jobs.length, scenario.sizes.reduce((sum, size) => sum + size, 0));
+    assert.equal(history.coverage.history.status, scenario.complete ? "complete" : "partial");
+    assert.deepEqual(history.coverage.history.reasons, scenario.complete ? [] : ["JOB_COLLECTION_INCOMPLETE"]);
+    assert.deepEqual(history.missingScopes.filter(scope => scope.family === "jobs"), scenario.complete ? [] : [{
+      family: "jobs", resource: "actions.runs.jobs", runId: "100", attempt: 1,
+      path: null, pullRequest: null, branch: null, from: null, to: null,
+      reason: "JOB_COLLECTION_INCOMPLETE", resumable: true,
+    }]);
+  });
+}
+
+test("job listing completeness counts each attempt independently", async () => {
+  const transport = fakeTransport();
+  const original = transport.get.bind(transport);
+  transport.get = async (request, family) => {
+    if (request.path.endsWith("/actions/runs")) {
+      return response({ total_count: 1, workflow_runs: workflowRuns(1).map(run => ({ ...run, run_attempt: 2 })) });
+    }
+    const attempt = /\/attempts\/(\d+)\/jobs$/.exec(request.path)?.[1];
+    if (attempt !== undefined) {
+      const first = jobResponse(300).body as { jobs: unknown[] };
+      const second = jobResponse(300, 2).body as { jobs: unknown[] };
+      const jobs = attempt === "2" ? [...first.jobs, ...second.jobs] : first.jobs;
+      return response({ total_count: jobs.length, jobs });
+    }
+    return original(request, family);
+  };
+  const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+  assert.equal(history.coverage.history.status, "complete");
+  assert.deepEqual(history.runs[0]?.jobs.map(job => job.attempt), [2, 2, 1]);
+  assert.deepEqual(history.missingScopes.filter(scope => scope.family === "jobs"), []);
+});
+
+for (const incomplete of [true, false]) {
+  test("job listing completeness gates CD005 eligibility: incomplete=" + incomplete, async (t) => {
+    const transport = fakeTransport();
+    const original = transport.get.bind(transport);
+    const runs = workflowRuns(20);
+    transport.get = async (request, family) => {
+      if (request.path.endsWith("/actions/runs")) return response({ total_count: runs.length, workflow_runs: runs });
+      if (request.path.endsWith("/attempts/1/jobs")) {
+        const runId = Number(/\/actions\/runs\/(\d+)\//.exec(request.path)?.[1]);
+        const body = jobResponse(runId).body as { jobs: unknown[] };
+        return response({ total_count: incomplete ? 2 : 1, jobs: body.jobs });
+      }
+      return original(request, family);
+    };
+    const { history } = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
+    const definition = history.runs[0]?.definition;
+    assert.ok(definition);
+    const coverage = buildCoverage({ apiVersion: history.apiVersion ?? "test", ghVersion: history.ghVersion ?? "test",
+      requestedFrom: history.requestedFrom, requestedTo: history.requestedTo }, history.coverage);
+    const { findings } = cd005.evaluate({ history, coverage, workflows: [definition], mode: "history",
+      generatedAt: NOW.toISOString(), config: config(), identity: { bindingId: "b_test",
+        repositoryId: history.repositoryId, repositoryFullName: history.repositoryFullName,
+        rootIdentityHash: "sha256:" + "c".repeat(64) } });
+    assert.equal(findings.length, 1, "retain the timeout review candidate");
+    const finding = findings[0]!;
+    t.diagnostic("20 observed samples; patchability=" + finding.patchability);
+    assert.equal(finding.patchability, incomplete ? "review-only" : "eligible");
+    if (incomplete) assert.ok(finding.blockers.includes("COVERAGE_SUBSET"));
   });
 }
 

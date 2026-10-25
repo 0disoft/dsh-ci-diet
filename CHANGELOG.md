@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Job collection now verifies each run attempt against its largest reported
+  `total_count`. Short or empty terminal pages become partial with
+  `JOB_COLLECTION_INCOMPLETE` and identify the affected run and attempt. Collected
+  jobs and review candidates are retained, but incomplete timeout evidence can
+  no longer enable CD005 patches. No extra API requests are made.
+
 - History sync no longer treats a missing next-page link as proof that all runs
   were collected. If the unique run count falls short of the largest reported
   `total_count`, an otherwise successful listing becomes partial with

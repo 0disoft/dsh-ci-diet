@@ -144,6 +144,14 @@ or request-error explanation, history becomes `partial` with
 no API requests. A later page reporting a lower total cannot erase an earlier
 shortfall; totals that are absent or invalid are not used as completeness proof.
 
+Job lists apply the same maximum-total check independently for each run attempt.
+A terminal page with fewer unique jobs than reported marks history `partial`
+with `JOB_COLLECTION_INCOMPLETE` and a resumable `jobs` missing scope containing
+the run ID and attempt. Existing request-error, page-limit, and pagination-change
+reasons remain distinct. Collected jobs are preserved for review, while CD005
+findings backed by incomplete history remain review-only. This check makes no
+additional API requests.
+
 `concurrentRequests` is the maximum number of GitHub requests in flight at once;
 it bounds the parallel jobs, workflow-definition, and pull-request reads without
 changing the sequential discovery and policy stages. `maxRequests` caps the total

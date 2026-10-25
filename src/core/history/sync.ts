@@ -227,9 +227,15 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
       signal?.throwIfAborted();
       const jobIds = new Set<number>();
       let paginationChanged = false;
+      let reportedJobCount = 0;
       try {
         for (let page = 1; page <= 10; page += 1) {
           const result = await effectiveClient.attemptJobs(run.id, attempt, page, JOB_PAGE_SIZE);
+          // Count against the largest total for this attempt, not a later,
+          // smaller page total or another attempt's independently listed jobs.
+          if (result.totalCount !== null && Number.isSafeInteger(result.totalCount) && result.totalCount >= 0) {
+            reportedJobCount = Math.max(reportedJobCount, result.totalCount);
+          }
           const previousCount = jobIds.size;
           for (const job of result.items) {
             // Keep one observation per attempt/job, so overlapping pages cannot
@@ -256,7 +262,12 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
               sku: skuForLabels(job.labels ?? []),
             });
           }
-          if (!result.hasNext) break;
+          if (!result.hasNext) {
+            if (!paginationChanged && jobIds.size < reportedJobCount) {
+              runMissingScopes.push(missingScope({ family: "jobs", resource: "actions.runs.jobs", runId: String(run.id), attempt, reason: "JOB_COLLECTION_INCOMPLETE", resumable: true }));
+            }
+            break;
+          }
           if (jobIds.size === previousCount) {
             paginationChanged = true;
             break;
@@ -470,6 +481,7 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   if (runListingIncomplete) historyReasons.push("RUN_COLLECTION_INCOMPLETE");
   if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
   if (missingScopes.some((scope) => scope.reason === "JOB_PAGINATION_CHANGED")) historyReasons.push("JOB_PAGINATION_CHANGED");
+  if (missingScopes.some((scope) => scope.reason === "JOB_COLLECTION_INCOMPLETE")) historyReasons.push("JOB_COLLECTION_INCOMPLETE");
   if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
   const historyStatus: Dimension["status"] =
     historyError !== null
