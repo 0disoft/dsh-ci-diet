@@ -79,7 +79,8 @@ function toCanonical(value: unknown): CanonicalJsonValue | undefined {
     for (const [key, item] of Object.entries(value)) {
       const converted = toCanonical(item);
       if (converted === undefined) return undefined;
-      out[key] = converted;
+      // YAML keys are JSON data, including __proto__; never invoke its setter.
+      Object.defineProperty(out, key, { value: converted, enumerable: true, writable: true, configurable: true });
     }
     return out;
   }

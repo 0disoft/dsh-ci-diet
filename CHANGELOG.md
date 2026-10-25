@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Matrix JSON objects preserve `__proto__` as an own data property during YAML
+  conversion and include merging instead of replacing a row's prototype. Dotted
+  name lookup and canonical equality now require own properties, preventing
+  inherited fields from being used as matrix evidence or equal object keys.
+
 - Matrix include merging prepares each include's entries once, reusing them for
   compatibility checks and updates across all combinations. This avoids two
   entry-array allocations per matching row while preserving axis compatibility,

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { CanonicalJsonValue } from "../../src/shared/cdj1.ts";
-import { expandMatrix, MAX_MATRIX_COMBINATIONS } from "../../src/core/workflow/matrix.ts";
+import { canonicalEqual, expandMatrix, lookupMatrixValue, MAX_MATRIX_COMBINATIONS, renderMatrixTemplate } from "../../src/core/workflow/matrix.ts";
+import { parseWorkflow } from "../../src/core/workflow/parse.ts";
 import type { MatrixPlan } from "../../src/core/workflow/model.ts";
 
 function plan(
@@ -15,6 +16,49 @@ function row(
 ): Record<string, CanonicalJsonValue> {
   return { ...values };
 }
+
+test("YAML matrix objects preserve __proto__ as ordinary own data", () => {
+  const workflow = parseWorkflow(".github/workflows/ci.yml", [
+    "on: push", "jobs:", "  test:", "    runs-on: ubuntu-latest",
+    "    strategy:", "      matrix:", "        item:",
+    "          - __proto__:", "              tag: inherited",
+    "    steps:", "      - run: echo ok", "",
+  ].join("\n"));
+  const matrix = workflow.jobs[0]?.matrix;
+  assert.ok(matrix);
+  const value = matrix.axes[0]?.values[0];
+  assert.ok(value && typeof value === "object");
+  assert.equal(Object.getPrototypeOf(value), Object.prototype);
+  assert.equal(Object.hasOwn(value, "__proto__"), true);
+  assert.equal(JSON.stringify(value), '{"__proto__":{"tag":"inherited"}}');
+  const expanded = expandMatrix(matrix);
+  assert.ok(expanded?.[0]);
+  assert.equal(renderMatrixTemplate("job ${{ matrix.item.tag }}", expanded[0]), null);
+  assert.equal(lookupMatrixValue(expanded[0], "item.__proto__.tag"), "inherited");
+});
+
+test("include merging cannot replace the matrix row prototype", () => {
+  const include = JSON.parse('{"__proto__":{"tag":"inherited"}}') as Record<string, CanonicalJsonValue>;
+  const expanded = expandMatrix(plan({ axes: [{ name: "shard", values: [1] }], include: [include] }));
+  assert.ok(expanded?.[0]);
+  const value = expanded[0];
+  assert.equal(Object.getPrototypeOf(value), Object.prototype);
+  assert.equal(Object.hasOwn(value, "__proto__"), true);
+  assert.equal(lookupMatrixValue(value, "tag"), undefined);
+  assert.equal(lookupMatrixValue(value, "__proto__.tag"), "inherited");
+});
+
+test("matrix lookup never resolves inherited properties", () => {
+  assert.equal(lookupMatrixValue({}, "constructor"), undefined);
+  const values = Object.create({ item: { tag: "inherited" } }) as Record<string, CanonicalJsonValue>;
+  assert.equal(renderMatrixTemplate("job ${{ matrix.item.tag }}", values), null);
+});
+
+test("canonical equality requires matching own keys", () => {
+  const left = JSON.parse('{"__proto__":{}}') as CanonicalJsonValue;
+  assert.equal(canonicalEqual(left, { other: null }), false);
+  assert.equal(canonicalEqual(left, JSON.parse('{"__proto__":{}}') as CanonicalJsonValue), true);
+});
 
 test("exclude applies before include so an include can add the row back", () => {
   const expanded = expandMatrix(

@@ -30,7 +30,7 @@ export function canonicalEqual(left: CanonicalJsonValue, right: CanonicalJsonVal
   if (leftKeys.length !== rightKeys.length) return false;
   return leftKeys.every(
     (key) =>
-      key in rightRecord &&
+      Object.hasOwn(rightRecord, key) &&
       canonicalEqual(leftRecord[key] as CanonicalJsonValue, rightRecord[key] as CanonicalJsonValue),
   );
 }
@@ -41,7 +41,7 @@ export function lookupMatrixValue(
 ): CanonicalJsonValue | undefined {
   let current: CanonicalJsonValue | undefined = values;
   for (const part of dotted.split(".")) {
-    if (current === undefined || !isCanonicalRecord(current) || !(part in current)) return undefined;
+    if (current === undefined || !isCanonicalRecord(current) || !Object.hasOwn(current, part)) return undefined;
     current = current[part];
   }
   return current;
@@ -161,7 +161,11 @@ export function expandMatrix(
         if (!compatible) continue;
         for (const [key, value] of entries) {
           if (axisNames.has(key)) continue;
-          combination[key] = value;
+          if (key === "__proto__") {
+            Object.defineProperty(combination, key, { value, enumerable: true, writable: true, configurable: true });
+          } else {
+            combination[key] = value;
+          }
         }
         merged = true;
       }
