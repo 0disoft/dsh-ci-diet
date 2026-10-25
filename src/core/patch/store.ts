@@ -776,6 +776,18 @@ export class PatchStore {
     this.writeJson(this.path("plans", requireId(plan.planId, "planId") + ".meta.json"), meta);
   }
 
+  /** Publish a preview without resetting an approval from a concurrent request. */
+  savePlanIfAbsent(plan: PatchPlan, meta: PlanMeta): PatchPlan {
+    return this.withWriteLock(() => {
+      const existing = this.readPlan(plan.planId);
+      if (existing !== null) return existing.plan;
+      assertValidDocument("PatchPlan", plan);
+      this.writeJsonUnlocked(this.path("plans", requireId(plan.planId, "planId") + ".meta.json"), meta);
+      this.writeJsonUnlocked(this.path("plans", requireId(plan.planId, "planId") + ".json"), plan);
+      return plan;
+    });
+  }
+
   readPlan(planId: string): StoredPlan | null {
     const plan = this.readJson<PatchPlan>(this.path("plans", requireId(planId, "planId") + ".json"), "PatchPlan");
     if (plan === null) return null;

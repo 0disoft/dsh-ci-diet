@@ -40,6 +40,15 @@ after(() => {
 });
 
 describe("ci-diet scan", () => {
+  it("stores an offline scan for a subsequent report command", async () => {
+    const state = join(workspace, "scan-report-state");
+    const scan = await runCli(["scan", "--cwd", scanRoot, "--state-dir", state, "--json"]);
+    assert.equal(scan.status, 0, scan.stderr);
+    const report = await runCli(["report", "--cwd", scanRoot, "--state-dir", state, "--json"]);
+    assert.equal(report.status, 0, report.stderr);
+    assert.equal(JSON.parse(report.stdout).reportId, JSON.parse(scan.stdout).reportId);
+  });
+
   it("prints a human summary and exits 0", async () => {
     const result = runProcessCli(["scan", "--cwd", scanRoot, "--lang", "en"]);
     assert.equal(result.status, 0);

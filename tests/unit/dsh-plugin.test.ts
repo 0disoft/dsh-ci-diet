@@ -132,7 +132,7 @@ test("defaults match the contract and rule defaults", () => {
 });
 
 test("ci_diet_plan previews the npm cache patch with network disabled and no history", async () => {
-  const { tools } = harness({ networkEnabled: false });
+  const { tools, stateDir } = harness({ networkEnabled: false });
   const root = workspace();
   const workflow = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: actions/setup-node@v4\n      - run: npm ci\n";
   writeFileSync(join(root, ".github/workflows/ci.yml"), workflow);
@@ -141,10 +141,18 @@ test("ci_diet_plan previews the npm cache patch with network disabled and no his
   for (const args of [["init", "--quiet"], ["add", "--", "package.json", "package-lock.json"]]) execFileSync("git", args, { cwd: root, stdio: "pipe", windowsHide: true, timeout: 5000 });
   const exec = { signal: new AbortController().signal };
   await tools.get("ci_diet_scan")!.execute({ cwd: root }, exec);
-  const result = await tools.get("ci_diet_plan")!.execute({ rule: "CD006", cwd: root, job: "test", step: 1 }, exec) as { writeAllowed: boolean; blockers: string[]; nextCommand: string };
+  const result = await tools.get("ci_diet_plan")!.execute({ rule: "CD006", cwd: root, job: "test", step: 1 }, exec) as { planId: string; writeAllowed: boolean; blockers: string[]; nextCommand: string };
   assert.equal(result.writeAllowed, true, JSON.stringify(result));
   assert.deepEqual(result.blockers, []);
-  assert.match(result.nextCommand, /--rule CD006/);
+  assert.match(result.nextCommand, /plans --plan p_/);
+  const { PatchStore } = await import("../../src/core/patch/store.ts");
+  const saved = new PatchStore(stateDir).readPlan(result.planId);
+  assert.equal(saved?.plan.status.state, "draft");
+  assert.equal(new PatchStore(stateDir).readNonce(result.planId), null);
+  const { ReviewService } = await import("../../src/dsh/host/review.ts");
+  const service = new ReviewService(() => root, () => ({ engine: engineSettingsOf({ ...defaultPluginSettings(), stateDir }), localApplyEnabled: true }));
+  const review = await service.execute({ action: "load", sessionId: "test" }, "browser", new AbortController().signal) as { plans: { id: string }[] };
+  assert.ok(review.plans.some((plan) => plan.id === result.planId));
 });
 
 test("rejects an out-of-contract lookback and zero rules", () => {

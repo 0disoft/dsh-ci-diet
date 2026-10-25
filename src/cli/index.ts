@@ -384,6 +384,9 @@ function scan(options: Options, locale: Locale): number {
     generatedAt: now().toISOString(),
   });
   const { report, binding, workflows, skipped, warnings } = result;
+  const store = openStore(stateDirOf(options), locale, options.config.storage);
+  store.saveBinding(binding);
+  store.saveReport(report);
   const parsedCount = workflows.filter((workflow) => workflow.parseError === null && workflow.unsupported.length === 0).length;
 
   const lines: string[] = [];

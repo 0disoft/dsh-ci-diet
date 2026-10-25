@@ -1,8 +1,8 @@
 # CI Diet plugin guide
 
-CI Diet ships as one npm package with a command-line tool and a DeepSeek Harness (DSH) plugin. They share contracts and the default local state directory, but their first-use flows differ: CLI `scan` prints a report, while CLI `sync` saves one. The plugin's `ci_diet_scan` and `ci_diet_sync` both save reports.
+CI Diet ships as one npm package with a command-line tool and a DeepSeek Harness (DSH) plugin. They share contracts and the default local state directory, but their first-use flows differ: CLI `scan` and `sync` both save reports. The plugin's `ci_diet_scan` and `ci_diet_sync` both save reports.
 
-The plugin checks supported DSH deployment commands automatically for savings candidates. Its scan, sync, report, prune, and plan tools remain available on request; it has no approval, apply, or revert tools. Workflow changes require review and human approval through the CLI. Its default-on preflight checks supported deploy commands from a stateless DSH bash tool before running them; ordinary CLI runs have no hook. The Settings page changes tool configuration; it does not optimize a workflow.
+The plugin checks supported DSH deployment commands automatically for savings candidates. Its scan, sync, report, prune, and plan tools remain available on request; it has no approval, apply, or revert tools. Workflow changes require review and human approval through the CLI or the CI Diet Review page. Its default-on preflight checks supported deploy commands from a stateless DSH bash tool before running them; ordinary CLI runs have no hook. The Settings page changes tool configuration; it does not optimize a workflow.
 
 `preflightEnabled` is on by default. Before a literal `git push`, `npm|pnpm|bun publish`, `wrangler deploy`, or `npm|pnpm|bun run deploy` in a supported stateless DSH bash tool (one with a `workdir` argument), CI Diet runs an offline check. It flags npm CD006 candidates, a missing concurrency block in a PR-only workflow, and a Bun frozen install without an explicit download cache for review. When a candidate exists, the first command does not run; after the model reviews the items, retrying the same command is allowed. Preflight itself makes no network request and no automatic file change, and applying a plan still needs human approval. Persistent shells and complex shell wrappers cannot be identified reliably, so preflight skips them. Savings remain unmeasured, so no saving is claimed.
 
@@ -29,7 +29,7 @@ ci-diet report --cwd .
 ci-diet report --cwd . --format html --out report.html
 ```
 
-CLI `scan` prints the static report. Use its `--json` or `--out FILE` option to write that output, but scan does not save a report in the state store. `ci-diet report` needs a saved report, so this CLI sequence uses `sync --network` to create it. `sync` needs `gh` installed, authenticated, and able to read the repository's Actions runs and jobs. It uses read-only access and does not need GitHub write permission.
+CLI `scan` prints and saves the static report, so `ci-diet report` can follow immediately without network. Use `--json` or `--out FILE` to export it. The sequence above uses `sync --network` when execution history is wanted. `sync` needs `gh` installed, authenticated, and able to read the repository's Actions runs and jobs. It uses read-only access and does not need GitHub write permission.
 
 With DSH, call `ci_diet_scan` with an absolute `cwd` for static analysis. It saves a report, so `ci_diet_report` can follow immediately without network. Network access is on by default, so after `gh` is installed and authenticated you can call `ci_diet_sync` for the same `cwd`, followed by `ci_diet_report`. The switch only permits that tool to call `gh`; installation, startup, and saving settings do not collect history. To block plugin network use, turn off **Allow network access** in **Settings → CI Diet** and choose **Save changes**. The plugin setting does not enable the CLI's `--network` flag.
 
@@ -251,3 +251,7 @@ Selection order is `--lang`, the DSH locale preference, `LC_ALL`/`LC_MESSAGES`/`
 Reports are stored in English and translated when displayed. Rule ids, error codes, enum values, paths, hashes, and numbers stay literal. HTML sets `lang` to the selected locale. Model tool descriptions are captured when the plugin loads, so reload after changing the DSH language preference.
 
 The detailed specs and decisions remain English: [specification index](../spec/README.md), [rules](../spec/rules.md), [cost model](../spec/cost-model.md), [patch model](../spec/patch-model.md), [storage and errors](../spec/storage.md), and [decisions](../spec/decisions.md).
+
+### Saved model plans
+
+`ci_diet_plan` now saves eligible plans as unapproved drafts and returns `planId`. Open **CI Diet Review** to inspect the diff, type its digest suffix, approve, and separately apply it. The model tool cannot approve or apply. The returned CLI command inspects the same saved plan instead of generating another one. Repeated publication never resets an existing approval.

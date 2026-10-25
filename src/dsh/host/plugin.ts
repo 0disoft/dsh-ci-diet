@@ -468,7 +468,7 @@ export function apply(ctx: Context, config: Config) {
         type: "array",
         items: { type: "string" },
         description:
-          "Human attestation claims for this preview only: ci-only, replace-safe, artifact-purpose:temporary|release, " +
+          "Premises for this reviewable plan: ci-only, replace-safe, artifact-purpose:temporary|release, " +
           "consumer-min-days:N, reviewed-opaque-nodes. The tool never approves anything.",
       },
     },
@@ -478,6 +478,7 @@ export function apply(ctx: Context, config: Config) {
         properties: {
           workflowPath: { type: "string" },
           edits: { type: "array", items: { type: "object", additionalProperties: true } },
+          planId: { type: "string" },
           planDigest: { type: "string", description: t("dsh.param.planDigest") },
           writeAllowed: { type: "boolean" },
           coverageLevel: { type: "string" },
@@ -535,6 +536,7 @@ export function apply(ctx: Context, config: Config) {
 
       let edits: readonly ByteEdit[] = [];
       let planDigest: string | null = null;
+      let planId = "";
       let coverageLevel = "skip";
       const claims = claimsFromTokens((args.claims ?? []) as string[]);
       if (chosenFinding !== null) {
@@ -560,7 +562,10 @@ export function apply(ctx: Context, config: Config) {
         edits = requested.edits;
         coverageLevel = requested.coverageLevel ?? "skip";
         if (requested.ok) {
-          planDigest = requested.plan.planDigest;
+          store.saveAttestation(requested.attestation);
+          const saved = store.savePlanIfAbsent(requested.plan, { coverageWriteAllowed: true, reportId: report.reportId });
+          planDigest = saved.planDigest;
+          planId = saved.planId;
         } else {
           blockers.push(requested.blocker);
           blockers.push(...requested.reasons);
@@ -579,11 +584,12 @@ export function apply(ctx: Context, config: Config) {
       return {
         workflowPath,
         edits: [...edits],
+        planId,
         planDigest: planDigest ?? "",
         writeAllowed: blockers.length === 0,
         coverageLevel,
         blockers,
-        nextCommand,
+        nextCommand: planId ? "ci-diet plans --plan " + planId + " --state-dir " + shellQuoteArg(stateDir) : nextCommand,
       };
     },
   }));
