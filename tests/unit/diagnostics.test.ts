@@ -106,6 +106,45 @@ test("attributes matrix legs and aggregates unmatched names", () => {
   assert.deepEqual(workflow.misses, [{ workflowPath: PATH, jobName: "mystery job", occurrences: 2 }]);
 });
 
+test("repeated runs expand a reported matrix only once", (t) => {
+  const parsed = parseWorkflow(PATH, [
+    "on: push", "jobs:", "  test:", "    name: test ${{ matrix.shard }}",
+    "    runs-on: ubuntu-latest", "    strategy:", "      matrix:",
+    "        shard: [" + Array.from({ length: 256 }, (_, index) => index).join(", ") + "]", "",
+  ].join("\n"));
+  const matrixJob = parsed.jobs[0]!;
+  assert.ok(matrixJob.matrix);
+  let reads = 0;
+  const include = Array.from({ length: 1000 }, (_, index) => ({
+    get color() { reads += 1; return index; },
+  }));
+  const definition = { ...parsed, jobs: [{ ...matrixJob, matrix: { ...matrixJob.matrix, include } }] };
+  const report = buildDiagnostics(bundle(Array.from({ length: 100 }, (_, index) => {
+    const id = "r" + index;
+    return run(id, [job("test 0", id)], definition);
+  })));
+  assert.equal(report.matchedJobs, 100);
+  assert.equal(report.unmatchedJobs, 0);
+  assert.deepEqual(report.workflows[0]!.matrixJobs, [{ key: "test", template: "test ${{ matrix.shard }}", legs: 256, dynamic: false }]);
+  t.diagnostic("include value reads across 100 runs: " + reads);
+  assert.equal(reads, 2 * include.length, "one diagnostic expansion and one shared job-name index");
+});
+
+test("matrix diagnostics keep the first version of a job and discover later new keys", () => {
+  const firstJob = DEFINITION.jobs[0]!;
+  assert.ok(firstJob.matrix);
+  const first = { ...DEFINITION, jobs: [{ ...firstJob, matrix: { ...firstJob.matrix, dynamic: true } }] };
+  const later = { ...DEFINITION, jobs: [
+    { ...firstJob, displayName: "Later template" },
+    { ...firstJob, key: "new-matrix" },
+  ] };
+  const report = buildDiagnostics(bundle([run("r1", [], first), run("r2", [], later)]));
+  assert.deepEqual(report.workflows[0]!.matrixJobs, [
+    { key: "new-matrix", template: "test", legs: 2, dynamic: false },
+    { key: "test", template: "test", legs: null, dynamic: true },
+  ]);
+});
+
 test("keeps unresolvable runs out of the attribution rate", () => {
   const report = buildDiagnostics(bundle([
     run("r1", [job("test (ubuntu-latest)", "r1")]),

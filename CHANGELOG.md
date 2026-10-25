@@ -5,6 +5,9 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Expand diagnostic matrices only for job keys not yet reported, preserving
+  first-observed matrix summaries while avoiding repeated include/exclude work
+  across runs of the same workflow.
 - Check global and per-family request budgets before retry backoff. An exhausted
   budget now returns `BUDGET_EXHAUSTED` without waiting for Retry-After or a
   network backoff that cannot lead to another dispatch.

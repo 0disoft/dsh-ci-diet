@@ -71,19 +71,18 @@ interface WorkflowAccumulator {
   misses: Map<string, number>;
 }
 
-function matrixJobsOf(jobs: readonly WorkflowJob[]): MatrixJobDiagnostics[] {
-  const rows: MatrixJobDiagnostics[] = [];
+/** The report keeps the first matrix for each job key; later runs need no expansion. */
+function collectMatrixJobs(jobs: readonly WorkflowJob[], rows: Map<string, MatrixJobDiagnostics>): void {
   for (const job of jobs) {
-    if (job.matrix === null) continue;
+    if (job.matrix === null || rows.has(job.key)) continue;
     const combinations = expandMatrix(job.matrix);
-    rows.push({
+    rows.set(job.key, {
       key: job.key,
       template: job.displayName,
       legs: combinations === null ? null : combinations.length,
       dynamic: job.matrix.dynamic,
     });
   }
-  return rows;
 }
 
 const CACHE_ACTION = /^actions\/cache(?:@|\/)/;
@@ -175,9 +174,7 @@ export function buildDiagnostics(history: HistoryBundle): DiagnosticsReport {
       byPath.set(definition.path, accumulator);
     }
     accumulator.analyzableRuns += 1;
-    for (const matrix of matrixJobsOf(definition.jobs)) {
-      if (!accumulator.matrixJobs.has(matrix.key)) accumulator.matrixJobs.set(matrix.key, matrix);
-    }
+    collectMatrixJobs(definition.jobs, accumulator.matrixJobs);
     for (const job of run.jobs) {
       jobs += 1;
       accumulator.jobs += 1;
