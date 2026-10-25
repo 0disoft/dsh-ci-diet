@@ -1,4 +1,7 @@
 /** Minimal React surface: the DSH client loader supplies the real module. */
+declare function setInterval(callback: () => void, milliseconds: number): number;
+declare function clearInterval(handle: number): void;
+
 declare module "react" {
   export function createElement(type: unknown, props?: unknown, ...children: unknown[]): unknown;
   export function useState<T>(initial: T | (() => T)): [T, (next: T | ((previous: T) => T)) => void];
