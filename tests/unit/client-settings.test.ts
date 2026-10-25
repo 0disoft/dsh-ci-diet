@@ -410,6 +410,78 @@ test("the draft batch keeps valid edits in field order and preserves switches", 
     { op: "set", path: ["billingIncludedMinutes"], value: 2000 },
   ]);
 });
+
+test("account input edits distinguish missing values from explicit zero", () => {
+  const batch = collectSettingsEdits({ billingIncludedMinutes: "", billingAccountMinutesUsed: "0", billingEnabled: true }, key => key);
+  assert.deepEqual(batch.errors, {});
+  assert.deepEqual(batch.ops, [
+    { op: "set", path: ["billingIncludedMinutes"], value: null },
+    { op: "set", path: ["billingAccountMinutesUsed"], value: 0 },
+  ]);
+  assert.equal(SETTINGS_FIELDS.some(field => field.key === "billingEnabled"), false);
+  assert.equal(collectSettingsEdits({ billingIncludedMinutes: "9007199254740992" }, key => key).ops.length, 0);
+  assert.deepEqual(collectSettingsEdits({ billingIncludedMinutes: null }, key => key).ops[0], batch.ops[0]);
+});
+
+test("account setup saves without a switch and clearing or resetting returns to unknown", async () => {
+  const fake = fakeReact();
+  const component = loadBundle(fake.react).sections[0]!.component;
+  const value: Record<string, unknown> = { billingIncludedMinutes: null, billingAccountMinutesUsed: null };
+  const user: Record<string, unknown> = {};
+  const calls: { ops: unknown; revision: unknown }[] = [];
+  const form = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision: 7, value, user }),
+    subscribe: () => () => {},
+    mutate: async (ops: { op: string; path: string[]; value?: unknown }[], revision: number) => {
+      calls.push({ ops, revision });
+      for (const op of ops) { value[op.path[0]!] = op.op === "unset" ? null : op.value; user[op.path[0]!] = op.value; }
+      return true;
+    },
+  };
+  const render = () => renderPage(fake.react, component, { form, t: (key: string) => key });
+  const input = (key: string) => findElement(render(), e => e.props.id === "ci-diet-" + key)!;
+  const type = (key: string, text: string) => (input(key).props.onChange as (event: unknown) => void)({ target: { value: text } });
+  const save = async () => {
+    (findElement(render(), e => e.props.className === "ci-diet-save")!.props.onClick as () => void)();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  assert.equal(input("billingIncludedMinutes").props.value, "");
+  assert.ok(JSON.stringify(render()).includes("billing.missing"));
+  type("billingIncludedMinutes", "0");
+  assert.ok(JSON.stringify(render()).includes("billing.missing"));
+  type("billingAccountMinutesUsed", "0");
+  assert.ok(JSON.stringify(render()).includes("billing.ready"));
+  await save();
+  assert.equal(value.billingIncludedMinutes, 0);
+  assert.equal(value.billingAccountMinutesUsed, 0);
+  type("billingAccountMinutesUsed", "");
+  assert.ok(JSON.stringify(render()).includes("billing.missing"));
+  await save();
+  assert.equal(value.billingAccountMinutesUsed, null);
+  type("billingAccountMinutesUsed", "2100");
+  await save();
+  const row = findElement(render(), e => e.props.className === "ci-diet-row" && !!findElement(e.props.children, c => c.props.id === "ci-diet-billingIncludedMinutes"))!;
+  (findElement(row.props.children, e => e.props.className === "ci-diet-reset")!.props.onClick as () => void)();
+  assert.equal(input("billingIncludedMinutes").props.value, "");
+  assert.ok(JSON.stringify(render()).includes("billing.missing"));
+  await save();
+  assert.equal(value.billingIncludedMinutes, null);
+  assert.deepEqual(JSON.parse(JSON.stringify(calls.at(-1))), { ops: [{ op: "unset", path: ["billingIncludedMinutes"] }], revision: 7 });
+});
+
+test("review shows account information needed instead of a zero dollar estimate", async () => {
+  const h = reviewHarness(async () => ({ root: "C:/workspace", bindingId: "b_one", report: {
+    reportId: "report_one", findings: [], metrics: {
+      observedRunnerSeconds: { status: "known", value: 62, basis: "observed", reason: null },
+      estimatedMarginalUsd: { status: "unknown", value: null, basis: "allowance_unknown", reason: "BILLING_ESTIMATE_UNCONFIGURED" },
+    },
+  }, plans: [], changes: [] }));
+  h.render(); await h.settle();
+  const tree = JSON.stringify(h.render());
+  assert.ok(tree.includes(REVIEW_DICTIONARIES.en["metric.accountRequired"]));
+  assert.ok(tree.includes("62 s"));
+  assert.equal(tree.includes("0.000000"), false);
+});
 test("the section styles follow the host theme instead of a local palette", () => {
   assert.match(CSS_TEXT, /\.ci-diet-body \{[^}]*flex: 1 1 auto[^}]*overflow-y: auto/);
   assert.match(CSS_TEXT, /\.ci-diet-actions \{[^}]*flex: 0 0 auto/);

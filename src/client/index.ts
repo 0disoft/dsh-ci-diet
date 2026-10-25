@@ -186,6 +186,12 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
 
   const changedKeys = new Set([...Object.keys(draft), ...resets]);
   const valueOf = (key: string) => draft[key] !== undefined ? draft[key] : snapshot.value?.[key];
+  const billingReady = ["billingIncludedMinutes", "billingAccountMinutesUsed"].every((key) => {
+    if (resets.includes(key)) return false;
+    const raw = valueOf(key);
+    return (typeof raw === "number" || (typeof raw === "string" && raw.trim() !== ""))
+      && Number.isSafeInteger(Number(raw)) && Number(raw) >= 0;
+  });
   const recommendedReady = ["preflightEnabled", "networkEnabled", "localApplyEnabled"].every((key) => valueOf(key) === true)
     && ["CD001", "CD002", "CD004", "CD006", "CD008"].every((id) => {
       const rules = valueOf("rules");
@@ -208,7 +214,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
           : React.createElement("input", {
               id: "ci-diet-" + field.key,
               type: field.kind === "number" ? "number" : "text",
-              value: raw === undefined || raw === null ? "" : String(raw),
+              value: raw === undefined || raw === null || (field.nullable && resets.includes(field.key)) ? "" : String(raw),
               min: field.min,
               max: field.max,
               step: field.kind === "number" ? 1 : undefined,
@@ -218,7 +224,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
               "aria-label": label,
               "aria-invalid": errors[field.key] !== undefined,
               "aria-describedby": errors[field.key] ? "ci-diet-error-" + field.key : undefined,
-              placeholder: field.key === "stateDir" ? t("page.defaultLocation") : undefined,
+              placeholder: field.key === "stateDir" ? t("page.defaultLocation") : field.nullable ? t("billing.placeholder") : undefined,
             });
       return React.createElement(
         "div",
@@ -265,6 +271,7 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
         React.createElement("h3", { className: "ci-diet-group-title" }, t("group." + group + ".title")),
         React.createElement("p", { className: "ci-diet-group-desc" }, t("group." + group + ".desc")),
       ) : null,
+      group === "billing" ? React.createElement("p", { className: "ci-diet-notice", role: "status" }, t(billingReady ? "billing.ready" : "billing.missing")) : null,
       rows,
       group === "general" ? React.createElement("p", { className: "ci-diet-scope-note" }, t("page.scopeNote")) : null,
     );

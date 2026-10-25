@@ -290,6 +290,9 @@ function planExpired(expiresAt: string): boolean {
 }
 
 function metricValue(metric: ReviewMetric | null | undefined, key: string, t: Translate): string {
+  if (key === "estimatedMarginalUsd" && metric?.status === "unknown" && metric.reason === "BILLING_ESTIMATE_UNCONFIGURED") {
+    return t("metric.accountRequired");
+  }
   if (metric === undefined || metric === null || metric.status !== "known" || metric.value === null) {
     return t("metric.noValue");
   }

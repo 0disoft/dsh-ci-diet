@@ -12,6 +12,7 @@ export interface SettingField {
   readonly min?: number;
   readonly max?: number;
   readonly integer?: boolean;
+  readonly nullable?: boolean;
 }
 
 export const SETTINGS_FIELDS: readonly SettingField[] = [
@@ -35,9 +36,8 @@ export const SETTINGS_FIELDS: readonly SettingField[] = [
   { key: "storageReportDays", group: "storage", kind: "number", min: 0, integer: true },
   { key: "storagePlanDays", group: "storage", kind: "number", min: 0, integer: true },
 
-  { key: "billingEnabled", group: "billing", kind: "switch" },
-  { key: "billingIncludedMinutes", group: "billing", kind: "number", min: 0, integer: true },
-  { key: "billingAccountMinutesUsed", group: "billing", kind: "number", min: 0, integer: true },
+  { key: "billingIncludedMinutes", group: "billing", kind: "number", min: 0, max: Number.MAX_SAFE_INTEGER, integer: true, nullable: true },
+  { key: "billingAccountMinutesUsed", group: "billing", kind: "number", min: 0, max: Number.MAX_SAFE_INTEGER, integer: true, nullable: true },
 ];
 
 export const SETTINGS_GROUPS: readonly SettingGroupId[] = ["general", "rules", "history", "storage", "billing"];
@@ -50,7 +50,7 @@ export interface SettingsEditBatch {
   readonly errors: Readonly<Record<string, string>>;
 }
 
-export type SettingsDraftValue = string | number | boolean | readonly string[];
+export type SettingsDraftValue = string | number | boolean | readonly string[] | null;
 
 /** Validate a staged draft exactly like the page and produce one atomic edit batch. */
 export function collectSettingsEdits(
@@ -93,6 +93,10 @@ export function collectSettingsEdits(
       continue;
     }
     const text = String(raw).trim();
+    if (field.nullable === true && (raw === null || text === "")) {
+      ops.push({ op: "set", path: [key], value: null });
+      continue;
+    }
     const value = Number(text);
     if (text === "" || !Number.isFinite(value)) {
       errors[key] = message("page.invalidNumber");
