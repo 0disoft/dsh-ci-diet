@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**स्थिति:** alpha; `dsh-ci-diet@0.3.1` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। Review screen ने पिछले commit में असली browser E2E पास किया था। एक बार होने वाली defaults migration को अलग से DSH `0.2.1-rc.2` के configEditor, SettingsForms और Loader runtime में verify किया गया; यह नए browser render का verification नहीं है। DSH plugin अब preflight, history के लिए network access और local apply के साथ चालू होता है।
+**स्थिति:** alpha; `dsh-ci-diet@0.4.0` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। Review screen ने पिछले commit में असली browser E2E पास किया था। एक बार होने वाली defaults migration को अलग से DSH `0.2.1-rc.2` के configEditor, SettingsForms और Loader runtime में verify किया गया; यह नए browser render का verification नहीं है। DSH plugin अब preflight, history के लिए network access और local apply के साथ चालू होता है।
 
 **DSH defaults और migration.** नए DSH profile में `preflightEnabled`, `networkEnabled` और `localApplyEnabled` `true` होते हैं, और CD001, CD002, CD004, CD006 तथा CD008 चालू रहते हैं। मौजूदा profile को पहली बार शुरू करने पर CI Diet DSH `configEditor` के locked edit से तीनों switches save करता है, इन rules को मौजूदा चयन में जोड़ता है और उसी profile में `defaultsRevision: 1` दर्ज करता है। State paths, retention, quotas, billing inputs और पहले से स्पष्ट रूप से चालू किए गए CD003 या CD005 सुरक्षित रहते हैं। इस save के बाद बंद किया गया switch या हटाया गया rule restart और update के बाद भी लागू रहता है; CD003 और CD005 केवल चालू करने पर चलते हैं, billing estimates default में बंद रहते हैं और स्पष्ट रूप से चालू करने पड़ते हैं, जबकि पहले से चालू billing setting सुरक्षित रहता है।
 
@@ -33,14 +33,14 @@ CD001 नए commit से superseded होकर overlap करते PR runs 
 CLI के लिए Node `^22.19.0 || >=24.0.0` चाहिए। Plugin DSH `>=0.2.1-rc.2 <0.3.0-0` और `>=0.2.2-rc.1 <0.3.0-0` का समर्थन करता है। Version `0.3.1` को DSH `0.2.1-rc.2` पर जाँचा गया; DSH `0.3.0` समर्थित नहीं है।
 
 ```
-npm install --global dsh-ci-diet@0.3.1
+npm install --global dsh-ci-diet@0.4.0
 ci-diet --version
 ```
 
-Global install न चाहें तो command नाम `ci-diet` की जगह `npx dsh-ci-diet@0.3.1` रखें, उदाहरण `npx dsh-ci-diet@0.3.1 report --cwd .`।
+Global install न चाहें तो command नाम `ci-diet` की जगह `npx dsh-ci-diet@0.4.0` रखें, उदाहरण `npx dsh-ci-diet@0.4.0 report --cwd .`।
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.1
+dsh plugin --profile web add dsh-ci-diet@0.4.0
 dsh --profile web
 ```
 

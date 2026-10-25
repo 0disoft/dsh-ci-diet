@@ -5,15 +5,16 @@ history and workflow definitions, then reports wasted runner time and proposes
 YAML edits that a human reviews and applies locally. This directory is the
 normative product specification. It describes behaviour, not the delivery plan.
 
-Status: implemented in the current source tree. The CLI, the DSH model tools, the
+Status: implemented in version 0.4.0. The CLI, the DSH model tools, the
 DSH Web Settings screen, and the **Settings → CI Diet Reports** review screen are
-available. The published 0.3.1 package predates the review screen. Live DSH E2E
-verification of the review screen is still pending, and local workflow writes are
-off by default. The machine-readable contracts in `contracts/` are the authority
-where prose and schema disagree.
+available. The review screen passed a real-browser E2E check before release.
+The plugin defaults preflight, network access, and local apply to on; installation
+and startup do not collect history or modify workflows. Every workflow edit still
+requires explicit human approval. The machine-readable contracts in `contracts/`
+are the authority where prose and schema disagree.
 
-Development additions (not yet published): offline CD006 npm cache plans and
-a configurable, read-only deployment preflight in the DSH stateless bash tool.
+Version 0.4.0 also includes offline CD006 npm cache plans and a configurable,
+read-only deployment preflight in the DSH stateless bash tool.
 
 ## Scope
 
@@ -26,8 +27,8 @@ a configurable, read-only deployment preflight in the DSH stateless bash tool.
   explanation-only in v0.1.
 - One plan edits one existing `.github/workflows/*.yml` or `*.yaml` file. The
   patch is applied to the working tree by the local CLI or the session-scoped
-  review screen after an explicit human approval; approved local writes are off
-  by default, and the host rechecks the digest, source, evidence, and backup.
+  review screen after an explicit human approval; approved local writes are enabled
+  by default in the plugin, and the host rechecks the digest, source, evidence, and backup.
   CI Diet never commits, pushes, opens a PR, or merges.
 - All durable state is local. Nothing is uploaded, and there is no telemetry.
 - UI languages: English (default), Korean, Simplified Chinese, Hindi, Spanish,

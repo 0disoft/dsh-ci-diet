@@ -5,6 +5,8 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+## 0.4.0 (2026-10-25)
+
 ### Performance
 
 - Semantic patch comparison caches object-pair equality within each check and

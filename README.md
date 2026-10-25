@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**Status:** alpha; `dsh-ci-diet@0.3.1` is on npm. The current source tree adds the **Settings → CI Diet Reports** review screen to the existing contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report. The review screen passed a real-browser E2E check in an earlier commit. The one-time defaults migration was verified separately in a DSH `0.2.1-rc.2` runtime with configEditor, SettingsForms, and Loader; it was not a new browser render. The DSH plugin now starts with preflight, history network access, and local apply enabled.
+**Status:** alpha; `dsh-ci-diet@0.4.0` is on npm. The current source tree adds the **Settings → CI Diet Reports** review screen to the existing contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report. The review screen passed a real-browser E2E check in an earlier commit. The one-time defaults migration was verified separately in a DSH `0.2.1-rc.2` runtime with configEditor, SettingsForms, and Loader; it was not a new browser render. The DSH plugin now starts with preflight, history network access, and local apply enabled.
 
 **DSH defaults and migration.** New DSH profiles start with `preflightEnabled`, `networkEnabled`, and `localApplyEnabled` set to `true`, and with CD001, CD002, CD004, CD006, and CD008 enabled. On the first start of an existing profile, CI Diet uses DSH's locked config editor to save those switches, add those rules to the existing selection, and record `defaultsRevision: 1` in that profile. State paths, retention, quotas, billing inputs, and an existing explicit CD003 or CD005 enablement are preserved. After that save, a switch you turn off or a rule you exclude survives restarts and updates; CD003 and CD005 stay off unless enabled, and billing estimates remain off by default with explicit activation required, while an existing on setting is preserved.
 
@@ -33,14 +33,14 @@ CD001 helps overlapping superseded PR runs. CD005 caps abnormal runs; it does no
 The CLI requires Node `^22.19.0 || >=24.0.0`. The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported.
 
 ```
-npm install --global dsh-ci-diet@0.3.1
+npm install --global dsh-ci-diet@0.4.0
 ci-diet --version
 ```
 
-Without a global install, replace the `ci-diet` command name with `npx dsh-ci-diet@0.3.1`, for example `npx dsh-ci-diet@0.3.1 report --cwd .`.
+Without a global install, replace the `ci-diet` command name with `npx dsh-ci-diet@0.4.0`, for example `npx dsh-ci-diet@0.4.0 report --cwd .`.
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.1
+dsh plugin --profile web add dsh-ci-diet@0.4.0
 dsh --profile web
 ```
 

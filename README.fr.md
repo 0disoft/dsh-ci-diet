@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**État :** alpha ; `dsh-ci-diet@0.3.1` est publié sur npm. L’arbre source actuel ajoute l’écran de revue **Réglages → CI Diet Reports** aux contrats, aux moteurs d’analyse et de correctifs, à la CLI, aux outils DSH, à la page Réglages et au rapport HTML autonome. L’écran de revue avait déjà passé un test E2E dans un vrai navigateur lors d’un commit précédent. La migration unique des valeurs par défaut a été vérifiée séparément dans le runtime DSH `0.2.1-rc.2` avec configEditor, SettingsForms et Loader ; ce n’est pas une nouvelle vérification du rendu navigateur. Le plugin DSH démarre désormais avec preflight, l’accès réseau pour l’historique et l’application locale activés.
+**État :** alpha ; `dsh-ci-diet@0.4.0` est publié sur npm. L’arbre source actuel ajoute l’écran de revue **Réglages → CI Diet Reports** aux contrats, aux moteurs d’analyse et de correctifs, à la CLI, aux outils DSH, à la page Réglages et au rapport HTML autonome. L’écran de revue avait déjà passé un test E2E dans un vrai navigateur lors d’un commit précédent. La migration unique des valeurs par défaut a été vérifiée séparément dans le runtime DSH `0.2.1-rc.2` avec configEditor, SettingsForms et Loader ; ce n’est pas une nouvelle vérification du rendu navigateur. Le plugin DSH démarre désormais avec preflight, l’accès réseau pour l’historique et l’application locale activés.
 
 **Valeurs par défaut et migration DSH.** Les nouveaux profils DSH démarrent avec `preflightEnabled`, `networkEnabled` et `localApplyEnabled` à `true`, et avec CD001, CD002, CD004, CD006 et CD008 activées. Au premier démarrage d’un profil existant, CI Diet utilise l’édition verrouillée du `configEditor` de DSH pour enregistrer ces interrupteurs, ajouter ces règles à la sélection existante et inscrire `defaultsRevision: 1` dans ce profil. Les chemins d’état, la rétention, les quotas, les données de facturation et une activation explicite antérieure de CD003 ou CD005 sont conservés. Après cet enregistrement, un interrupteur désactivé ou une règle exclue reste appliqué après les redémarrages et les mises à jour ; CD003 et CD005 restent désactivées sauf activation, les estimations de facturation restent désactivées par défaut et doivent être activées explicitement, tandis qu’une activation existante est conservée.
 
@@ -33,14 +33,14 @@ CD001 aide à traiter les exécutions de PR qui se chevauchent et sont devenues 
 La CLI exige Node `^22.19.0 || >=24.0.0`. Le plugin prend en charge DSH `>=0.2.1-rc.2 <0.3.0-0` et `>=0.2.2-rc.1 <0.3.0-0`. La version `0.3.1` a été testée avec DSH `0.2.1-rc.2` ; DSH `0.3.0` n’est pas pris en charge.
 
 ```
-npm install --global dsh-ci-diet@0.3.1
+npm install --global dsh-ci-diet@0.4.0
 ci-diet --version
 ```
 
-Si vous ne faites pas d’installation globale, remplacez le nom de commande `ci-diet` par `npx dsh-ci-diet@0.3.1`, par exemple `npx dsh-ci-diet@0.3.1 report --cwd .`.
+Si vous ne faites pas d’installation globale, remplacez le nom de commande `ci-diet` par `npx dsh-ci-diet@0.4.0`, par exemple `npx dsh-ci-diet@0.4.0 report --cwd .`.
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.1
+dsh plugin --profile web add dsh-ci-diet@0.4.0
 dsh --profile web
 ```
 

@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**状态：** alpha；`dsh-ci-diet@0.3.1` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
+**状态：** alpha；`dsh-ci-diet@0.4.0` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
 
 **DSH 默认值与迁移。** 新建 DSH profile 时，`preflightEnabled`、`networkEnabled` 和 `localApplyEnabled` 默认为 `true`，并启用 CD001、CD002、CD004、CD006、CD008。首次启动已有 profile 时，CI Diet 通过 DSH `configEditor` 的加锁编辑保存这三个开关，把这些规则加入现有选择，并在该 profile 中记录 `defaultsRevision: 1`。状态路径、保留期、配额、计费输入以及原先显式启用的 CD003 或 CD005 会保留。保存后关闭的开关或被排除的规则会在重启和更新后继续生效；CD003 和 CD005 只在启用时运行，计费估算默认关闭且需要显式启用，原有的开启设置会保留。
 
@@ -33,14 +33,14 @@ CD001 针对因出现较新提交而重叠、已被取代的 PR 运行。CD005 �
 CLI 需要 Node `^22.19.0 || >=24.0.0`。插件支持 DSH `>=0.2.1-rc.2 <0.3.0-0` 和 `>=0.2.2-rc.1 <0.3.0-0`。版本 `0.3.1` 已在 DSH `0.2.1-rc.2` 上验证；不支持 DSH `0.3.0`。
 
 ```
-npm install --global dsh-ci-diet@0.3.1
+npm install --global dsh-ci-diet@0.4.0
 ci-diet --version
 ```
 
-如果不希望全局安装，请把命令名 `ci-diet` 替换为 `npx dsh-ci-diet@0.3.1`，例如 `npx dsh-ci-diet@0.3.1 report --cwd .`。
+如果不希望全局安装，请把命令名 `ci-diet` 替换为 `npx dsh-ci-diet@0.4.0`，例如 `npx dsh-ci-diet@0.4.0 report --cwd .`。
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.3.1
+dsh plugin --profile web add dsh-ci-diet@0.4.0
 dsh --profile web
 ```
 
