@@ -334,6 +334,11 @@ cache restore/save. Failure and earlier-attempt times are excluded from means.
 Blocked comparisons show reasons and no reduction. Expand measurement limits
 for selection bias and other warnings. Actual billing remains unknown.
 
+The browser receives summary metrics and job durations for the chart, rather
+than the full raw steps, runner metadata and run-pair comparisons. The complete
+measurement stays in the local cache and CLI JSON; loading the Review page
+neither rewrites that evidence nor makes a GitHub request.
+
 See the [measured cache-removal example](../measurements/2026-10-25-cache-review.md)
 for a real run pair where cache overhead exceeded installation time, and why its
 overall runner-time difference cannot be attributed to the cache alone.

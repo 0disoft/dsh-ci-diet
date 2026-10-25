@@ -13,6 +13,7 @@ import { sourceHashOf } from "../../core/patch/plan.ts";
 import { defaultStateDir } from "../../core/state/paths.ts";
 import { localizedFinding } from "../../core/report/localize.ts";
 import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
+import type { SavedMeasurement } from "../../core/analysis/saved-measurement.ts";
 
 /** This transport belongs to the browser owner, never the model tool registry. */
 export const REVIEW_CHANNEL = "/api";
@@ -20,6 +21,26 @@ export const REVIEW_ENDPOINT = "ci-diet-review";
 interface ReviewSettings { readonly engine: EngineSettings; readonly localApplyEnabled: boolean }
 interface ReviewRequest { action: "load" | "approve" | "apply" | "revert" | "measure"; sessionId: string; id?: string; confirmation?: string; beforeRuns?: number[]; afterRuns?: number[] }
 interface WorkflowSource { readonly text: string; readonly hash: string }
+
+/** The browser needs chart inputs, not the full cached evidence/export format. */
+function reviewMeasurement(saved: SavedMeasurement | null) {
+  if (saved === null) return null;
+  const phase = (value: SavedMeasurement["effect"]["before"]) => {
+    const { runs, ...metrics } = value;
+    return { ...metrics, runs: runs.map(({ id, observation }) => ({
+      id, observation: observation === null ? null : {
+        jobs: observation.jobs.map(({ seconds }) => ({ seconds })),
+      },
+    })) };
+  };
+  const effect = saved.effect;
+  return { measuredAt: saved.measuredAt, effect: {
+    changeId: effect.changeId, comparable: effect.comparable,
+    observedReductionSeconds: effect.observedReductionSeconds,
+    before: phase(effect.before), after: phase(effect.after),
+    blockers: effect.blockers, warnings: effect.warnings,
+  } };
+}
 
 /** Share bytes and hashes only within one request; mutations always reread. */
 function workflowSourceReader(binding: RepositoryBinding, maxBytes: number) {
@@ -118,7 +139,7 @@ export class ReviewService {
         plans: binding === null ? [] : reader.listPlans().filter(({ plan }) => plan.payload.bindingId === binding.bindingId)
           .map((stored) => this.preview(reader, stored, settings, new Date(), readSource!, usedPlans)),
         changes: changes
-          .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state, measurement: reader.readMeasurement(changeId) })) };
+          .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state, measurement: reviewMeasurement(reader.readMeasurement(changeId)) })) };
     }
     if (request.action === "measure") {
       if (!settings.engine.networkEnabled) throw new Error("NETWORK_DISABLED");

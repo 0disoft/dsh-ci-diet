@@ -5,6 +5,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Send only measurement summary fields and per-job durations to the Review
+  browser, omitting unused steps, runner metadata and run-pair comparisons.
+  A synthetic 20-run, 100-job, 20-step fixture reduces the measurement portion
+  of the JSON response from 1,404,210 to 31,503 bytes (97.8%). Cached evidence
+  and CLI exports remain complete; chart values, failed samples and warnings
+  remain unchanged.
 - Share attempt-specific job collection between `compare` and `measure` instead
   of fetching each successful run's metadata twice before and twice after its
   jobs. Measurement retains one before/after check including immutable PR

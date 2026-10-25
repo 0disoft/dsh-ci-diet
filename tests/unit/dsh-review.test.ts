@@ -19,6 +19,7 @@ import { buildCoverage } from "../../src/core/analysis/coverage.ts";
 import { digestOf } from "../../src/shared/cdj1.ts";
 
 const SOURCE = "on: [pull_request]\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npm test\n";
+type ReviewView = Extract<Awaited<ReturnType<ReviewService["execute"]>>, { changes: unknown[] }>;
 function fixture(t: { after(fn: () => void): void }) {
   const temp = mkdtempSync(join(tmpdir(), "ci-diet-review-"));
   t.after(() => rmSync(temp, { recursive: true, force: true }));
@@ -239,6 +240,50 @@ test("browser route rejects owner API peers and never registers a model tool", a
   assert.equal((await allowed.json() as {result:{ok:boolean}}).result.ok,true);
 });
 
+test("review sends only chart data while preserving full measurement evidence in the cache", async (t) => {
+  const f = fixture(t);
+  await f.call("approve", { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) });
+  const applied = await f.call("apply", { id: f.plan.planId }) as { change: { changeId: string } };
+  const change = f.store.readChange(applied.change.changeId)!;
+  const sample = (id: number, before: boolean) => ({ id, attempt: 1, conclusion: "success",
+    workflowHash: before ? change.before.hash : change.after.hash,
+    observation: { id, attempt: 1, repository: "owner/repo", workflow: change.workflowPath, branch: "main", event: "push", sha: String(id),
+      jobs: Array.from({ length: 100 }, (_, j) => ({ name: "job_" + j, labels: ["ubuntu-latest"], seconds: before ? 60 : 50,
+        steps: Array.from({ length: 20 }, (_, s) => ({ name: "step_" + s, seconds: 2 })) })) } });
+  const before = Array.from({ length: 10 }, (_, i) => sample(i + 1, true));
+  const after = Array.from({ length: 10 }, (_, i) => sample(i + 101, false));
+  const effect = measureChangeEffect(change, before, after);
+  f.store.saveMeasurement(effect, new Date());
+  const cache = join(f.stateDir, "cache", "effect-" + change.changeId + ".json");
+  const original = readFileSync(cache, "utf8");
+  const saved = f.store.readMeasurement(change.changeId)!;
+  const view = await f.call("load") as ReviewView;
+  const measurement = view.changes[0]!.measurement;
+  assert.ok(measurement !== null);
+  const fullBytes = Buffer.byteLength(JSON.stringify(saved));
+  const viewBytes = Buffer.byteLength(JSON.stringify(measurement));
+  t.diagnostic(JSON.stringify({ fullBytes, viewBytes, runs: 20, jobsPerRun: 100, stepsPerJob: 20 }));
+  assert.equal("comparisons" in measurement.effect, false);
+  assert.ok(viewBytes < fullBytes / 20, "browser payload must omit unused raw evidence");
+  assert.equal(measurement.measuredAt, saved.measuredAt);
+  assert.equal(measurement.effect.observedReductionSeconds, effect.observedReductionSeconds);
+  assert.deepEqual(measurement.effect.blockers, effect.blockers);
+  assert.deepEqual(measurement.effect.warnings, effect.warnings);
+  for (const phase of ["before", "after"] as const) {
+    for (const key of ["selectedRuns", "successes", "failures", "otherConclusions", "successRate", "rerunRate",
+      "rerunAttempts", "meanSuccessfulRunnerSeconds"] as const) assert.equal(measurement.effect[phase][key], effect[phase][key]);
+    assert.deepEqual(measurement.effect[phase].runs, effect[phase].runs.map(({ id, observation }) => ({ id, observation: observation === null ? null
+      : { jobs: observation.jobs.map(({ seconds }) => ({ seconds })) } })));
+  }
+  assert.equal(readFileSync(cache, "utf8"), original, "loading must not rewrite or shrink saved evidence");
+  assert.deepEqual(f.store.readMeasurement(change.changeId), saved);
+  const failed = { ...after[9]!, conclusion: "failure", observation: null };
+  f.store.saveMeasurement(measureChangeEffect(change, before, [...after.slice(0, -1), failed]), new Date());
+  const mixed = await f.call("load") as typeof view;
+  assert.deepEqual(mixed.changes[0]!.measurement!.effect.after.runs.at(-1), { id: failed.id, observation: null });
+  assert.equal(mixed.changes[0]!.measurement!.effect.after.successRate, 0.9);
+});
+
 test("browser measurement is workspace-bound, read-only on load, and independent of local apply", async (t) => {
   const f = fixture(t), signal = new AbortController().signal;
   await f.call("approve", { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) });
@@ -267,6 +312,8 @@ test("browser measurement is workspace-bound, read-only on load, and independent
   const saved = JSON.parse(readFileSync(file, "utf8")); saved.effect.observedReductionSeconds = 999;
   writeFileSync(file, JSON.stringify(saved));
   assert.equal(f.store.readMeasurement(change.changeId), null, "tampered cached metrics are not displayed");
+  const invalid = await service.execute({ action: "load", sessionId: "session" }, "browser", signal) as typeof view;
+  assert.equal(invalid.changes[0]!.measurement, null);
   assert.throws(() => new PatchStore(f.stateDir, { storeMaxBytes: 1, warningPercent: 90, cacheMaxBytes: 0, pruneAppliedBackups: false })
     .saveMeasurement(effect, new Date()), /STORAGE_QUOTA_EXCEEDED/);
 });
