@@ -303,6 +303,14 @@ reads this saved result without network access. The browser owner can explicitly
 collect selected before/after run IDs when network access is enabled; local apply
 need not be enabled. Measurements cannot approve or apply a plan.
 
+Measurement JSON uses `schemaVersion: 2`. Raw jobs and steps appear once in
+`before.runs` and `after.runs`; each `comparisons` entry contains run IDs,
+attempts, scope blockers, warnings and timing totals rather than another copy
+of both runs and their step diffs. Existing v1 caches remain readable: their
+samples and aggregate metrics are revalidated and returned in v2 form without
+rewriting the cache. The separate `compare` command still includes detailed
+job/step differences.
+
 CD006 Bun cache plans use the setup-bun step index, require a tracked text `bun.lock`, and preserve frozen installation and tests. Custom Bun configuration stays review-only; see the [rule specification](../spec/rules.md#bun-dependency-cache-variant). Cache restore/save overhead can exceed its benefit.
 
 ### Measured effects in DSH

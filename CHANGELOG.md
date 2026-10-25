@@ -5,6 +5,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Store before/after measurement observations once and keep compact scope/timing
+  summaries per run pair. A synthetic 10-by-10 run fixture with 100 jobs and 20
+  steps per job shrinks pretty-printed JSON from 83,238,162 to 4,655,562 bytes
+  (94.4%). Measurement schema v2 retains pair identities and all raw samples;
+  legacy caches normalize on read without changing files. Detailed single-run
+  comparisons remain unchanged.
 - Replace the DSH account-allowance switch with automatic use of two optional
   account inputs. Blank values stay unknown, explicit zero remains valid, and
   missing monetary estimates show an account-information hint. Revision 2

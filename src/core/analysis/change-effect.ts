@@ -1,5 +1,5 @@
 import type { AppliedChange } from "../contracts/schema.ts";
-import { compareRuns, type RunObservation } from "./run-comparison.ts";
+import { compareRunSummary, type RunObservation } from "./run-comparison.ts";
 
 export interface ChangeEffectRun {
   readonly id: number;
@@ -28,7 +28,12 @@ export function measureChangeEffect(change: AppliedChange, before: readonly Chan
   const successes = (samples: readonly ChangeEffectRun[]) => samples.flatMap((run) => run.observation === null ? [] : [run.observation]);
   const left = successes(before), right = successes(after);
   if (left.length === 0 || right.length === 0) blockers.push("SUCCESSFUL_SAMPLES_REQUIRED");
-  const comparisons = left.flatMap((a) => right.map((b) => compareRuns(a, b)));
+  // Raw observations live once in each phase. Pairs refer to them by identity
+  // and contain totals only, avoiding B*A copies of all jobs and step diffs.
+  const comparisons = left.flatMap((a) => right.map((b) => ({
+    beforeRunId: a.id, beforeAttempt: a.attempt, afterRunId: b.id, afterAttempt: b.attempt,
+    ...compareRunSummary(a, b),
+  })));
   for (const pair of comparisons) blockers.push(...pair.blockers);
   const comparable = blockers.length === 0;
   const summarize = (samples: readonly ChangeEffectRun[], observations: readonly RunObservation[]) => ({
@@ -42,7 +47,7 @@ export function measureChangeEffect(change: AppliedChange, before: readonly Chan
     meanSuccessfulRunnerSeconds: comparable ? observations.reduce((sum, run) => sum + run.jobs.reduce((n, job) => n + job.seconds, 0), 0) / observations.length : null,
   });
   const beforeSummary = summarize(before, left), afterSummary = summarize(after, right);
-  return { schemaVersion: 1, changeId: change.changeId, planId: change.planId, planDigest: change.planDigest,
+  return { schemaVersion: 2, changeId: change.changeId, planId: change.planId, planDigest: change.planDigest,
     workflowPath: change.workflowPath, comparable, blockers: [...new Set(blockers)],
     before: { ...beforeSummary, runs: before }, after: { ...afterSummary, runs: after },
     observedReductionSeconds: comparable ? beforeSummary.meanSuccessfulRunnerSeconds! - afterSummary.meanSuccessfulRunnerSeconds! : null,

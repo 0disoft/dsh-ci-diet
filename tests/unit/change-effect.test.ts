@@ -8,6 +8,8 @@ import type { GhRunner } from "../../src/adapters/github/transport.ts";
 import type { AppliedChange } from "../../src/core/contracts/schema.ts";
 import { sourceHashOf } from "../../src/core/patch/plan.ts";
 import { measureChangeEffect } from "../../src/core/analysis/change-effect.ts";
+import { compareRuns } from "../../src/core/analysis/run-comparison.ts";
+import { savedMeasurementOf } from "../../src/core/analysis/saved-measurement.ts";
 import { PatchStore } from "../../src/core/patch/store.ts";
 import { createLocalBinding } from "../../src/core/scan/binding.ts";
 import { measureCommand } from "../../src/cli/measure.ts";
@@ -60,7 +62,10 @@ test("applied-change measurement links exact file hashes and includes full runne
   assert.equal(report.after.failures, 1);
   assert.equal(report.after.rerunAttempts, 1);
   assert.equal(report.after.rerunRate, 0.5);
-  assert.equal(report.comparisons[0]!.jobs[0]!.steps[1]!.name, "Post cache save");
+  assert.equal(report.schemaVersion, 2);
+  assert.equal(report.before.runs[0]!.observation!.jobs[0]!.steps[1]!.name, "Post cache save");
+  assert.equal(report.comparisons[0]!.beforeRunId, 1);
+  assert.equal(report.comparisons[0]!.afterRunId, 2);
   assert.equal(report.verifiedCausalSavings, false);
   assert.equal(report.actualBilledUsd, null);
   assert.equal(mock.calls.filter((call) => call.some((arg) => arg.includes("/contents/"))).length, 2, "one file fetch per unique SHA");
@@ -84,6 +89,47 @@ test("measurement rejects unrelated workflow versions, branch/event mixing and c
   await assert.rejects(collectChangeEffect("owner/repo", { ...change, state: "REVERTED" }, [1], [2], { runner: mock.runner }), /CHANGE_NOT_APPLIED/);
   await assert.rejects(collectChangeEffect("owner/repo", change, [1], [1], { runner: mock.runner }), /INVALID_RUN_SELECTION/);
   assert.equal(mock.calls.length, 0);
+});
+
+test("10 by 10 measurement keeps each run's steps once without building pairwise step diffs", () => {
+  let stepReads = 0;
+  const steps = Array.from({ length: 6 }, (_, i) => ({ name: "measured_step_" + i, seconds: 2 }));
+  const sample = (id: number, before: boolean) => ({ id, attempt: 1, conclusion: "success",
+    workflowHash: before ? change.before.hash : change.after.hash,
+    observation: { id, attempt: 1, repository: "owner/repo", workflow, branch: "main", event: "push", sha: String(id),
+      jobs: Array.from({ length: 20 }, (_, i) => ({ name: "job_" + i, labels: ["ubuntu-latest"], seconds: before ? 60 : 50,
+        get steps() { stepReads++; return steps; } })) } });
+  const before = Array.from({ length: 10 }, (_, i) => sample(i + 1, true));
+  const after = Array.from({ length: 10 }, (_, i) => sample(i + 101, false));
+  const effect = measureChangeEffect(change, before, after);
+  assert.equal(effect.comparisons.length, 100);
+  assert.equal(effect.observedReductionSeconds, 200);
+  assert.ok(effect.comparisons.every((pair) => pair.comparable && pair.observedReductionSeconds === 200));
+  assert.equal(stepReads, 0, "batch calculation must not construct per-pair step diffs");
+  const json = JSON.stringify(effect);
+  assert.equal(stepReads, 20 * 20, "serialization reads each job's steps once across 20 runs");
+  assert.equal(json.match(/"name":"measured_step_0"/g)?.length, 20 * 20);
+  const mismatched = after.map((run, index) => index === 9 ? { ...run, observation: { ...run.observation, branch: "other" } } : run);
+  const blocked = measureChangeEffect(change, before, mismatched);
+  assert.equal(blocked.comparable, false);
+  assert.equal(blocked.observedReductionSeconds, null);
+  assert.ok(blocked.blockers.includes("DIFFERENT_BRANCH"), "check all pairs, including the final sample");
+});
+
+test("legacy measurement caches normalize from samples without mutating cached data", async () => {
+  const effect = await collectChangeEffect("owner/repo", change, [1], [2], { runner: api().runner });
+  const legacy = { ...effect, schemaVersion: 1, comparisons: [
+    compareRuns(effect.before.runs[0]!.observation!, effect.after.runs[0]!.observation!),
+  ] };
+  const saved = { measuredAt: change.updatedAt, bindingId: change.bindingId, effect: legacy };
+  const originalJson = JSON.stringify(saved);
+  assert.deepEqual(savedMeasurementOf(change, saved)?.effect, effect);
+  assert.equal(JSON.stringify(saved), originalJson);
+  assert.equal(savedMeasurementOf(change, { ...saved, effect: { ...legacy, observedReductionSeconds: 999 } }), null);
+  const current = { ...saved, effect };
+  assert.deepEqual(savedMeasurementOf(change, current)?.effect, effect);
+  assert.equal(savedMeasurementOf(change, { ...current, effect: { ...effect, comparisons: [] } }), null);
+  assert.equal(savedMeasurementOf(change, { ...current, effect: { ...effect, schemaVersion: 3 } }), null);
 });
 
 test("measure CLI enforces network opt-in and workspace binding and preserves output files", async (t) => {

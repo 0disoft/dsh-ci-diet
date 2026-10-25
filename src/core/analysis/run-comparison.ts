@@ -38,7 +38,8 @@ function indexJobs(jobs: readonly JobObservation[], keys: readonly string[]) {
   return index;
 }
 
-export function compareRuns(before: RunObservation, after: RunObservation) {
+/** Shared identity checks and totals; never traverses step details. */
+function analyzeRuns(before: RunObservation, after: RunObservation) {
   const blockers: string[] = [];
   for (const field of ["repository", "workflow", "branch", "event"] as const) {
     if (before[field] !== after[field]) blockers.push("DIFFERENT_" + field.toUpperCase());
@@ -56,6 +57,22 @@ export function compareRuns(before: RunObservation, after: RunObservation) {
   const beforeSeconds = total(before), afterSeconds = total(after);
   const warnings = ["SINGLE_PAIR_NOT_CAUSAL_PROOF", "RUNNER_IMAGE_AND_CACHE_STATE_UNVERIFIED"];
   if (before.sha !== after.sha) warnings.push("SOURCE_CHANGED_REVIEW_DIFF_AND_TEST_SCOPE");
+  return { beforeKeys, beforeByKey, afterByKey, summary: {
+    comparable: blockers.length === 0, blockers, warnings,
+    beforeRunnerSeconds: beforeSeconds, afterRunnerSeconds: afterSeconds,
+    observedReductionSeconds: blockers.length ? null : beforeSeconds - afterSeconds,
+    observedReductionPercent: blockers.length || beforeSeconds === 0 ? null : (beforeSeconds - afterSeconds) / beforeSeconds * 100,
+    actualBilledUsd: null, verifiedCausalSavings: false,
+  } };
+}
+
+/** Batch measurement needs scope and totals, not repeated step-by-step diffs. */
+export function compareRunSummary(before: RunObservation, after: RunObservation) {
+  return analyzeRuns(before, after).summary;
+}
+
+export function compareRuns(before: RunObservation, after: RunObservation) {
+  const { beforeKeys, beforeByKey, afterByKey, summary } = analyzeRuns(before, after);
   const jobs = before.jobs.map((job, index) => {
     const identity = beforeKeys[index]!;
     const match = beforeByKey.get(identity) === null ? null : afterByKey.get(identity);
@@ -71,11 +88,7 @@ export function compareRuns(before: RunObservation, after: RunObservation) {
       addedSteps: match?.steps.filter((step) => !beforeSteps.has(step.name)) ?? [],
     };
   });
-  return { schemaVersion: 1, before, after, comparable: blockers.length === 0, blockers, warnings,
-    beforeRunnerSeconds: beforeSeconds, afterRunnerSeconds: afterSeconds,
-    observedReductionSeconds: blockers.length ? null : beforeSeconds - afterSeconds,
-    observedReductionPercent: blockers.length || beforeSeconds === 0 ? null : (beforeSeconds - afterSeconds) / beforeSeconds * 100,
-    actualBilledUsd: null, verifiedCausalSavings: false, jobs };
+  return { schemaVersion: 1, before, after, ...summary, jobs };
 }
 
 export type RunComparison = ReturnType<typeof compareRuns>;

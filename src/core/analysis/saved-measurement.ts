@@ -16,6 +16,12 @@ export function savedMeasurementOf(change: AppliedChange, value: unknown): Saved
       || effect.changeId !== change.changeId || effect.planDigest !== change.planDigest
       || ![effect.before.runs, effect.after.runs].every((runs) => Array.isArray(runs) && runs.length >= 1 && runs.length <= 10)) return null;
     const recomputed = measureChangeEffect(change, effect.before.runs, effect.after.runs);
-    return isDeepStrictEqual(recomputed, effect) ? saved : null;
+    // V1 repeated the observations and step diffs in every pair. Keep its raw
+    // samples and verify all aggregate fields, deriving only the new pairs.
+    // Rendering upgrades the returned value without writing to the cache.
+    const candidate = effect.schemaVersion === 1
+      ? { ...effect, schemaVersion: 2, comparisons: recomputed.comparisons }
+      : effect;
+    return isDeepStrictEqual(recomputed, candidate) ? { ...saved, effect: recomputed } : null;
   } catch { return null; }
 }
