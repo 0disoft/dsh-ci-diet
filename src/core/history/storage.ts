@@ -1,15 +1,68 @@
-import type { HistoryBundle, HistoryPull } from "./model.ts";
+import type { WorkflowDefinition } from "../workflow/model.ts";
+import type { HistoryBundle, HistoryPull, HistoryRun } from "./model.ts";
 
 /** JSON representation: Map entries must be explicit or JSON.stringify drops them. */
-export interface HistoryRecord extends Omit<HistoryBundle, "pulls"> {
+interface InlineHistoryRecord extends Omit<HistoryBundle, "pulls"> {
   readonly pulls: unknown;
 }
 
-export function historyRecord(history: HistoryBundle): HistoryRecord {
-  return { ...history, pulls: [...history.pulls] };
+interface IndexedHistoryRecord extends Omit<InlineHistoryRecord, "runs"> {
+  readonly storageVersion: 2;
+  readonly definitions: readonly WorkflowDefinition[];
+  readonly runs: readonly (Omit<HistoryRun, "definition"> & { readonly definition: number | null })[];
 }
 
-export function historyFromRecord(record: HistoryRecord): HistoryBundle {
+export type HistoryRecord = InlineHistoryRecord | IndexedHistoryRecord;
+
+export function historyRecord(history: HistoryBundle): HistoryRecord {
+  const definitions: WorkflowDefinition[] = [];
+  const byIdentity = new Map<WorkflowDefinition, number>();
+  const byContent = new Map<string, number>();
+  let resolved = 0;
+  const runs = history.runs.map((run) => {
+    const definition = run.definition;
+    if (definition === null) return { ...run, definition: null };
+    resolved++;
+    let index = byIdentity.get(definition);
+    if (index === undefined) {
+      // Different commits can contain the same workflow. Compare the entire
+      // parsed value, not just its SHA, to preserve paths and parser metadata.
+      const key = JSON.stringify(definition);
+      index = byContent.get(key);
+      if (index === undefined) {
+        index = definitions.length;
+        definitions.push(definition);
+        byContent.set(key, index);
+      }
+      byIdentity.set(definition, index);
+    }
+    return { ...run, definition: index };
+  });
+  const inline = { ...history, pulls: [...history.pulls] };
+  return definitions.length < resolved ? { ...inline, storageVersion: 2, definitions, runs } : inline;
+}
+
+function inlineRecord(record: HistoryRecord): InlineHistoryRecord {
+  if (!("storageVersion" in record)) return record;
+  if (record.storageVersion !== 2 || !Array.isArray(record.definitions) || !Array.isArray(record.runs)) {
+    throw new Error("invalid history storage format");
+  }
+  const { storageVersion: _version, definitions, runs, ...rest } = record;
+  if (definitions.some((value) => value === null || typeof value !== "object" || Array.isArray(value))) {
+    throw new Error("invalid workflow definition table");
+  }
+  return { ...rest, runs: runs.map((run) => {
+    const index = run.definition;
+    if (index === null) return { ...run, definition: null };
+    if (!Number.isSafeInteger(index) || index < 0 || index >= definitions.length || definitions[index] === undefined) {
+      throw new Error("invalid workflow definition reference");
+    }
+    return { ...run, definition: definitions[index]! };
+  }) };
+}
+
+export function historyFromRecord(stored: HistoryRecord): HistoryBundle {
+  const record = inlineRecord(stored);
   const entries = record.pulls;
   if (entries !== null && typeof entries === "object" && !Array.isArray(entries) && Object.keys(entries).length === 0) {
     // Older writers serialized every Map as {}. Lost PRs require another sync;

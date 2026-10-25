@@ -967,7 +967,7 @@ export class PatchStore {
     try {
       return historyFromRecord(record);
     } catch {
-      throw new StoreCorruptionError(path, "HistoryBundle pull requests mismatch");
+      throw new StoreCorruptionError(path, "HistoryBundle storage mismatch");
     }
   }
 

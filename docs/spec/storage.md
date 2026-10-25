@@ -71,6 +71,18 @@ start. KV write success never decides recoverability.
 
 ## Size and retention
 
+History snapshots with repeated workflow definitions use `storageVersion: 2`:
+`definitions` contains each distinct parsed value once, and each run's
+`definition` is its zero-based table index or `null` when unresolved. Equality
+includes the full parsed value, so matching source hashes cannot merge different
+paths or parser metadata. Readers restore the runtime objects before analysis,
+reject unknown versions and invalid references as store corruption, and continue
+to read older snapshots with inline definitions. Snapshots without repeated
+definitions retain the inline format. This reduces stored bytes and parsing work
+for repeated definitions; comparing separately parsed definitions still requires
+linear work in their serialized size. Older CI Diet versions cannot read the
+indexed format; keep an upgraded reader when reusing these snapshots.
+
 | Setting | Default | Over-limit handling |
 | --- | ---: | --- |
 | Whole store | 256 MiB | Warn at 80%; block writes that exceed remaining space |

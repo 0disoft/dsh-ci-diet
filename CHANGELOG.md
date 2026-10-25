@@ -5,6 +5,15 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+### Performance
+
+- History snapshots store repeated parsed workflow definitions once in a
+  versioned table, including equal definitions collected at different commits.
+  Readers restore shared definitions and reject invalid references; existing
+  inline snapshots remain readable. A 100-run, 50-step fixture with 99 equal
+  definitions shrinks from 2,730,179 to 71,870 bytes (97.4%) without changing
+  the restored history or its analysis report.
+
 ### Added
 
 - DSH's **CI Diet review** settings page shows workspace reports, coverage,
