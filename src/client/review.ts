@@ -1,3 +1,4 @@
+import { measurementView } from "./measurement.ts";
 /** DSH report and approval page for CI Diet.
  *
  * This surface only presents host results and asks for intent. The host owns
@@ -6,7 +7,7 @@
 import * as React from "react";
 import { REVIEW_DICTIONARIES, REVIEW_NS } from "./review-i18n.ts";
 
-type ReviewAction = "load" | "approve" | "apply" | "revert";
+type ReviewAction = "load" | "approve" | "apply" | "revert" | "measure";
 type ReviewResult = { ok: true; value: unknown } | { ok: false; error: { message: string } };
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 
@@ -82,6 +83,7 @@ interface ReviewPlan {
 }
 
 interface ReviewChange {
+  readonly measurement: unknown;
   readonly changeId: string;
   readonly workflowPath: string;
   readonly state: string;
@@ -91,6 +93,7 @@ export interface ReviewData {
   readonly root: string;
   readonly bindingId: string | null;
   readonly localApplyEnabled: boolean;
+  readonly networkEnabled: boolean;
   readonly report: ReviewReport | null;
   readonly plans: readonly ReviewPlan[];
   readonly changes: readonly ReviewChange[];
@@ -233,6 +236,7 @@ function normalizeChange(value: unknown): ReviewChange | null {
   if (changeId.length === 0) return null;
   return {
     changeId,
+    measurement: value.measurement ?? null,
     workflowPath: textOf(value.workflowPath),
     state: textOf(value.state, "unknown"),
   };
@@ -244,6 +248,7 @@ function normalizeReview(value: unknown): ReviewData | null {
     root: value.root,
     bindingId: typeof value.bindingId === "string" ? value.bindingId : null,
     localApplyEnabled: value.localApplyEnabled === true,
+    networkEnabled: value.networkEnabled === true,
     report: normalizeReport(value.report),
     plans: Array.isArray(value.plans)
       ? value.plans.flatMap((item): ReviewPlan[] => {
@@ -360,6 +365,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
   const [feedback, setFeedback] = React.useState<ActionFeedback | null>(null);
   const [confirmations, setConfirmations] = React.useState<Record<string, string>>({});
   const [revertId, setRevertId] = React.useState("");
+  const [selections, setSelections] = React.useState<Record<string, { before: string; after: string }>>({});
   const generationRef = React.useRef(0);
   const [, tick] = React.useState(0);
   React.useEffect(() => {
@@ -413,6 +419,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
     setFeedback(null);
     setConfirmations({});
     setRevertId("");
+    setSelections({});
     if (sessionId === undefined) {
       setPhase("no-session");
       return () => {
@@ -426,7 +433,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
     };
   }, [sessionId]);
 
-  async function perform(action: ReviewAction, id?: string, confirmation?: string): Promise<void> {
+  async function perform(action: ReviewAction, id?: string, confirmation?: string, runs?: { beforeRuns: number[]; afterRuns: number[] }): Promise<void> {
     if (busy || sessionId === undefined) return;
     const generation = generationRef.current;
     setBusy(true);
@@ -437,6 +444,7 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
       const payload: Record<string, unknown> = { action, sessionId };
       if (id !== undefined) payload.id = id;
       if (confirmation !== undefined) payload.confirmation = confirmation;
+      if (runs !== undefined) Object.assign(payload, runs);
       const response = await ctx.connection.rpc.call("/api", "ci-diet-review", payload);
       if (generationRef.current !== generation) return;
       if (!response.ok) {
@@ -729,6 +737,12 @@ export function ReviewPage(props: { ctx: ReviewContext }): unknown {
             { key: change.changeId, className: "ci-diet-review-change" },
             React.createElement("span", { className: "ci-diet-label ci-diet-review-wrap" }, change.changeId),
             React.createElement("span", { className: "ci-diet-group-desc" }, change.workflowPath + " · " + change.state),
+            measurementView({ id: change.changeId, state: change.state, measurement: change.measurement,
+              before: selections[change.changeId]?.before ?? "", after: selections[change.changeId]?.after ?? "",
+              busy, networkEnabled: review.networkEnabled, t,
+              edit: (phase, text) => setSelections((current) => ({ ...current, [change.changeId]: { before: current[change.changeId]?.before ?? "",
+                after: current[change.changeId]?.after ?? "", [phase]: text } })),
+              measure: (beforeRuns, afterRuns) => { void perform("measure", change.changeId, undefined, { beforeRuns, afterRuns }); } }),
             React.createElement(
               "button",
               {

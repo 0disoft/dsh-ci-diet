@@ -545,3 +545,43 @@ test("tab keyboard navigation wraps and focuses the selected tab", () => {
   send("general", "End"); assert.equal(focused, 4);
   assert.equal(prevented, 3);
 });
+
+test("review measurement shows signed samples and only collects explicitly selected runs", async () => {
+  const calls: Record<string, unknown>[] = [];
+  let blocked = false;
+  const summary = (id: number, seconds: number) => ({ selectedRuns: 1, successes: 1, failures: 0, otherConclusions: 0,
+    successRate: 1, rerunRate: 0, meanSuccessfulRunnerSeconds: seconds, runs: [{ id, observation: { jobs: [{ seconds }] } }] });
+  const h = reviewHarness(async (payload) => {
+    calls.push(payload);
+    if (payload.action !== "load") return { state: "measured" };
+    return { root: "C:/workspace", bindingId: "b_one", localApplyEnabled: false, networkEnabled: true, report: null, plans: [],
+      changes: [{ changeId: "change_one", workflowPath: ".github/workflows/ci.yml", state: "APPLIED", measurement: {
+        measuredAt: "2026-10-25T00:00:00Z", effect: { changeId: "change_one", comparable: !blocked,
+          observedReductionSeconds: blocked ? null : -5, before: summary(1, 30), after: summary(2, 35),
+          blockers: blocked ? ["DIFFERENT_JOBS_OR_RUNNERS"] : [], warnings: ["USER_SELECTED_SAMPLES_MAY_BE_BIASED"] } } }] };
+  });
+  h.render(); await h.settle();
+  let tree = h.render();
+  assert.ok(JSON.stringify(tree).includes("-5.0"));
+  assert.ok(findElement(tree, (e) => e.type === "svg"));
+  const measureButton = () => findElement(h.render(), (e) => e.type === "button" && e.props.children === REVIEW_DICTIONARIES.en["measure.action"])!;
+  assert.equal(measureButton().props.disabled, true);
+  for (const [phase, value] of [["before", "1"], ["after", "2"]]) {
+    const input = findElement(h.render(), (e) => e.type === "input" && e.props["aria-label"] === REVIEW_DICTIONARIES.en[("measure." + phase) as keyof typeof REVIEW_DICTIONARIES.en] + " change_one")!;
+    (input.props.onChange as (event: unknown) => void)({ target: { value } });
+  }
+  assert.equal(calls.filter((p) => p.action === "measure").length, 0);
+  assert.equal(measureButton().props.disabled, false, "read-only measurement works while local apply is off");
+  (measureButton().props.onClick as () => void)(); await h.settle();
+  const request = calls.find((p) => p.action === "measure")!;
+  assert.deepEqual([...request.beforeRuns as number[]], [1]);
+  assert.deepEqual([...request.afterRuns as number[]], [2]);
+  assert.equal(calls.some((p) => p.action === "approve" || p.action === "apply"), false);
+  blocked = true;
+  const refresh = findElement(h.render(), (e) => e.type === "button" && e.props.children === REVIEW_DICTIONARIES.en["page.refresh"])!;
+  (refresh.props.onClick as () => void)(); await h.settle();
+  tree = h.render();
+  assert.ok(JSON.stringify(tree).includes("DIFFERENT_JOBS_OR_RUNNERS"));
+  assert.equal(findElement(tree, (e) => e.type === "svg"), undefined);
+  assert.equal(JSON.stringify(tree).includes(REVIEW_DICTIONARIES.en["measure.delta"]), false);
+});

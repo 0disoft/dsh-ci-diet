@@ -295,3 +295,17 @@ collect selected before/after run IDs when network access is enabled; local appl
 need not be enabled. Measurements cannot approve or apply a plan.
 
 CD006 Bun cache plans use the setup-bun step index, require a tracked text `bun.lock`, and preserve frozen installation and tests. Custom Bun configuration stays review-only; see the [rule specification](../spec/rules.md#bun-dependency-cache-variant). Cache restore/save overhead can exceed its benefit.
+
+### Measured effects in DSH
+
+In **CI Diet Review**, each applied change has a measured-effect panel. Enter
+1–10 comma-separated before/after run IDs and choose **Measure selected runs**.
+Network access must be enabled, but local apply need not be enabled. A saved
+CLI measurement appears on refresh as well. The panel shows signed observed
+reduction (negative means slower), successful-run means, selected success/rerun
+rates and sample counts. The chart plots the selected successful samples in
+selection order, not chronological history or a causal forecast; dashed lines
+are before samples and solid lines are after samples. All job time includes
+cache restore/save. Failure and earlier-attempt times are excluded from means.
+Blocked comparisons show reasons and no reduction. Expand measurement limits
+for selection bias and other warnings. Actual billing remains unknown.

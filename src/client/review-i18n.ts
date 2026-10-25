@@ -2,6 +2,22 @@
 export const REVIEW_NS = "ci-diet-review";
 
 const EN = {
+  "measure.title": "Measured effect",
+  "measure.hint": "Enter 1–10 comma-separated run IDs per phase. Means include all job overhead for successful runs only. Selected samples do not prove causal savings or actual billing.",
+  "measure.empty": "No measurement yet. Installation or an applied patch alone does not prove a saving.",
+  "measure.blocked": "Samples cannot be compared",
+  "measure.delta": "Observed reduction (negative = slower)",
+  "measure.before": "Before",
+  "measure.after": "After",
+  "measure.mean": "Mean successful job total",
+  "measure.success": "Success rate",
+  "measure.rerun": "Rerun rate",
+  "measure.samples": "Selected successful samples (dashed: before; solid: after)",
+  "measure.limits": "Measurement limits",
+  "measure.network": "Measure reads existing GitHub runs and saves the result locally. It never starts CI.",
+  "measure.off": "Enable network access in CI Diet settings to measure.",
+  "measure.action": "Measure selected runs",
+
   nav: "CI Diet review",
   "page.title": "Reports and changes",
   "page.intro": "Review the latest report and approve each plan separately. Approval and local apply are separate steps.",
@@ -96,6 +112,22 @@ const EN = {
 export type ReviewMessageKey = keyof typeof EN;
 
 const KO: Record<ReviewMessageKey, string> = {
+  "measure.title": "실행 기록으로 확인한 효과",
+  "measure.hint": "단계별 실행 ID를 쉼표로 구분해 1~10개 입력하세요. 평균은 성공한 실행의 전체 잡 시간과 부대 시간을 포함합니다. 선택한 표본은 인과관계나 실제 청구액을 증명하지 않습니다.",
+  "measure.empty": "아직 측정하지 않았습니다. 설치나 패치 적용만으로 절감이 확인되지는 않습니다.",
+  "measure.blocked": "비교할 수 없는 표본",
+  "measure.delta": "관측된 시간 감소(음수는 더 느려짐)",
+  "measure.before": "적용 전",
+  "measure.after": "적용 후",
+  "measure.mean": "성공 실행의 평균 전체 잡 시간",
+  "measure.success": "성공률",
+  "measure.rerun": "재실행률",
+  "measure.samples": "선택한 성공 표본(점선: 적용 전, 실선: 적용 후)",
+  "measure.limits": "측정의 한계",
+  "measure.network": "기존 GitHub 실행을 읽고 결과를 로컬에 저장합니다. CI를 새로 실행하지 않습니다.",
+  "measure.off": "측정하려면 CI Diet 설정에서 네트워크 접근을 켜세요.",
+  "measure.action": "선택한 실행으로 측정",
+
   nav: "CI Diet 검토",
   "page.title": "리포트와 변경",
   "page.intro": "최신 리포트를 확인하고 계획을 하나씩 승인하세요. 승인과 로컬 적용은 따로 실행됩니다.",
@@ -188,6 +220,22 @@ const KO: Record<ReviewMessageKey, string> = {
 };
 
 const ZH: Record<ReviewMessageKey, string> = {
+  "measure.title": "实测效果",
+  "measure.hint": "每阶段输入 1–10 个运行 ID，以逗号分隔。均值仅包括成功运行的全部任务耗时及额外开销。所选样本不能证明因果节省或实际账单。",
+  "measure.empty": "尚未测量。安装或应用补丁本身不能证明节省。",
+  "measure.blocked": "样本不可比较",
+  "measure.delta": "观测到的耗时减少（负数表示更慢）",
+  "measure.before": "应用前",
+  "measure.after": "应用后",
+  "measure.mean": "成功运行的平均任务总耗时",
+  "measure.success": "成功率",
+  "measure.rerun": "重新运行率",
+  "measure.samples": "所选成功样本（虚线：应用前；实线：应用后）",
+  "measure.limits": "测量限制",
+  "measure.network": "读取现有 GitHub 运行并在本地保存结果，不会启动 CI。",
+  "measure.off": "请在 CI Diet 设置中启用网络访问以进行测量。",
+  "measure.action": "测量所选运行",
+
   nav: "CI Diet 审查",
   "page.title": "报告与变更",
   "page.intro": "查看最新报告，并逐个批准计划。批准和本地应用是两个独立步骤。",
@@ -280,6 +328,22 @@ const ZH: Record<ReviewMessageKey, string> = {
 };
 
 const HI: Record<ReviewMessageKey, string> = {
+  "measure.title": "मापा गया प्रभाव",
+  "measure.hint": "हर चरण में अल्पविराम से अलग 1–10 रन ID डालें। औसत में केवल सफल रन का पूरा जॉब समय और अतिरिक्त समय शामिल है। चुने हुए नमूने कारणात्मक बचत या वास्तविक बिल साबित नहीं करते।",
+  "measure.empty": "अभी माप नहीं हुआ। इंस्टॉल या पैच लागू करना बचत का प्रमाण नहीं है।",
+  "measure.blocked": "नमूनों की तुलना संभव नहीं",
+  "measure.delta": "देखी गई समय कटौती (ऋणात्मक = धीमा)",
+  "measure.before": "पहले",
+  "measure.after": "बाद में",
+  "measure.mean": "सफल रन का औसत कुल जॉब समय",
+  "measure.success": "सफलता दर",
+  "measure.rerun": "दोबारा चलाने की दर",
+  "measure.samples": "चुने हुए सफल नमूने (टूटी रेखा: पहले; ठोस: बाद में)",
+  "measure.limits": "माप की सीमाएँ",
+  "measure.network": "मौजूदा GitHub रन पढ़कर नतीजा स्थानीय रूप से सहेजता है। CI शुरू नहीं करता।",
+  "measure.off": "मापने के लिए CI Diet सेटिंग में नेटवर्क चालू करें।",
+  "measure.action": "चुने हुए रन मापें",
+
   nav: "CI Diet समीक्षा",
   "page.title": "रिपोर्ट और बदलाव",
   "page.intro": "नवीनतम रिपोर्ट देखें और हर योजना को अलग से स्वीकृत करें। स्वीकृति और स्थानीय लागू करना अलग चरण हैं।",
@@ -372,6 +436,22 @@ const HI: Record<ReviewMessageKey, string> = {
 };
 
 const ES: Record<ReviewMessageKey, string> = {
+  "measure.title": "Efecto medido",
+  "measure.hint": "Introduce 1–10 ID de ejecución por fase, separados por comas. La media incluye todo el tiempo de los trabajos y sus costes de tiempo adicionales, solo en ejecuciones exitosas. Los datos seleccionados no prueban ahorro causal ni facturación real.",
+  "measure.empty": "Sin medición. Instalar o aplicar un parche no demuestra ahorro.",
+  "measure.blocked": "Muestras no comparables",
+  "measure.delta": "Reducción observada (negativa = más lento)",
+  "measure.before": "Antes",
+  "measure.after": "Después",
+  "measure.mean": "Media total de trabajos exitosos",
+  "measure.success": "Tasa de éxito",
+  "measure.rerun": "Tasa de reejecución",
+  "measure.samples": "Muestras exitosas seleccionadas (discontinua: antes; continua: después)",
+  "measure.limits": "Límites de la medición",
+  "measure.network": "Lee ejecuciones GitHub existentes y guarda el resultado localmente. No inicia CI.",
+  "measure.off": "Activa el acceso de red en los ajustes de CI Diet para medir.",
+  "measure.action": "Medir ejecuciones seleccionadas",
+
   nav: "Revisión de CI Diet",
   "page.title": "Informes y cambios",
   "page.intro": "Revisa el último informe y aprueba cada plan por separado. La aprobación y la aplicación local son pasos distintos.",
@@ -464,6 +544,22 @@ const ES: Record<ReviewMessageKey, string> = {
 };
 
 const FR: Record<ReviewMessageKey, string> = {
+  "measure.title": "Effet mesuré",
+  "measure.hint": "Saisissez 1 à 10 ID d’exécution par phase, séparés par des virgules. La moyenne inclut tous les travaux et leurs surcoûts temporels, uniquement pour les exécutions réussies. Les échantillons choisis ne prouvent ni gain causal ni facturation réelle.",
+  "measure.empty": "Aucune mesure. L’installation ou l’application d’un correctif ne prouve pas un gain.",
+  "measure.blocked": "Échantillons non comparables",
+  "measure.delta": "Réduction observée (négative = plus lent)",
+  "measure.before": "Avant",
+  "measure.after": "Après",
+  "measure.mean": "Durée totale moyenne des travaux réussis",
+  "measure.success": "Taux de réussite",
+  "measure.rerun": "Taux de réexécution",
+  "measure.samples": "Échantillons réussis choisis (pointillés : avant ; trait plein : après)",
+  "measure.limits": "Limites de la mesure",
+  "measure.network": "Lit les exécutions GitHub existantes et enregistre le résultat localement, sans lancer CI.",
+  "measure.off": "Activez l’accès réseau dans les réglages CI Diet pour mesurer.",
+  "measure.action": "Mesurer les exécutions choisies",
+
   nav: "Revue CI Diet",
   "page.title": "Rapports et modifications",
   "page.intro": "Consultez le dernier rapport et approuvez chaque plan séparément. L’approbation et l’application locale sont deux étapes distinctes.",
