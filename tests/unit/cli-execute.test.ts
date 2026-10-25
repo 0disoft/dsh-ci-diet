@@ -184,3 +184,16 @@ test("executeCli reports usage errors without touching the real streams", async 
   assert.equal(stdout.text(), "");
   assert.match(stderr.text(), /unknown-command/);
 });
+
+test("default scan storage honors the injected state environment", async () => {
+  const root = makeRoot();
+  try {
+    const local = join(root, "local-state");
+    const stderr = capture();
+    const code = await executeCli(["scan", "--cwd", root, "--json"], {
+      cwd: root, env: { LOCALAPPDATA: local }, stdout: capture(), stderr,
+    });
+    assert.equal(code, 0, stderr.text());
+    assert.ok(existsSync(join(local, "CI-Diet", "profiles", "default", "reports")));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
