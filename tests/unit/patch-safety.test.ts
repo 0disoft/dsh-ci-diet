@@ -446,6 +446,57 @@ test("accepts a policy snapshot exactly 600 seconds old and rejects either direc
   assert.deepEqual(checkApply({ ...base, plan, now: NOW }), ["POLICY_STALE"]);
 });
 
+test("apply refuses a retention edit declared as an allowed timeout rule", async (t) => {
+  const f = fixture("CD008");
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  // Reproduce a schema-valid stored plan with a matching digest, but misleading
+  // rule metadata. Normal plan creation derives this metadata from the edits.
+  const payload = { ...f.plan.payload, ruleIds: ["CD005"] as PatchPlan["payload"]["ruleIds"] };
+  const plan = { ...f.plan, payload, planDigest: digestOf(payload) };
+  f.store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+  approve(f.store, plan);
+  const nonce = f.store.readNonce(plan.planId);
+  const result = await applyPlan({ store: f.store, planId: plan.planId, now: NOW,
+    subjectId: "tester", allowedRules: ["CD005"] });
+  t.diagnostic("retention edit with only timeout allowed: " + result.state);
+  assert.equal(result.state, "not_applied");
+  assert.ok(result.reasons.includes("RULE_NOT_ALLOWED"));
+  assert.equal(readFileSync(f.file, "utf8"), WORKFLOW);
+  assert.deepEqual(f.store.readNonce(plan.planId), nonce);
+  assert.deepEqual(f.store.listChanges(), []);
+  assert.deepEqual(readdirSync(join(f.store.root, "backups")), []);
+});
+
+for (const declared of [["CD005"], ["CD008", "CD005"]] as const) {
+  test("apply invariant rejects declared rules inconsistent with edits: " + declared.join(","), (t) => {
+    const f = fixture("CD008");
+    t.after(() => rmSync(f.root, { recursive: true, force: true }));
+    const payload = { ...f.plan.payload, ruleIds: [...declared] };
+    const plan = { ...f.plan, payload, planDigest: digestOf(payload) };
+    assert.deepEqual(checkApply({ plan, now: NOW, currentText: WORKFLOW,
+      currentDependencyHash: dependencyHashOf([]), coverageWriteAllowed: true,
+      nonceValid: true, backupAvailable: true }), ["RULE_NOT_ALLOWED"]);
+  });
+}
+
+test("apply invariant accepts the same rule set in a different order", (t) => {
+  const f = fixture("CD005");
+  t.after(() => rmSync(f.root, { recursive: true, force: true }));
+  const retention = planRetentionEdit(WORKFLOW, f.workflow.jobs[0]!, f.workflow.jobs[0]!.steps[1]!, 7).edit!;
+  const built = buildPatchPlan({ binding: f.binding, workflow: f.workflow, text: WORKFLOW,
+    edits: [...f.plan.payload.edits, retention], attestations: f.plan.payload.attestations,
+    policies: f.policies, blockers: [], coverageWriteAllowed: true, now: NOW });
+  const payload = { ...built.plan.payload, ruleIds: [...built.plan.payload.ruleIds].reverse() };
+  assert.deepEqual(checkApply({ plan: { ...built.plan, payload, planDigest: digestOf(payload) }, now: NOW,
+    currentText: WORKFLOW, currentDependencyHash: dependencyHashOf([]),
+    coverageWriteAllowed: true, nonceValid: true, backupAvailable: true }), []);
+  const duplicatePayload = { ...payload, ruleIds: ["CD005", "CD005"] as PatchPlan["payload"]["ruleIds"] };
+  assert.deepEqual(checkApply({ plan: { ...built.plan, payload: duplicatePayload, planDigest: digestOf(duplicatePayload) },
+    now: NOW, currentText: WORKFLOW, currentDependencyHash: dependencyHashOf([]),
+    coverageWriteAllowed: true, nonceValid: true, backupAvailable: true }), ["RULE_NOT_ALLOWED"],
+  "repeating one declared rule cannot hide a different rule in a mixed edit set");
+});
+
 test("classifies runner labels conservatively", () => {
   assert.equal(skuForLabels(["ubuntu-latest"]), "actions_linux");
   assert.equal(skuForLabels(["windows-2025"]), "actions_windows");

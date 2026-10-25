@@ -123,6 +123,13 @@ export function checkApply(input: ApplyCheckInput): ApplyReasonCode[] {
   const payload = input.plan.payload;
 
   if (digestOf(payload) !== input.plan.planDigest) reasons.push("PLAN_DIGEST_MISMATCH");
+  // A matching digest proves unchanged bytes, not that the rule summary names
+  // the actual edits. Policy selection and allowedRules must not trust a
+  // different rule set, including in previously saved/externally built plans.
+  const editedRules = new Set(payload.edits.map((edit) => edit.ruleId));
+  const declaredRules = new Set(payload.ruleIds);
+  if (editedRules.size !== declaredRules.size || declaredRules.size !== payload.ruleIds.length
+    || payload.ruleIds.some((rule) => !editedRules.has(rule))) reasons.push("RULE_NOT_ALLOWED");
   if (input.plan.provenance !== "observed") reasons.push("SYNTHETIC_PLAN");
   if (isExpired(now, isoMillis(payload.expiresAt))) reasons.push("PLAN_EXPIRED");
 

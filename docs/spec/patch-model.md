@@ -231,6 +231,7 @@ closed and is exactly this table.
 
 | Invariant | Reason code |
 | --- | --- |
+| Declared rule ids exactly match the unique byte-edit rules, and the rules are allowed by the current apply configuration | `RULE_NOT_ALLOWED` |
 | Unapplied plan TTL (7 days) still valid | `PLAN_EXPIRED` |
 | Attestation exists and is valid for the edited job or step | `ATTESTATION_MISSING` / `ATTESTATION_EXPIRED` / `ATTESTATION_REVOKED` |
 | Attestation `workflowHash` and `dependencyHash` match current bytes | `ATTESTATION_HASH_MISMATCH` |
@@ -242,6 +243,12 @@ closed and is exactly this table.
 | Nonce is valid, unused, from the same peer, and younger than the approval TTL (600 s by default) | `NONCE_INVALID` |
 | Policy snapshot is at most 600 seconds old | `POLICY_STALE` |
 | Backup is durably stored | `BACKUP_UNAVAILABLE` |
+
+Normal plan creation derives `ruleIds` from the byte edits. Apply checks this
+relationship again for stored plans: a correct digest alone does not prove
+that a rule summary describes the edits. Missing, extra, or duplicate declared
+rules are refused before backup creation or workflow writes; declaration order
+does not matter.
 
 `inputHashes` is the sorted sha256 list recorded on both the plan and the
 premise: `workflowSource`, `workflowDefinition`, `policySnapshot`, and

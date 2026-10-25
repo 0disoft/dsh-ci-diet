@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Apply verifies that the declared rule ids exactly match the unique rules in
+  the byte edits. A schema-valid, correctly digested stored plan cannot disguise
+  a retention edit as an allowed timeout rule or omit its required policy check;
+  inconsistent declarations are refused with `RULE_NOT_ALLOWED` before backups
+  or workflow writes, preserving the approval for inspection.
+
 - Current generation report lookup by id uses validated snapshot pointers before
   scanning retained history. A valid current report needs only one generation
   report read, and unrelated corrupt retained reports no longer block it. Missing
