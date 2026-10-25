@@ -240,36 +240,33 @@ Normal successful runtime reduction is `not_applicable`. Historical excess is
 computed only when an abnormal long run's termination cause is known; simply
 being slow is not a hang.
 
-## CD006: npm download cache
+## CD006: npm/pnpm download cache
 
-CD006 reads workflow text and needs no run history. It targets a job only when
-the workflow and job keep the repository root as their working directory, the
-step immediately before setup-node is `actions/checkout` without user `with`
-options, exactly one `actions/setup-node@v3` or `@v4` step (major, major.minor,
-or major.minor.patch) follows it, and the step immediately after it runs exactly
-`npm ci`. The job must not use a reusable workflow, a local action, any `uses`
-value that names a cache action, an existing `cache`, `cache-dependency-path`,
-or `package-manager-cache` input, or a flow-style step mapping. The root
-`package.json` and `package-lock.json` must be committed regular files, parse
-as JSON, be no larger than 4 MiB, and use lockfile version 1, 2, or 3; symlinks
-are rejected.
+CD006 needs no history. It matches one `actions/setup-node@v3` through `@v7`
+(major, minor or patch tags), a prior checkout, and exactly one unconditional
+`npm ci` or `pnpm install --frozen-lockfile`. A literal install working directory
+may be set on the step, job or workflow; expressions and parent paths are rejected.
+pnpm requires a prior `pnpm/action-setup` without an automatic install. Checkout
+may specify fetch depth but cannot select a different repository, ref or path.
+Unknown commands between checkout and install are excluded.
 
-The edit inserts only `cache: npm` and `cache-dependency-path: package-lock.json`
-into the setup-node `with` mapping. Node and action versions, `npm ci`, tests,
-permissions, and every other workflow field stay unchanged. Local cache actions,
-separate cache steps, and dynamic cache paths are outside the rule and are never
-proposed.
+The selected `package.json` and lockfile, plus root `package.json` (which controls
+modern setup-node automatic caching), must be tracked regular files no larger
+than 2 MiB. JSON manifests must be valid, npm lockfile versions must be 1–3,
+and symlinked paths are rejected. npm-shrinkwrap takes precedence, so those npm
+projects are excluded. Existing cache actions/inputs and explicit
+`package-manager-cache` settings are preserved. v5 automatic package-manager
+caching and v6/v7 automatic npm caching are excluded when detected. SHA-pinned
+action refs and dynamic/mixed installs receive no automatic cache patch.
 
-Evidence is `static` and bound to the workflow hash plus the hashes of the two
-root manifests. Cache benefit is unknown until comparable cold and warm runs
-exist, so `standaloneRunnerSeconds` is unknown with reason
-`CACHE_BENEFIT_UNMEASURED`; a finding or plan never claims saved runner minutes
-or money. A plan still needs explicit human approval and uses the normal apply
-and revert flow. CLI `plan --rule CD006` performs this static scan directly and
-saves a plan without a prior history sync. Only the `workflowDefinitions` axis
-must be complete: a partial axis degrades the rule, an unavailable axis skips
-it, and the other four axes do not restrict it. A missing, unreadable, or
-invalid root manifest produces no CD006 finding.
+The edit inserts only `cache: npm|pnpm` and the selected `cache-dependency-path`.
+Versions, install commands, tests and permissions stay unchanged. Apply rechecks
+the target, generated edit and all pinned dependency hashes before any write.
+Evidence remains static with `CACHE_BENEFIT_UNMEASURED`; no saved minutes or dollars
+are claimed. Only the workflow-definition coverage axis restricts this rule.
+CLI `plan --rule CD006` works without prior sync; human approval and revert apply
+as usual. After real before/after runs, use `measure` to link observations to the
+applied change's exact workflow hashes.
 
 ## CD008: artifact retention
 

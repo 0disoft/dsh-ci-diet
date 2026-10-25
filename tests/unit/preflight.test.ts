@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import type { PreToolDecision, ToolExecution } from "@deepseek-ai/dsh-tools";
-import { deploymentDirectories, registerPreflight } from "../../src/dsh/host/preflight.ts";
+import { deploymentDirectories, inspectPreflight, registerPreflight } from "../../src/dsh/host/preflight.ts";
 
 test("preflight recognizes literal deployment commands and resolves explicit directory changes", () => {
   const cwd = resolve("repo");
@@ -60,4 +60,27 @@ test("deployment reminder is read-only, once per session/source and preserves ot
   writeFileSync(file, source + "concurrency: test\n");
   assert.equal((await host.invoke(args)).kind, "allow");
   assert.equal((await host.invoke({ command: "git push", workdir: join(root, "missing") })).kind, "allow");
+});
+
+
+test("preflight detects modern nested pnpm installs and tracks the selected lockfile", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "ci-diet-preflight-cache-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  execFileSync("git", ["init", "--quiet"], { cwd: root, windowsHide: true, stdio: "pipe", timeout: 5000 });
+  mkdirSync(join(root, ".github/workflows"), { recursive: true });
+  mkdirSync(join(root, "app"));
+  writeFileSync(join(root, "package.json"), '{}');
+  writeFileSync(join(root, "app/package.json"), '{}');
+  writeFileSync(join(root, "app/pnpm-lock.yaml"), 'lockfileVersion: 9\n');
+  execFileSync("git", ["add", "--", "package.json", "app/package.json", "app/pnpm-lock.yaml"], { cwd: root, windowsHide: true, stdio: "pipe", timeout: 5000 });
+  const source = "on: push\njobs:\n  test:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - uses: pnpm/action-setup@v4\n      - uses: actions/setup-node@v7\n      - run: pnpm install --frozen-lockfile\n        working-directory: app\n";
+  const path = join(root, ".github/workflows/ci.yml");
+  writeFileSync(path, source);
+  const settings = { enabled: true, rules: ["CD006"] as const, maxWorkflowBytes: 524288 };
+  const first = inspectPreflight(root, settings);
+  assert.equal(first.opportunities[0]!.rule, "CD006");
+  writeFileSync(join(root, "app/pnpm-lock.yaml"), 'lockfileVersion: 9\n# changed\n');
+  assert.notEqual(inspectPreflight(root, settings).fingerprint, first.fingerprint);
+  writeFileSync(path, source.replace("setup-node@v7", "setup-node@v7\n        with:\n          package-manager-cache: false"));
+  assert.equal(inspectPreflight(root, settings).opportunities.length, 0);
 });

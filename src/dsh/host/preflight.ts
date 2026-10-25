@@ -90,9 +90,9 @@ export function inspectPreflight(cwd: string, settings: PreflightSettings) {
   if (discovery.workflows.reduce((total, file) => total + file.bytes, 0) > 2 * 1024 * 1024) throw new Error("preflight byte budget exceeded");
   const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
   const opportunities: Opportunity[] = [];
-  const cacheTargets = settings.rules.includes("CD006") ? workflows.flatMap((workflow) => npmCacheTargets(workflow).map((t) => ({ workflow, ...t }))) : [];
-  const dependencies = cacheTargets.length === 0 ? null : npmCacheDependencies(root);
-  if (dependencies !== null) for (const { workflow, job, step } of cacheTargets) opportunities.push({ rule: "CD006", workflow: workflow.path,
+  const cacheTargets = settings.rules.includes("CD006") ? workflows.flatMap((workflow) => npmCacheTargets(workflow, root).map((t) => ({ workflow, ...t }))) : [];
+  const dependencies = cacheTargets.map((target) => npmCacheDependencies(root, target));
+  for (const [index, { workflow, job, step }] of cacheTargets.entries()) if (dependencies[index] !== null) opportunities.push({ rule: "CD006", workflow: workflow.path,
     job: job.key, step: step.index, next: "ci_diet_scan then ci_diet_plan for this cwd, job and step; review and get human approval before apply" });
   if (settings.rules.includes("CD006")) for (const w of workflows) {
     if (w.parseError !== null || w.unsupported.length > 0) continue;
