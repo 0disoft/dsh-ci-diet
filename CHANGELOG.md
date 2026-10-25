@@ -76,6 +76,11 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Workflow discovery rejects canonical paths on a different Windows drive or
+  UNC share before inspecting or reading the target file. Parent directory
+  links can no longer bypass the workspace boundary through an absolute
+  `path.relative()` result; such workflows report `WORKFLOW_OUTSIDE_ROOT`.
+
 - Job collection now verifies each run attempt against its largest reported
   `total_count`. Short or empty terminal pages become partial with
   `JOB_COLLECTION_INCOMPLETE` and identify the affected run and attempt. Collected

@@ -74,6 +74,27 @@ test("discovery rejects symlinks and files that resolve outside the root", () =>
   assert.deepEqual(result.skipped.map((item) => item.reason), ["WORKFLOW_OUTSIDE_ROOT", "WORKFLOW_NOT_A_FILE"]);
 });
 
+for (const target of process.platform === "win32"
+  ? ["D:\\outside\\ci.yml", "\\\\other-host\\share\\ci.yml"]
+  : ["/outside/ci.yml"]) {
+  test("discovery refuses external realpaths before stat or read: " + target, () => {
+    const fs = memoryFs({ "ci.yml": "on: push\n" }, {
+      entries: [entry("ci.yml", "file")],
+      realpaths: { [join(DIRECTORY, "ci.yml")]: target },
+    });
+    let stats = 0;
+    let reads = 0;
+    const result = discoverWorkflows(ROOT, { fs: { ...fs,
+      stat: path => { stats += 1; return fs.stat(path); },
+      readFile: (path, encoding) => { reads += 1; return fs.readFile(path, encoding); },
+    } });
+    assert.equal(result.workflows.length, 0);
+    assert.deepEqual(result.skipped, [{ path: ".github/workflows/ci.yml", reason: "WORKFLOW_OUTSIDE_ROOT" }]);
+    assert.equal(stats, 0, "do not stat an external file");
+    assert.equal(reads, 0, "do not read an external file");
+  });
+}
+
 test("a static scan uses the same filesystem and command seams", () => {
   const fs = memoryFs({ "ci.yml": "on: pull_request\njobs: {}\n" }, { entries: [entry("ci.yml", "file")] });
   const result = runStaticScan({

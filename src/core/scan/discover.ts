@@ -1,4 +1,4 @@
-import { join, relative, sep } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 import { nodeFileSystem } from "../support/filesystem.ts";
 import type { FileSystem } from "../support/filesystem.ts";
 
@@ -40,7 +40,9 @@ function toPosix(path: string): string {
 
 function insideRoot(root: string, candidate: string): boolean {
   const relativePath = relative(root, candidate);
-  return relativePath !== "" && !relativePath.startsWith("..") && !relativePath.includes(".." + sep);
+  // Cross-drive and cross-share Windows paths remain absolute after relative().
+  return relativePath !== "" && !isAbsolute(relativePath)
+    && !relativePath.startsWith("..") && !relativePath.includes(".." + sep);
 }
 
 /**
