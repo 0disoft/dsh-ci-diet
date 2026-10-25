@@ -70,7 +70,7 @@ export function npmCacheTargets(workflow: WorkflowDefinition, root?: string): Np
 }
 
 /** Bound reads, require Git-tracked files, and reject symlinked ancestors. */
-function readPinned(root: string, ref: string): Buffer {
+function readPinned(root: string, ref: string, alreadyTracked = false): Buffer {
   const realRoot = realpathSync(root);
   let path = realRoot;
   for (const part of ref.split("/")) {
@@ -82,7 +82,7 @@ function readPinned(root: string, ref: string): Buffer {
   if (escaped.startsWith(".." + sep) || escaped === "..") throw new Error("dependency outside root");
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error("unsupported manifest");
-  execFileSync("git", ["ls-files", "--error-unmatch", "--", ref], { cwd: realRoot, timeout: 2000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  if (!alreadyTracked) execFileSync("git", ["ls-files", "--error-unmatch", "--", ref], { cwd: realRoot, timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   return readFileSync(path);
 }
 
@@ -91,8 +91,9 @@ export function npmCacheDependencies(root: string, target: Pick<NpmCacheTarget, 
     const prefix = target.directory === "." ? "" : target.directory + "/";
     if (target.manager === "npm" && existsSync(join(root, prefix, "npm-shrinkwrap.json"))) return null;
     const refs = [...new Set(["package.json", prefix + "package.json", target.lockfile])];
+    execFileSync("git", ["ls-files", "--error-unmatch", "--", ...refs], { cwd: root, timeout: 10_000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     return refs.map((ref) => {
-      const bytes = readPinned(root, ref);
+      const bytes = readPinned(root, ref, true);
       if (ref.endsWith(".json")) {
         const value = JSON.parse(bytes.toString("utf8"));
         if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid manifest");

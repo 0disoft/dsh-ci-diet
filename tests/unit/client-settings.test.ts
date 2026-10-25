@@ -85,6 +85,7 @@ function findElement(node: unknown, predicate: (element: FakeElement) => boolean
 function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
   const captured: { id: string; factory(require: (id: string) => unknown): unknown }[] = [];
   const sandbox = { window: { __ModuleLoader__: { load(entry: unknown) { captured.push(entry as never); } } } };
+  Object.assign(sandbox, { setInterval: () => 0, clearInterval: () => {} });
   vm.runInNewContext(readFileSync(join(ROOT, "client", "index.js"), "utf8"), sandbox);
   assert.equal(captured.length, 1);
   const entry = captured[0]!;

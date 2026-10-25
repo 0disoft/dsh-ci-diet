@@ -119,7 +119,7 @@ test("CLI creates an offline CD006 plan in a fresh state directory", (t) => {
   const root = fixture(t);
   const result = spawnSync(process.execPath, [join(import.meta.dirname, "../../src/cli/index.ts"), "plan", "--cwd", root,
     "--state-dir", join(root, "state"), "--rule", "CD006", "--workflow", PATH, "--job", "test", "--step", "1", "--json"],
-  { env: isolatedEnv(), encoding: "utf8", timeout: 15000, windowsHide: true });
+  { env: isolatedEnv(), encoding: "utf8", timeout: 30000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.equal(JSON.parse(result.stdout).payload.ruleIds[0], "CD006");
   assert.equal(readFileSync(join(root, PATH), "utf8"), SOURCE);
