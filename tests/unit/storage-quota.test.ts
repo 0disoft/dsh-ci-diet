@@ -268,6 +268,78 @@ test("readReport resolves a report kept by an earlier generation", () => {
   });
 });
 
+test("current report id lookup reads one generation report regardless of retained history", (t) => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    const snapshot = history(NOW.toISOString());
+    const report = reportFor(binding, snapshot);
+    store.saveHistorySnapshot(binding, snapshot, report);
+    // These retained generations sort before the current g_<uuid> directory.
+    for (let i = 0; i < 32; i += 1) {
+      const directory = join(store.root, "snapshots", "generations", binding.bindingId, "a_" + i);
+      mkdirSync(directory);
+      writeFileSync(join(directory, "binding.json"), JSON.stringify(binding));
+      writeFileSync(join(directory, "history.json"), JSON.stringify(snapshot));
+      writeFileSync(join(directory, "report.json"), JSON.stringify({ ...report, reportId: "r_old_" + i }));
+    }
+    const reopened = new PatchStore(store.root);
+    const reader = reopened as unknown as { readJson(path: string, kind?: DocumentKind): unknown };
+    const read = reader.readJson.bind(reopened);
+    let reportReads = 0;
+    t.mock.method(reader, "readJson", (path: string, kind?: DocumentKind) => {
+      if (/[\\/]report\.json$/.test(path)) reportReads += 1;
+      return read(path, kind);
+    });
+    assert.equal(reopened.readReport(report.reportId)?.reportId, report.reportId);
+    t.diagnostic("generation report reads with 32 retained reports: " + reportReads);
+    assert.equal(reportReads, 1);
+  });
+});
+
+test("current report id lookup ignores unrelated corrupt retained reports", () => {
+  withRoot((root) => {
+    const store = PatchStore.open(join(root, "state"));
+    const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+    const snapshot = history(NOW.toISOString());
+    const report = reportFor(binding, snapshot);
+    store.saveHistorySnapshot(binding, snapshot, report);
+    const unrelated = join(store.root, "snapshots", "generations", binding.bindingId, "a_unrelated");
+    mkdirSync(unrelated);
+    writeFileSync(join(unrelated, "report.json"), "{");
+    assert.equal(store.readReport(report.reportId)?.reportId, report.reportId);
+    assert.throws(() => store.readReport("r_missing"), StoreCorruptionError, "fallback still exposes corruption");
+    const pointer = JSON.parse(readFileSync(join(store.root, "snapshots", "current", binding.bindingId + ".json"), "utf8"));
+    writeFileSync(join(store.root, "snapshots", "generations", binding.bindingId, pointer.generationId, "report.json"), "{");
+    assert.throws(() => store.readReport(report.reportId), StoreCorruptionError, "target corruption still fails closed");
+  });
+});
+
+for (const defect of ["missing", "invalid JSON", "missing generation", "wrong report"]) {
+  test("report id lookup falls back when its snapshot pointer has " + defect, () => {
+    withRoot((root) => {
+      const store = PatchStore.open(join(root, "state"));
+      const binding = createLocalBinding(root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+      const snapshot = history(NOW.toISOString());
+      const report = reportFor(binding, snapshot);
+      store.saveHistorySnapshot(binding, snapshot, report);
+      const path = join(store.root, "snapshots", "current", binding.bindingId + ".json");
+      const pointer = JSON.parse(readFileSync(path, "utf8"));
+      if (defect === "missing") rmSync(path);
+      else if (defect === "invalid JSON") writeFileSync(path, "{");
+      else {
+        const directory = join(store.root, "snapshots", "generations", binding.bindingId, "g_wrong");
+        if (defect === "wrong report") {
+          mkdirSync(directory);
+          writeFileSync(join(directory, "report.json"), JSON.stringify({ ...report, reportId: "r_other" }));
+        }
+        writeFileSync(path, JSON.stringify({ ...pointer, generationId: "g_wrong" }));
+      }
+      assert.equal(store.readReport(report.reportId)?.reportId, report.reportId);
+    });
+  });
+}
+
 test("prune removes expired generation reports and their pointers", () => {
   withRoot((root) => {
     const state = join(root, "state");

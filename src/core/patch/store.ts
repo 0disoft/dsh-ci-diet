@@ -556,6 +556,18 @@ export class PatchStore {
   }
 
   private generationReport(reportId: string): AnalysisReport | null {
+    // Current reports are already located by snapshot pointers. Read the named
+    // record before walking retained history; unrelated corruption must not
+    // break a valid current lookup. Pointers remain hints, never authoritative.
+    for (const pointer of this.snapshotPointers(null)) {
+      if (pointer.reportId !== reportId) continue;
+      const report = this.readJson<AnalysisReport>(
+        join(this.snapshotDirectory(pointer.bindingId, pointer.generationId), "report.json"), "AnalysisReport",
+      );
+      if (report !== null && report.reportId === reportId
+        && report.bindingId === pointer.bindingId && report.generatedAt === pointer.generatedAt) return report;
+    }
+    // Historical ids and missing/stale pointers retain the full-scan fallback.
     const root = this.path("snapshots", "generations");
     let bindings;
     try {

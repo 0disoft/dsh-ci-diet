@@ -108,7 +108,11 @@ concurrent save removed that generation, and fall back to the legacy
 an older version.
 
 A retained generation keeps its report, so `readReport(<id>)` resolves reports
-from earlier generations until cleanup removes them. `prune` applies
+from earlier generations until cleanup removes them. For current report ids,
+snapshot pointers locate the report without parsing retained report payloads.
+The report must match the pointer's id, binding, and timestamp; historical ids
+and missing or stale pointers use the full-scan fallback. Corruption in the
+target report remains an error. `prune` applies
 `reportDays` to each generation report and deletes the whole generation as one
 unit; when the removed generation is current, its pointer is removed too. Before
 deleting, the generation's binding is kept as `bindings/<binding>.json` when no

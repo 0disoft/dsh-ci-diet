@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Current generation report lookup by id uses validated snapshot pointers before
+  scanning retained history. A valid current report needs only one generation
+  report read, and unrelated corrupt retained reports no longer block it. Missing
+  or stale pointers still fall back to the historical scan; target corruption
+  remains an error.
+
 - Dependency collection refuses fallback chains with `cd` and unconditional
   continuations after conditional `cd`, instead of pinning a same-named decoy
   script. Operators continued across newlines or comments retain their condition;
