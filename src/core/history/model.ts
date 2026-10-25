@@ -75,6 +75,8 @@ export interface HistoryBundle {
   readonly pulls: ReadonlyMap<number, HistoryPull>;
   readonly workflows: readonly { id: number; name: string; path: string; state: string }[];
   readonly artifacts: readonly ArtifactRecord[];
+  /** Independent of run/job completeness; legacy bundles may omit it. */
+  readonly artifactsCoverage?: Dimension;
   readonly retention: RetentionSnapshot | null;
   readonly protection: ProtectionSnapshot | null;
   readonly coverage: {

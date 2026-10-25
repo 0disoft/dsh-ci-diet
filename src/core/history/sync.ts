@@ -482,11 +482,13 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
   if (jobsPageTruncated) historyReasons.push("JOB_PAGE_LIMIT_REACHED");
   if (missingScopes.some((scope) => scope.reason === "JOB_PAGINATION_CHANGED")) historyReasons.push("JOB_PAGINATION_CHANGED");
   if (missingScopes.some((scope) => scope.reason === "JOB_COLLECTION_INCOMPLETE")) historyReasons.push("JOB_COLLECTION_INCOMPLETE");
-  if (artifactsTruncated) historyReasons.push("ARTIFACT_RUN_LIMIT_REACHED");
+  if (artifactsTruncated) missingScopes.push(missingScope({ family: "policyAndFiles", resource: "actions.artifacts",
+    reason: "ARTIFACT_RUN_LIMIT_REACHED", resumable: true }));
+  const artifactScopes = missingScopes.filter((scope) => scope.resource === "actions.artifacts");
   const historyStatus: Dimension["status"] =
     historyError !== null
       ? "unavailable"
-      : truncatedByLimit || runPaginationChanged || runListingIncomplete || jobsPageTruncated || artifactsTruncated || missingScopes.some((scope) => scope.family === "jobs")
+      : truncatedByLimit || runPaginationChanged || runListingIncomplete || jobsPageTruncated || missingScopes.some((scope) => scope.family === "jobs")
         ? "partial"
         : "complete";
   const definitionsStatus: Dimension["status"] = historyRuns.length === 0 ? "unavailable" : unresolvedDefinitions > 0 ? "partial" : "complete";
@@ -508,6 +510,9 @@ async function collectHistory(options: SyncOptions, signal: AbortSignal): Promis
     pulls,
     workflows,
     artifacts,
+    artifactsCoverage: { status: artifactScopes.length === 0 ? "complete" : "partial",
+      scope: "repository artifacts", fetched: artifacts.length, expected: null,
+      reasons: artifactScopes.map((scope) => scope.reason), missingScopes: artifactScopes },
     retention,
     protection,
     coverage: {

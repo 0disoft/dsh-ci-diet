@@ -279,7 +279,7 @@ test("marks history partial with RUN_LIMIT_REACHED when the run window is trunca
   assert.deepEqual(result.history.coverage.history.reasons, ["RUN_LIMIT_REACHED"]);
 });
 
-test("marks history partial when artifacts stop at the page cap", async () => {
+test("keeps complete run evidence when artifacts stop at the page cap", async () => {
   const transport = fakeTransport();
   const original = transport.get.bind(transport);
   (transport as unknown as { get: typeof original }).get = async (request: { readonly path: string }, family: Parameters<typeof original>[1]) => {
@@ -296,8 +296,15 @@ test("marks history partial when artifacts stop at the page cap", async () => {
   };
   const result = await syncRepositoryHistory({ owner: "o", repo: "r", config: config(), now: NOW, transport });
   assert.equal(result.history.artifacts.length, 3);
-  assert.equal(result.history.coverage.history.status, "partial");
-  assert.deepEqual(result.history.coverage.history.reasons, ["ARTIFACT_RUN_LIMIT_REACHED"]);
+  assert.equal(result.history.coverage.history.status, "complete");
+  assert.deepEqual(result.history.coverage.history.reasons, []);
+  assert.equal(result.history.artifactsCoverage?.status, "partial");
+  assert.deepEqual(result.history.artifactsCoverage?.reasons, ["ARTIFACT_RUN_LIMIT_REACHED"]);
+  assert.ok(result.history.missingScopes.some((scope) => scope.reason === "ARTIFACT_RUN_LIMIT_REACHED"));
+  const complete = composeCoverage(buildCoverage({ apiVersion: "x", ghVersion: "x", requestedFrom: NOW.toISOString(), requestedTo: NOW.toISOString() }, {}), "CD001");
+  const actual = composeCoverage(buildCoverage({ apiVersion: "x", ghVersion: "x", requestedFrom: NOW.toISOString(), requestedTo: NOW.toISOString() }, { history: result.history.coverage.history }), "CD001");
+  assert.equal(actual.level, complete.level);
+  assert.equal(actual.writeAllowed, complete.writeAllowed);
 });
 
 test("marks history partial when jobs stop at the page cap", async () => {
