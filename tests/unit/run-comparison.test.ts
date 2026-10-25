@@ -172,3 +172,40 @@ test("comparison HTML escapes remote content and uses no executable scripts", ()
   assert.ok(html.includes("&lt;script&gt;"));
   assert.ok(html.includes("default-src 'none'"));
 });
+
+
+test("skipped jobs with no runner or timestamps compare only to other skipped jobs", async () => {
+  const mock = api();
+  const runner: GhRunner = async (...args) => {
+    const result = await mock.runner(...args);
+    if (args[0].some((arg) => arg.includes("/jobs"))) {
+      const body = JSON.parse(result.stdout.split("\r\n\r\n")[1]!);
+      body.jobs.push({ id: 99, name: "deploy", status: "completed", conclusion: "skipped" });
+      body.total_count++;
+      return { ...result, stdout: "HTTP/2.0 200 OK\r\n\r\n" + JSON.stringify(body) };
+    }
+    return result;
+  };
+  const left = await collectRunObservation("owner/repo", 1, { runner });
+  const right = await collectRunObservation("owner/repo", 2, { runner });
+  assert.equal(compareRuns(left, right).observedReductionSeconds, 20);
+  assert.equal(compareRuns(left, { ...right, jobs: [right.jobs[0]!, { name: "deploy", seconds: 2, labels: ["ubuntu-latest"], steps: [] }] }).comparable, false);
+});
+
+test("collector paginates over 100 jobs and rejects duplicate or unstable pages", async () => {
+  for (const broken of [false, true]) {
+    const mock = api();
+    const runner: GhRunner = async (...args) => {
+      if (!args[0].some((arg) => arg.includes("/jobs"))) return mock.runner(...args);
+      const second = args[0].some((arg) => /[?&]page=2(?:&|$)/.test(arg));
+      const jobs = Array.from({ length: second ? 1 : 100 }, (_, i) => ({ id: second ? (broken ? 1 : 101) : i + 1,
+        name: "job-" + (second ? 101 : i + 1), labels: ["ubuntu-latest"], status: "completed", conclusion: "success",
+        started_at: "2026-10-24T00:00:00Z", completed_at: "2026-10-24T00:00:01Z", steps: [] }));
+      return { exitCode: 0, stderr: "", stdout: 'HTTP/2.0 200 OK\r\n' + (second ? '' : 'Link: <https://api.github.com/jobs?page=2>; rel="next"\r\n')
+        + '\r\n' + JSON.stringify({ total_count: 101, jobs }) };
+    };
+    if (broken) await assert.rejects(collectRunObservation("owner/repo", 1, { runner }), /JOB_COLLECTION_INCOMPLETE/);
+    else assert.equal((await collectRunObservation("owner/repo", 1, { runner })).jobs.length, 101);
+  }
+});
+

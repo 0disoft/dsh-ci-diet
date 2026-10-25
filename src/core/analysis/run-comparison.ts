@@ -11,6 +11,7 @@ export interface RunObservation {
 }
 
 export interface JobObservation {
+  readonly conclusion?: "success" | "skipped";
   readonly name: string;
   readonly labels: readonly string[];
   readonly seconds: number;
@@ -43,7 +44,7 @@ export function compareRuns(before: RunObservation, after: RunObservation) {
     if (before[field] !== after[field]) blockers.push("DIFFERENT_" + field.toUpperCase());
   }
   if (before.id === after.id && before.attempt === after.attempt) blockers.push("SAME_RUN_ATTEMPT");
-  const key = (job: JobObservation) => JSON.stringify([job.name, [...job.labels].sort()]);
+  const key = (job: JobObservation) => JSON.stringify([job.name, [...job.labels].sort(), job.conclusion ?? "success"]);
   const beforeKeys = before.jobs.map(key);
   const afterKeys = after.jobs.map(key);
   const beforeByKey = indexJobs(before.jobs, beforeKeys);

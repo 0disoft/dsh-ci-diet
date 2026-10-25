@@ -22,24 +22,51 @@ function seconds(start: unknown, end: unknown): number {
   return (to - from) / 1000;
 }
 
-/** At most four GETs per run. Fail on pagination instead of comparing partial jobs. */
+/** Bounded collection: two metadata GETs and at most ten attempt-specific job pages. */
 export async function collectRunObservation(repository: string, runId: number, options: { runner?: GhRunner; signal?: AbortSignal } = {}): Promise<RunObservation> {
   const parts = repository.split("/");
   if (parts.length !== 2 || !Number.isSafeInteger(runId) || runId < 1) throw new Error("INVALID_RUN_REQUEST");
   const base = ownerRepoPath(parts[0]!, parts[1]!);
-  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 2, jobs: 2, definitions: 0, policyAndFiles: 0 }),
+  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 2, jobs: 10, definitions: 0, policyAndFiles: 0 }),
     retries: 0, timeoutMs: 15_000, maxRetryWaitMs: 0, ...options });
   const run = record((await transport.get({ path: base + "/actions/runs/" + runId }, "discovery")).body);
   if (integer(run.id) !== runId || string(record(run.repository).full_name).toLowerCase() !== repository.toLowerCase()) throw new Error("RUN_IDENTITY_MISMATCH");
   if (run.status !== "completed" || run.conclusion !== "success") throw new Error("RUN_NOT_SUCCESSFUL");
   const attempt = integer(run.run_attempt);
-  const response = await transport.get({ path: base + "/actions/runs/" + runId + "/attempts/" + attempt + "/jobs", query: { per_page: "100", page: "1" } }, "jobs");
-  const body = record(response.body);
-  if (!Array.isArray(body.jobs) || typeof body.total_count !== "number" || body.total_count !== body.jobs.length
-    || /rel="next"/.test(response.headers.link ?? "")) throw new Error("JOB_COLLECTION_INCOMPLETE");
+  const collected: unknown[] = [];
+  const ids = new Set<number>();
+  let expected: number | null = null;
+  for (let page = 1; page <= 10; page++) {
+    const response = await transport.get({ path: base + "/actions/runs/" + runId + "/attempts/" + attempt + "/jobs",
+      query: { per_page: "100", page: String(page) } }, "jobs");
+    const body = record(response.body);
+    if (!Array.isArray(body.jobs) || !Number.isSafeInteger(body.total_count) || (body.total_count as number) < 0
+      || (expected !== null && expected !== body.total_count)) throw new Error("JOB_COLLECTION_INCOMPLETE");
+    expected = body.total_count as number;
+    for (const item of body.jobs) {
+      const job = record(item);
+      if (job.id !== undefined) {
+        const id = integer(job.id);
+        if (ids.has(id)) throw new Error("JOB_COLLECTION_INCOMPLETE");
+        ids.add(id);
+      }
+      collected.push(job);
+    }
+    if (collected.length > expected) throw new Error("JOB_COLLECTION_INCOMPLETE");
+    const next = /rel="next"/.test(response.headers.link ?? "");
+    if (!next) {
+      if (collected.length !== expected) throw new Error("JOB_COLLECTION_INCOMPLETE");
+      break;
+    }
+    if (body.jobs.length === 0 || page === 10 || collected.length >= expected) throw new Error("JOB_COLLECTION_INCOMPLETE");
+  }
   const jobs: JobObservation[] = [];
-  for (const item of body.jobs) {
+  for (const item of collected) {
     const job = record(item);
+    if (job.status === "completed" && job.conclusion === "skipped") {
+      jobs.push({ name: string(job.name), labels: [], seconds: 0, steps: [], conclusion: "skipped" });
+      continue;
+    }
     if (job.conclusion !== "success" || job.status !== "completed") throw new Error("JOB_NOT_SUCCESSFUL");
     if (!Array.isArray(job.labels) || job.labels.length === 0 || !Array.isArray(job.steps)) throw new Error("INVALID_JOB_DATA");
     const steps = job.steps.map((item) => {
