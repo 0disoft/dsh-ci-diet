@@ -180,3 +180,56 @@ test("modern automatic-cache declarations and explicit opt-outs are preserved", 
     assert.equal(npmCacheTargets(parseWorkflow(PATH, source.replace("node-version:", "package-manager-cache: false\n          node-version:")), root).length, 0);
   }
 });
+
+const BUN_SOURCE = SOURCE.replace("actions/setup-node@v4", "oven-sh/setup-bun@v2").replace("node-version: '22'", "bun-version: latest").replaceAll("npm ci", "bun install --frozen-lockfile");
+function bunFixture(t: { after(fn: () => void): void }, source = BUN_SOURCE) {
+  const root = fixture(t, source);
+  writeFileSync(join(root, "bun.lock"), '{"lockfileVersion":1}');
+  execFileSync("git", ["add", "--", "bun.lock"], { cwd: root, windowsHide: true, timeout: 5000 });
+  return root;
+}
+test("Bun cache plan preserves frozen install and tests through approval/apply/revert", async (t) => {
+  const root = bunFixture(t);
+  const { store, now, plan } = planned(root);
+  approvePlan({ store, now, planId: plan.planId, subjectId: "tester", channel: "human-cli", confirmation: approvalConfirmation(plan) });
+  const result = await applyPlan({ store, now, planId: plan.planId, subjectId: "tester" });
+  assert.equal(result.state, "applied", JSON.stringify(result));
+  const text = readFileSync(join(root, PATH), "utf8");
+  assert.match(text, /uses: actions\/cache@v4/);
+  assert.match(text, /steps.ci_diet_bun.outputs.bun-version/);
+  assert.match(text, /hashFiles\('bun.lock'\)/);
+  assert.match(text, /bun install --frozen-lockfile/);
+  assert.match(text, /npm test/);
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+  assert.equal((await revertChange({ store, changeId: result.change!.changeId, now })).state, "REVERTED");
+  assert.equal(readFileSync(join(root, PATH), "utf8"), BUN_SOURCE);
+});
+test("Bun lock changes invalidate approval and custom cache settings stay ineligible", async (t) => {
+  const root = bunFixture(t), { store, now, plan } = planned(root);
+  approvePlan({ store, now, planId: plan.planId, subjectId: "tester", channel: "human-cli", confirmation: approvalConfirmation(plan) });
+  writeFileSync(join(root, "bun.lock"), '{"lockfileVersion":1,"changed":true}');
+  assert.ok((await applyPlan({ store, now, planId: plan.planId, subjectId: "tester" })).reasons.includes("DEPENDENCY_HASH_MISMATCH"));
+  writeFileSync(join(root, "bunfig.toml"), '[install.cache]\ndir="elsewhere"');
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+});
+test("Bun canonical insertion handles CRLF and rejects changes to tests or arbitrary cache paths", (t) => {
+  const source = BUN_SOURCE.replaceAll("\n", "\r\n"), root = bunFixture(t, source);
+  const { plan } = planned(root), edits = plan.payload.edits;
+  const original = parseWorkflow(PATH, source), result = applyEdits(source, edits).text;
+  assert.deepEqual(semanticProblems({ original, originalText: source, resultText: result, edits }), []);
+  assert.doesNotMatch(result, /(?<!\r)\n|\r\r/);
+  for (const text of [result.replace("npm test", "echo skipped"), result.replace("~/.bun/install/cache", "~/.ssh")]) {
+    assert.ok(semanticProblems({ original, originalText: source, resultText: text, edits }).length > 0);
+  }
+});
+test("Bun excludes dynamic directories, overridden env, existing caches and untracked locks", (t) => {
+  for (const source of [BUN_SOURCE.replace("- run: bun install", "- run: bun install" ).replace("--frozen-lockfile", "--frozen-lockfile\n        working-directory: '${{ matrix.dir }}'"),
+    BUN_SOURCE.replace("on: [push, pull_request]", "on: [push, pull_request]\nenv:\n  BUN_INSTALL_CACHE_DIR: custom"),
+    BUN_SOURCE.replace("- run: npm test", "- uses: actions/cache@v4")]) {
+    const root = bunFixture(t, source);
+    assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+  }
+  const root = bunFixture(t);
+  execFileSync("git", ["rm", "--cached", "--", "bun.lock"], { cwd: root, windowsHide: true, timeout: 5000, stdio: "pipe" });
+  assert.equal(runStaticScan({ workspaceRoot: root }).report.findings.filter((f) => f.ruleId === "CD006").length, 0);
+});

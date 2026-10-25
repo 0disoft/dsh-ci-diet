@@ -199,6 +199,7 @@ export const es: Record<MessageKey, string> = {
   "finding.CD005.title": "El trabajo {job} no tiene tiempo de espera; el p95 es {p95} s",
   "finding.CD005.text": "El trabajo {job} en {workflow} se ejecutó correctamente {samples} veces con un p95 de rango más cercano de {p95} s. El tiempo de espera de {minutes} minutos es la propuesta de ceil(max(2 * p95, p95 + 300) / 60). La cohorte es la definición {hash}, etiquetas de runner {runner}, evento {event}.",
   "finding.CD006.title": "Activa la caché de descargas de {manager} en el trabajo \"{job}\"",
+  "finding.CD006.bunText": "Añade una caché de descargas Bun por SO, arquitectura, versión de Bun y {lockfile}. La instalación congelada y todas las pruebas siguen ejecutándose. Restaurar y guardar puede costar más tiempo del ahorrado; compara el trabajo completo antes de conservarla.",
   "finding.CD006.text": "Activa la caché de descargas de {manager} de setup-node usando {lockfile} como clave. {install} y todas las pruebas se siguen ejecutando. Una caché ya preparada puede reducir descargas; todavía no se ha medido ningún ahorro de tiempo ni de dinero.",
   "finding.CD008.title.literal": "El paso de carga del trabajo \"{job}\" conserva los artefactos {days} días",
   "finding.CD008.title.expression": "El paso de carga del trabajo \"{job}\" conserva los artefactos durante una expresión",

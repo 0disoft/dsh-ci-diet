@@ -6,7 +6,7 @@ import type { PreToolDecision, ToolExecution } from "@deepseek-ai/dsh-tools";
 import { digestOf } from "../../shared/cdj1.ts";
 import { discoverWorkflows } from "../../core/scan/discover.ts";
 import { parseWorkflow } from "../../core/workflow/parse.ts";
-import { npmCacheDependencies, npmCacheTargets } from "../../core/rules/npm-cache.ts";
+import { npmCacheDependencies, downloadCacheTargets } from "../../core/rules/npm-cache.ts";
 import type { RuleId } from "../../core/model/domain.ts";
 
 /** Only literal commands; substitutions, heredocs, pipelines and script wrappers stay untouched. */
@@ -90,13 +90,14 @@ export function inspectPreflight(cwd: string, settings: PreflightSettings) {
   if (discovery.workflows.reduce((total, file) => total + file.bytes, 0) > 2 * 1024 * 1024) throw new Error("preflight byte budget exceeded");
   const workflows = discovery.workflows.map((file) => parseWorkflow(file.path, file.text));
   const opportunities: Opportunity[] = [];
-  const cacheTargets = settings.rules.includes("CD006") ? workflows.flatMap((workflow) => npmCacheTargets(workflow, root).map((t) => ({ workflow, ...t }))) : [];
+  const cacheTargets = settings.rules.includes("CD006") ? workflows.flatMap((workflow) => downloadCacheTargets(workflow, root).map((t) => ({ workflow, ...t }))) : [];
   const dependencies = cacheTargets.map((target) => npmCacheDependencies(root, target));
   for (const [index, { workflow, job, step }] of cacheTargets.entries()) if (dependencies[index] !== null) opportunities.push({ rule: "CD006", workflow: workflow.path,
     job: job.key, step: step.index, next: "ci_diet_scan then ci_diet_plan for this cwd, job and step; review and get human approval before apply" });
   if (settings.rules.includes("CD006")) for (const w of workflows) {
     if (w.parseError !== null || w.unsupported.length > 0) continue;
     for (const job of w.jobs) {
+      if (cacheTargets.some((t) => t.workflow.path === w.path && t.job.key === job.key)) continue;
       if (!job.steps.some((s) => s.uses?.startsWith("oven-sh/setup-bun@"))
         || job.steps.some((s) => s.uses !== null && (/cache/i.test(s.uses) || s.uses.startsWith("./")))) continue;
       if (job.steps.some((s) => s.run?.trim() === "bun install --frozen-lockfile")) opportunities.push({ rule: "BUN_CACHE_REVIEW", workflow: w.path, job: job.key,

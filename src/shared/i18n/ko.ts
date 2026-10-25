@@ -199,6 +199,7 @@ export const ko: Record<MessageKey, string> = {
   "finding.CD005.title": "작업 {job}에 타임아웃이 없습니다. p95는 {p95}초입니다",
   "finding.CD005.text": "작업 {job}({workflow})은(는) {samples}번 성공했고 최근접 순위 p95는 {p95}초입니다. {minutes}분 타임아웃은 ceil(max(2 * p95, p95 + 300) / 60)에서 나온 제안입니다. 코호트 정의는 {hash}, 러너 레이블은 {runner}, 이벤트는 {event}입니다.",
   "finding.CD006.title": "작업 \"{job}\"의 {manager} 다운로드를 캐시하세요",
+  "finding.CD006.bunText": "OS·아키텍처·Bun 버전·{lockfile} 기준으로 Bun 다운로드 캐시를 추가합니다. 고정 설치와 모든 테스트는 그대로 실행합니다. 복원·저장 시간이 이득보다 클 수 있으므로 전체 잡 시간을 비교한 뒤 유지하세요.",
   "finding.CD006.text": "setup-node의 {manager} 다운로드 캐시를 {lockfile} 기준으로 켭니다. {install}와 모든 테스트는 그대로 실행합니다. 캐시가 데워지면 다운로드가 줄 수 있지만, 시간이나 금액 절감은 아직 측정하지 않았습니다.",
   "finding.CD008.title.literal": "작업 \"{job}\"의 업로드 단계가 아티팩트를 {days}일 동안 보관합니다",
   "finding.CD008.title.expression": "작업 \"{job}\"의 업로드 단계가 아티팩트를 표현식 기간 동안 보관합니다",

@@ -199,6 +199,7 @@ export const zhHans: Record<MessageKey, string> = {
   "finding.CD005.title": "作业 {job} 没有超时；p95 为 {p95} 秒",
   "finding.CD005.text": "作业 {job}（{workflow}）成功运行 {samples} 次，最近秩 p95 为 {p95} 秒。建议超时为 {minutes} 分钟，来自 ceil(max(2 * p95, p95 + 300) / 60)。队列定义为 {hash}，运行器标签为 {runner}，事件为 {event}。",
   "finding.CD006.title": "为作业 \"{job}\" 缓存 {manager} 下载",
+  "finding.CD006.bunText": "按操作系统、架构、Bun 版本和 {lockfile} 添加 Bun 下载缓存。冻结安装和全部测试仍会执行。恢复和保存可能比收益更耗时，请比较完整任务时间后决定是否保留。",
   "finding.CD006.text": "启用 setup-node 的 {manager} 下载缓存，并以 {lockfile} 作为缓存键。{install} 和所有测试仍会运行。缓存预热后可能减少下载，但尚未测量节省的时间或费用。",
   "finding.CD008.title.literal": "作业 \"{job}\" 的上传步骤将制品保留 {days} 天",
   "finding.CD008.title.expression": "作业 \"{job}\" 的上传步骤按表达式保留制品",

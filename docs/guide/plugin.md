@@ -138,7 +138,7 @@ or revert action.
 
 `ci_diet_prune` removes reports, plans, and cache entries according to live storage settings, then reports freed bytes and quota state. It never deletes applied-change backups. Removing those requires the listing token from the CLI.
 
-`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, numeric `step`, `minutes`, and `claims`. CD006 and CD008 require `job` and `step`. Numeric `step` is the zero-based index in the workflow's step array, not a label such as `upload`; for CD006 it indexes the setup-node step. The tool returns edits, coverage, blockers, a plan digest, and `nextCommand`; it does not create or save a durable plan and never approves or applies anything. It reads a saved report, so run `ci_diet_scan` first for an offline CD006 preview. `nextCommand` reruns CLI `ci-diet plan` with the same absolute cwd and state directory so a human can inspect and save the plan there. `ci-only` and `replace-safe` are human attestations for eligible PR-only CD001 changes, not bypass switches.
+`ci_diet_plan` takes `rule`, `workflow`, `cwd`, optional `job`, numeric `step`, `minutes`, and `claims`. CD006 and CD008 require `job` and `step`. Numeric `step` is the zero-based index in the workflow's step array, not a label such as `upload`; for CD006 it indexes the setup-node or setup-bun step. The tool returns edits, coverage, blockers, a plan digest, and `nextCommand`; it does not create or save a durable plan and never approves or applies anything. It reads a saved report, so run `ci_diet_scan` first for an offline CD006 preview. `nextCommand` reruns CLI `ci-diet plan` with the same absolute cwd and state directory so a human can inspect and save the plan there. `ci-only` and `replace-safe` are human attestations for eligible PR-only CD001 changes, not bypass switches.
 
 ## Command line
 
@@ -285,3 +285,5 @@ return JSON with null reduction and exit 3. Slower runs produce negative values.
 Byte differences caused by commit-time line-ending normalization also require new matching evidence; this slice does not normalize hashes. Actual billing and verified causal savings stay unknown/false. No report claims
 that an observed difference was caused by this patch. The output file is created
 without overwriting an existing file; this command currently has no DSH chart UI.
+
+CD006 Bun cache plans use the setup-bun step index, require a tracked text `bun.lock`, and preserve frozen installation and tests. Custom Bun configuration stays review-only; see the [rule specification](../spec/rules.md#bun-dependency-cache-variant). Cache restore/save overhead can exceed its benefit.

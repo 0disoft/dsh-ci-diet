@@ -705,3 +705,5 @@ Keep a Changelog, and the project uses semantic versioning.
   (see ADR-16).
 - The package is not published to npm.
 - CD003 and CD005 are disabled by default pending real-history measurement.
+
+- CD006 can propose an explicit Bun dependency cache with runtime-version/lockfile keys, canonical insertion checks and approval-bound dependency hashes.

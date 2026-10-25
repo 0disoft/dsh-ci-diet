@@ -1,10 +1,11 @@
+import { bunCacheTargets } from "./bun-cache.ts";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { sha256Hex } from "../../shared/cdj1.ts";
 import type { WorkflowDefinition, WorkflowJob, WorkflowStep } from "../workflow/model.ts";
 
-export type CacheManager = "npm" | "pnpm";
+export type CacheManager = "npm" | "pnpm" | "bun";
 export interface NpmCacheTarget {
   readonly job: WorkflowJob;
   readonly step: WorkflowStep;
@@ -13,7 +14,7 @@ export interface NpmCacheTarget {
   readonly lockfile: string;
 }
 
-function directoryOf(workflow: WorkflowDefinition, job: WorkflowJob, install: WorkflowStep): string | null {
+export function directoryOf(workflow: WorkflowDefinition, job: WorkflowJob, install: WorkflowStep): string | null {
   const entry = install.otherEntries.find((item) => item.key === "working-directory");
   const dir = entry === undefined ? (job.defaultWorkingDirectory ?? workflow.defaultWorkingDirectory ?? ".") : entry.literal;
   if (dir === null || !/^[A-Za-z0-9_./@-]+$/.test(dir) || dir.startsWith("/") || dir.split("/").includes("..")) return null;
@@ -37,7 +38,7 @@ export function npmCacheTargets(workflow: WorkflowDefinition, root?: string): Np
     const installs = job.steps.filter((item) => /^(?:npm ci|pnpm install --frozen-lockfile)$/.test(item.run?.trim() ?? ""));
     if (installs.length !== 1) continue;
     const install = installs[0]!;
-    const manager: CacheManager = install.run!.trim().startsWith("pnpm") ? "pnpm" : "npm";
+    const manager: "npm" | "pnpm" = install.run!.trim().startsWith("pnpm") ? "pnpm" : "npm";
     const checkout = job.steps.find((item) => (item.uses ?? "").startsWith("actions/checkout@"));
     if (checkout === undefined || checkout.index >= step.index || install.index <= step.index
       || checkout.withEntries.some((item) => item.key !== "fetch-depth") || checkout.otherEntries.some((item) => item.key !== "id")) continue;
@@ -70,7 +71,7 @@ export function npmCacheTargets(workflow: WorkflowDefinition, root?: string): Np
 }
 
 /** Bound reads, require Git-tracked files, and reject symlinked ancestors. */
-function readPinned(root: string, ref: string, alreadyTracked = false): Buffer {
+export function readPinned(root: string, ref: string, alreadyTracked = false): Buffer {
   const realRoot = realpathSync(root);
   let path = realRoot;
   for (const part of ref.split("/")) {
@@ -102,4 +103,8 @@ export function npmCacheDependencies(root: string, target: Pick<NpmCacheTarget, 
       return { ref, sha256: "sha256:" + sha256Hex(bytes.toString("utf8")) };
     });
   } catch { return null; }
+}
+
+export function downloadCacheTargets(workflow: WorkflowDefinition, root?: string): NpmCacheTarget[] {
+  return [...npmCacheTargets(workflow, root), ...bunCacheTargets(workflow, root)];
 }

@@ -240,7 +240,7 @@ Normal successful runtime reduction is `not_applicable`. Historical excess is
 computed only when an abnormal long run's termination cause is known; simply
 being slow is not a hang.
 
-## CD006: npm/pnpm download cache
+## CD006: npm/pnpm/Bun download cache
 
 CD006 needs no history. It matches one `actions/setup-node@v3` through `@v7`
 (major, minor or patch tags), a prior checkout, and exactly one unconditional
@@ -296,3 +296,18 @@ fixture or real-sample revert shows source corruption or a missed check, disable
 writes for that rule. Suppressions and human evaluations bind to the finding
 fingerprint, workflow hash, expiry, and reason; they never silently carry over
 to a different version of the finding.
+
+### Bun dependency cache variant
+
+CD006 also supports a root checkout followed by one `oven-sh/setup-bun@v2`
+and exactly `bun install --frozen-lockfile`, with tracked `package.json` and
+text `bun.lock` in a literal working directory. It inserts `actions/cache@v4`
+for `~/.bun/install/cache`, using OS, architecture, the setup action's actual
+Bun-version output and the lockfile hash. An unused setup step ID is added
+when needed. Existing IDs, comments, frozen install and tests are preserved.
+Only this canonical insertion is permitted by the semantic guard, and apply
+rechecks its inputs. Existing caches, custom environment/container settings,
+Bun config files, binary lockfiles and unsafe paths remain review-only.
+Restoring and saving add overhead: total job time, including cache post steps,
+must improve before a cache can be called a saving. A static finding is not
+proof of savings and does not automatically apply the patch.

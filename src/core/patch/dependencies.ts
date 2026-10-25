@@ -1,4 +1,4 @@
-import { npmCacheDependencies, npmCacheTargets } from "../rules/npm-cache.ts";
+import { npmCacheDependencies, downloadCacheTargets } from "../rules/npm-cache.ts";
 import { createHash } from "node:crypto";
 import { existsSync, opendirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import type { Dirent } from "node:fs";
@@ -437,6 +437,14 @@ function collectRunSegment(
     if (script !== undefined && !add(base, script)) miss(base, script);
     return;
   }
+  if (baseName(head) === "bun" && segment[1] === "install" && segment.length === 3 && segment[2] === "--frozen-lockfile") {
+    for (const ref of ["package.json", "bun.lock"]) if (!add(base, ref)) miss(base, ref);
+    return;
+  }
+  if (baseName(head) === "bun" && ["run", "test"].includes(segment[1] ?? "")) {
+    collectRunSegment(realRoot, sink, base, ["npm", ...segment.slice(1)]);
+    return;
+  }
   if (baseName(head) === "npm") {
     const separator = segment.indexOf("--");
     const args = segment.slice(1, separator < 0 ? undefined : separator);
@@ -580,7 +588,7 @@ export function collectDependencies(
     return { dependencies: [], unresolved: ["<workspace>"] };
   }
   const sink = createDependencySink(realRoot);
-  for (const target of npmCacheTargets(workflow, realRoot)) {
+  for (const target of downloadCacheTargets(workflow, realRoot)) {
     const manifests = npmCacheDependencies(realRoot, target);
     if (manifests === null) sink.unresolved("cache manifest or lockfile missing");
     else for (const manifest of manifests) { if (!sink.add("", manifest.ref)) sink.miss("", manifest.ref); }

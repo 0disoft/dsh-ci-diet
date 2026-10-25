@@ -1,3 +1,4 @@
+import { bunCacheEdit } from "../rules/bun-cache.ts";
 import type { NpmCacheTarget } from "../rules/npm-cache.ts";
 import { Buffer } from "node:buffer";
 import { sha256Hex } from "../../shared/cdj1.ts";
@@ -268,6 +269,10 @@ export function applyEdits(text: string, edits: readonly ByteEdit[]): AppliedEdi
 
 /** Add only the two setup-node inputs; never insert steps or skip npm ci. */
 export function planNpmCacheEdit(text: string, job: WorkflowJob, step: WorkflowStep, target: Pick<NpmCacheTarget, "manager" | "lockfile"> = { manager: "npm", lockfile: "package-lock.json" }): EditResult {
+  if (target.manager === "bun") {
+    const edit = bunCacheEdit(text, { ...target, job, step, directory: "." });
+    return { edit, error: edit === null ? { code: "EDIT_NOT_APPLICABLE", detail: "unsupported Bun cache insertion" } : null };
+  }
   if (step.flow || step.withFlow || step.withEntries.some((e) => ["cache", "cache-dependency-path", "package-manager-cache"].includes(e.key))) {
     return { edit: null, error: { code: "EDIT_NOT_APPLICABLE", detail: "cache settings already exist or use flow syntax" } };
   }
@@ -322,6 +327,7 @@ export function semanticCheck(
     return null;
   }
   if (edit.ruleId === "CD006") {
+    if (edit.semanticPath.endsWith(".bun-cache")) return null; // Whole-document canonical check runs in semanticProblems.
     const index = /^jobs\.[^.]+\.steps\[(\d+)\]\.with\.cache$/.exec(edit.semanticPath)?.[1];
     const step = index === undefined ? undefined : job.steps[Number(index)];
     if (!/^actions\/setup-node@v[3-7](?:\.\d+){0,2}$/.test(step?.uses ?? "")) return "EDIT_RESULT_INVALID: unsupported cache action";

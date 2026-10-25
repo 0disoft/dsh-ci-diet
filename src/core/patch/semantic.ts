@@ -1,3 +1,4 @@
+import { bunCacheResultValid } from "../rules/bun-cache.ts";
 import { parse } from "yaml";
 import type { ByteEdit } from "../contracts/schema.ts";
 import type { WorkflowDefinition } from "../workflow/model.ts";
@@ -206,6 +207,9 @@ export function semanticProblems(input: SemanticInput): string[] {
         (error instanceof Error ? error.message : String(error)),
     ];
   }
+  const bun = input.edits.find((e) => e.ruleId === "CD006" && e.semanticPath.endsWith(".bun-cache"));
+  if (bun !== undefined) return input.edits.length === 1 && bunCacheResultValid(input.original, input.originalText, input.resultText, bun)
+    ? [] : ["Bun cache edit differs from the canonical insertion"];
   const allowed = allowedPaths(input.edits);
   const differences: Difference[] = [];
   collectDifferences(before, after, [], allowed, differences);

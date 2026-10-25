@@ -10,7 +10,7 @@ import { buildPatchPlan, buildPolicySnapshots, dependencyHashOf } from "./plan.t
 import { createAttestation } from "./attestation.ts";
 import { collectDependencies } from "./dependencies.ts";
 import { planConcurrencyEdit, planRetentionEdit, planTimeoutEdit, planNpmCacheEdit } from "./edits.ts";
-import { npmCacheDependencies, npmCacheTargets } from "../rules/npm-cache.ts";
+import { npmCacheDependencies, downloadCacheTargets } from "../rules/npm-cache.ts";
 
 /** Why a requested patch plan could not be built. Callers map these to their own surface. */
 export type RequestPlanBlocker =
@@ -90,7 +90,7 @@ function requestedEdit(input: RequestedPlanInput): { edits: readonly ByteEdit[];
   const step = job.steps[input.stepIndex];
   if (step === undefined) return failed("STEP_REQUIRED", ["STEP_NOT_FOUND"]);
   if (input.rule === "CD006") {
-    const target = npmCacheTargets(input.workflow, input.binding.workspaceRoot).find((t) => t.job.key === job.key && t.step.index === step.index);
+    const target = downloadCacheTargets(input.workflow, input.binding.workspaceRoot).find((t) => t.job.key === job.key && t.step.index === step.index);
     if (target === undefined || npmCacheDependencies(input.binding.workspaceRoot, target) === null) return failed("EDIT_NOT_APPLICABLE", ["NPM_CACHE_PREREQUISITES_MISSING"]);
     const result = planNpmCacheEdit(input.text, job, step, target);
     if (result.edit === null) return failed("EDIT_NOT_APPLICABLE", [result.error?.detail ?? "EDIT_NOT_APPLICABLE"]);

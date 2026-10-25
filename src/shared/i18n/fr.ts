@@ -199,6 +199,7 @@ export const fr: Record<MessageKey, string> = {
   "finding.CD005.title": "Le job {job} n’a pas de délai d’expiration ; le p95 est de {p95} s",
   "finding.CD005.text": "Le job {job} sur {workflow} a réussi {samples} fois avec un p95 au rang le plus proche de {p95} s. Un délai de {minutes} minutes est la proposition de ceil(max(2 * p95, p95 + 300) / 60). La cohorte est la définition {hash}, les étiquettes de runner {runner}, l’événement {event}.",
   "finding.CD006.title": "Mettez en cache les téléchargements {manager} du job \"{job}\"",
+  "finding.CD006.bunText": "Ajoutez un cache de téléchargements Bun par OS, architecture, version de Bun et {lockfile}. L’installation figée et tous les tests restent exécutés. Restaurer et enregistrer peut coûter plus que le gain ; comparez la durée totale avant de le conserver.",
   "finding.CD006.text": "Activez le cache des téléchargements {manager} de setup-node, indexé par {lockfile}. {install} et tous les tests s’exécutent toujours. Un cache déjà alimenté peut réduire les téléchargements ; aucun gain de temps ni d’argent n’a encore été mesuré.",
   "finding.CD008.title.literal": "L’étape d’envoi du job \"{job}\" conserve les artefacts {days} jours",
   "finding.CD008.title.expression": "L’étape d’envoi du job \"{job}\" conserve les artefacts pendant une expression",

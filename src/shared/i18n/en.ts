@@ -198,6 +198,7 @@ export const en = {
   "finding.CD005.title": "Job {job} has no timeout; p95 is {p95} s",
   "finding.CD005.text": "Job {job} on {workflow} ran successfully {samples} times with a nearest-rank p95 of {p95} s. A timeout of {minutes} minutes is the proposal from ceil(max(2 * p95, p95 + 300) / 60). The cohort is definition {hash}, runner labels {runner}, event {event}.",
   "finding.CD006.title": "Cache {manager} downloads in job \"{job}\"",
+  "finding.CD006.bunText": "Add an explicit Bun download cache keyed by OS, architecture, Bun version and {lockfile}. Frozen installation and all tests still run. Restore/save overhead may exceed the benefit; measure total job time before keeping it.",
   "finding.CD006.text": "Enable setup-node's {manager} download cache keyed by {lockfile}. {install} and every test still run. A warm cache can reduce downloads; no time or money saving has been measured.",
   "finding.CD008.title.literal": "Upload step in job \"{job}\" keeps artifacts for {days} days",
   "finding.CD008.title.expression": "Upload step in job \"{job}\" keeps artifacts for an expression",
