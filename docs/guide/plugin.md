@@ -47,7 +47,7 @@ The Settings page edits the engine configuration read by DSH tools. Every engine
 | Analysis rules | `rules` (`CD001`, `CD002`, `CD003`, `CD004`, `CD005`, `CD006`, `CD008`); at least one remains enabled |
 | History collection | `historyLookbackDays`, `historyMaxRuns`, `historyMaxRequests`, `historyConcurrentRequests`, `historyRequestTimeoutMs` |
 | Storage | `storageStoreMaxBytes`, `storageWorkflowMaxBytes`, `storageCacheMaxBytes`, `storageCacheDays`, `storageReportDays`, `storagePlanDays`; zero disables that cap |
-| Cost estimate | `billingEnabled`, `billingIncludedMinutes`, `billingAccountMinutesUsed` |
+| Cost estimate | `billingIncludedMinutes`, `billingAccountMinutesUsed`; both optional, applied automatically when both are provided |
 
 Network access defaults to true for DSH tools; the CLI remains offline unless `--network` is passed. Static scans and reports work offline. History sync requires network access and authenticated `gh` read access. Changing settings does not run a scan.
 
@@ -60,26 +60,35 @@ and source, policy, TTL, nonce, dependency, backup, and lock checks still apply.
 New DSH profiles use these server-side defaults: `preflightEnabled`,
 `networkEnabled`, and `localApplyEnabled` are `true`, and CD001, CD002, CD004,
 CD006, and CD008 are enabled. The bundle patch repeats the three switch values.
-CD003 and CD005 stay off unless explicitly enabled. Billing estimates stay off
-by default and require an explicit enablement; an existing on setting is
-preserved.
+CD003 and CD005 stay off unless explicitly enabled. Runner-time results do not
+require account setup. Monetary estimates use both account-wide inputs
+automatically on the next analysis after saving. Unknown values are blank
+(`null`); an explicitly entered `0` means actual zero. Clearing or resetting
+either input makes the monetary estimate unknown without hiding runner time.
+The old `billingEnabled` switch is hidden and no longer controls calculation.
+No billing API is queried. Existing stored reports need a new analysis to update.
 
-An existing profile without `defaultsRevision: 1` is migrated when the plugin
+An existing profile below `defaultsRevision: 2` is migrated when the plugin
 starts. CI Diet finds its own active loader entry and calls DSH `configEditor.edit`,
 which takes the profile lock and reads the latest raw config. One save sets the
-three switches on, unions the five default rules into the existing rule list,
-and records `defaultsRevision: 1` in the profile. The marker is stored in that
+three switches on and unions the five default rules into the existing rule list
+only for profiles that have never completed revision 1. Revision 1 profiles keep
+all later switch and rule choices. The save records `defaultsRevision: 2` in the
+profile. For previously enabled billing, omitted numeric values are explicitly
+saved as their former zero defaults; existing numeric inputs and explicit nulls
+are preserved. Other omitted inputs remain unknown. The obsolete switch is
+removed. The marker is stored in that
 profile, not in the bundle. State paths, history and storage limits, retention,
-quotas, billing inputs, and an existing explicit CD003 or CD005 enablement are
+quotas, and an existing explicit CD003 or CD005 enablement are
 left unchanged. A failed edit keeps the old configuration and is retried on a
 later start.
 
-The first save adds the five default rules even when a legacy profile had
-excluded them. After that marker is stored, turning a switch off or excluding a
-rule survives restarts and updates. Clearing `defaultsRevision`, or moving the
-profile back to an older value, asks for that migration again.
+The revision 1 upgrade adds the five default rules even when an older profile
+had excluded them. After that upgrade, turning a switch off or excluding a rule
+survives restarts and updates, including revision 2. Clearing `defaultsRevision`
+requests the initial default-on migration again.
 
-The defaults migration was verified on DSH `0.2.1-rc.2` with `configEditor`,
+The earlier revision 1 migration was verified on DSH `0.2.1-rc.2` with `configEditor`,
 `SettingsForms`, and the Loader in a temporary profile. The test saved legacy
 `false` values as `true`, then verified that a later explicit `false` stayed
 false after restart. This checked the profile runtime and storage path, not a

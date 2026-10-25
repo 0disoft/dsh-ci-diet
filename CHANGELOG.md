@@ -5,6 +5,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Replace the DSH account-allowance switch with automatic use of two optional
+  account inputs. Blank values stay unknown, explicit zero remains valid, and
+  missing monetary estimates show an account-information hint. Revision 2
+  preserves existing numeric inputs, legacy enabled defaults, and later opt-outs.
 - Keep artifact pagination completeness separate from run/job evidence, compare skipped jobs honestly, and paginate up to 1,000 jobs per attempt.
 - Revalidate stored patch values at apply and pin documentation-only evidence to each historical run's base/head SHAs.
 - Persist CLI scan reports and publish unapproved model-generated plans into the human review flow without resetting an existing approval.

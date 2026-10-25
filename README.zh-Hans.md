@@ -4,7 +4,7 @@
 
 **状态：** alpha；`dsh-ci-diet@0.4.0` 已发布到 npm。当前源码树在现有契约、分析引擎、补丁引擎、CLI、DSH 工具、设置页面和自包含 HTML 报告之外，新增了 **设置 → CI Diet Reports** 审查页面。审查页面已在之前的提交中通过真实浏览器 E2E。一次性默认值迁移另行在 DSH `0.2.1-rc.2` 的 configEditor、SettingsForms 和 Loader 运行时中验证，并不表示这次重新验证了浏览器页面渲染。DSH 插件现在默认开启 preflight、历史网络访问和本地应用。
 
-**DSH 默认值与迁移。** 新建 DSH profile 时，`preflightEnabled`、`networkEnabled` 和 `localApplyEnabled` 默认为 `true`，并启用 CD001、CD002、CD004、CD006、CD008。首次启动已有 profile 时，CI Diet 通过 DSH `configEditor` 的加锁编辑保存这三个开关，把这些规则加入现有选择，并在该 profile 中记录 `defaultsRevision: 1`。状态路径、保留期、配额、计费输入以及原先显式启用的 CD003 或 CD005 会保留。保存后关闭的开关或被排除的规则会在重启和更新后继续生效；CD003 和 CD005 只在启用时运行，计费估算默认关闭且需要显式启用，原有的开启设置会保留。
+**DSH 默认值和迁移。** 新配置档默认启用 `preflightEnabled`、`networkEnabled`、`localApplyEnabled` 以及 CD001、CD002、CD004、CD006、CD008。锁定配置档迁移会记录 `defaultsRevision: 2`。已经迁移到修订版 1 的配置档会保留之后选择的开关和规则。状态路径、保留期限、配额和现有数值型账户输入均会保留。除非主动启用，CD003 和 CD005 保持关闭。金额估算会自动使用两项账户输入；留空表示未知，显式填写 `0` 是有效的。以前启用过计费的配置档在省略某个值时，会保留其零默认值。
 
 CI Diet 用于查找可能被浪费的 GitHub Actions 工作，保留每个发现背后的证据，并预览供人审查的小型 workflow 修改。
 
