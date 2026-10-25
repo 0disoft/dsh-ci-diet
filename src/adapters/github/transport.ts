@@ -304,6 +304,9 @@ export class GhTransport {
         // A server can ask for hours. Do not turn that into a hung process: keep
         // the pause bounded and surface the rate limit so the operator can act.
         if (wait > this.maxRetryWaitMs) break;
+        // No wait can help when this request already spent the last token.
+        // Dispatch still checks again after sleeping: other requests may spend it.
+        this.budget.assertAvailable(family);
         await this.sleep(wait, this.signal);
         throwIfAborted(this.signal);
       } finally {

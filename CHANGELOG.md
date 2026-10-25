@@ -5,6 +5,9 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Check global and per-family request budgets before retry backoff. An exhausted
+  budget now returns `BUDGET_EXHAUSTED` without waiting for Retry-After or a
+  network backoff that cannot lead to another dispatch.
 - Enforce claim-lock wait deadlines on vanished, empty-stale and dead-owner
   recovery paths. Allow one immediate recovery retry, then check the deadline
   and back off so repeated contention cannot spin indefinitely. Poll sleeps

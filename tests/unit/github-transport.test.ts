@@ -155,6 +155,21 @@ describe("github client", () => {
 });
 
 describe("request budget", () => {
+  it("checks retry admission without spending or reserving a request", () => {
+    const ledger = new RequestBudget({ discovery: 1, jobs: 1, definitions: 0, policyAndFiles: 0 });
+    const before = ledger.snapshot();
+    ledger.assertAvailable("discovery");
+    ledger.assertAvailable("discovery");
+    assert.deepEqual(ledger.snapshot(), before);
+    ledger.consume("discovery");
+    ledger.settle();
+    assert.throws(() => ledger.assertAvailable("discovery"),
+      (error: unknown) => error instanceof GitHubError && error.code === "BUDGET_EXHAUSTED");
+    ledger.finish("discovery");
+    assert.throws(() => ledger.assertAvailable("discovery"), /family discovery is finished/);
+    assert.throws(() => ledger.assertAvailable("definitions"), /family definitions is unavailable/);
+  });
+
   it("consumes one token per dispatch and reports remaining", () => {
     const ledger = budget();
     ledger.consume("discovery");
@@ -445,6 +460,24 @@ describe("gh transport", () => {
     assert.equal(calls.length, 2);
     assert.equal(waits.length, 1);
   });
+
+  for (const exhausted of ["global", "family"] as const) {
+    for (const status of [429, 503] as const) {
+      it("skips retry backoff after exhausting the " + exhausted + " budget (HTTP " + status + ")", async () => {
+        const ledger = new RequestBudget({ discovery: exhausted === "family" ? 1 : 2, jobs: 5, definitions: 0, policyAndFiles: 0 },
+          exhausted === "global" ? 1 : undefined);
+        const { runner, calls } = runnerFrom(httpResponse(status, null, status === 429 ? { "retry-after": "3600" } : {}));
+        const waits: number[] = [];
+        const transport = new GhTransport({ budget: ledger, runner, sleep: async (milliseconds) => { waits.push(milliseconds); } });
+        await assert.rejects(transport.get({ path: "/repos/owner/repo" }, "discovery"),
+          (error: unknown) => error instanceof GitHubError && error.code === "BUDGET_EXHAUSTED");
+        assert.equal(calls.length, 1, "no token exists for another dispatch");
+        assert.equal(ledger.used, 1);
+        assert.equal(ledger.snapshot().inFlight, 0);
+        assert.deepEqual(waits, [], "do not wait when the next dispatch is already impossible");
+      });
+    }
+  }
 
   it("retries a timed-out gh invocation and forwards the request timeout", async () => {
     const timeouts: Array<number | undefined> = [];

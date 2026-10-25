@@ -51,14 +51,14 @@ export class RequestBudget {
     return Math.max(0, state.initialQuota + state.borrowed - state.donated - state.used);
   }
 
+  /** Check admission without reserving a token or changing the ledger. */
+  assertAvailable(family: Family): void {
+    this.availableState(family);
+  }
+
   /** Consume one dispatch token or fail without side effects. */
   consume(family: Family): void {
-    const state = this.stateOf(family);
-    if (state.state === "finished" || state.state === "unavailable") {
-      throw new GitHubError("BUDGET_EXHAUSTED", "family " + family + " is " + state.state);
-    }
-    if (this.remaining <= 0) throw new GitHubError("BUDGET_EXHAUSTED", "global request budget exhausted");
-    if (this.remainingIn(family) <= 0) throw new GitHubError("BUDGET_EXHAUSTED", "family " + family + " budget exhausted");
+    const state = this.availableState(family);
     state.used += 1;
     state.state = "active";
     this.dispatchAttempts += 1;
@@ -124,6 +124,16 @@ export class RequestBudget {
       },
       families: families as BudgetLedger["families"],
     };
+  }
+
+  private availableState(family: Family): FamilyState {
+    const state = this.stateOf(family);
+    if (state.state === "finished" || state.state === "unavailable") {
+      throw new GitHubError("BUDGET_EXHAUSTED", "family " + family + " is " + state.state);
+    }
+    if (this.remaining <= 0) throw new GitHubError("BUDGET_EXHAUSTED", "global request budget exhausted");
+    if (this.remainingIn(family) <= 0) throw new GitHubError("BUDGET_EXHAUSTED", "family " + family + " budget exhausted");
+    return state;
   }
 
   private stateOf(family: Family): FamilyState {
