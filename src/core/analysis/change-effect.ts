@@ -6,6 +6,7 @@ export interface ChangeEffectRun {
   readonly attempt: number;
   readonly conclusion: string;
   readonly workflowHash: string;
+  readonly definitionRefs?: readonly string[];
   readonly observation: RunObservation | null;
 }
 
@@ -50,3 +51,5 @@ export function measureChangeEffect(change: AppliedChange, before: readonly Chan
       "ALL_JOB_TIME_INCLUDES_CACHE_RESTORE_AND_SAVE", "PRIOR_ATTEMPT_RUNNER_TIME_NOT_COLLECTED", "STEP_RETRIES_NOT_OBSERVABLE",
       ...comparisons.flatMap((pair) => pair.warnings)])], comparisons };
 }
+
+export type ChangeEffect = ReturnType<typeof measureChangeEffect>;

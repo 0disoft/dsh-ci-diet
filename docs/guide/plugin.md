@@ -269,9 +269,13 @@ ci-diet measure --cwd . --state-dir .ci-diet --change change_123 --before-runs 1
 
 Select at most 10 runs per phase, from the same repository, workflow, branch and
 event. The command reads the journal's repository binding, fetches workflow bytes
-at each run SHA, and requires the before/after hashes recorded by apply. This
-first slice supports `push` and `workflow_dispatch`: PR merge/base workflow refs
-cannot be verified using the run head SHA alone and are refused. Reverted changes,
+at each run SHA, and requires the before/after hashes recorded by apply. `push` and `workflow_dispatch` use the immutable run SHA. For same-repository
+`pull_request` runs, the recorded PR snapshot must identify exactly one PR and
+its base/head SHAs. A merge SHA must have exactly those two parents; a head-only
+SHA is accepted only if both immutable parents have identical workflow bytes.
+Moving `refs/pull/.../merge` refs, missing snapshots, forks, `pull_request_target`
+and unverifiable merge definitions are refused. Comparisons stay within one PR.
+See [GitHub's merge-ref semantics](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request). Reverted changes,
 mixed versions/scopes, duplicate runs and attempts changing during collection
 are refused. It makes only read-only GitHub calls, bounded by a two-minute deadline.
 

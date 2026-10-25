@@ -20,9 +20,20 @@ export async function collectChangeEffect(repository: string, change: AppliedCha
     || new Set(ids).size !== ids.length || ids.some((id) => !Number.isSafeInteger(id) || id < 1)) throw new Error("INVALID_RUN_SELECTION");
   if (change.state !== "APPLIED") throw new Error("CHANGE_NOT_APPLIED");
   const base = ownerRepoPath(parts[0]!, parts[1]!);
-  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 40, definitions: 20, jobs: 0, policyAndFiles: 0 }),
+  const transport = new GhTransport({ budget: new RequestBudget({ discovery: 60, definitions: 40, jobs: 0, policyAndFiles: 0 }),
     retries: 0, timeoutMs: 15_000, maxRetryWaitMs: 0, ...options });
   const hashes = new Map<string, string>();
+  const fileHash = async (ref: string): Promise<string> => {
+    const cached = hashes.get(ref);
+    if (cached !== undefined) return cached;
+    const file = record((await transport.get({ path: base + "/contents/" + contentsSegments(change.workflowPath), query: { ref } }, "definitions")).body);
+    if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string" || file.content.length > 3 * 1024 * 1024) throw new Error("WORKFLOW_CONTENT_UNAVAILABLE");
+    const bytes = Buffer.from(file.content, "base64"), text = bytes.toString("utf8");
+    if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error("WORKFLOW_NOT_UTF8");
+    const hash = sourceHashOf(text);
+    hashes.set(ref, hash);
+    return hash;
+  };
   let scope: string | null = null;
   const collect = async (runIds: readonly number[], expectedHash: string): Promise<ChangeEffectRun[]> => {
     const result: ChangeEffectRun[] = [];
@@ -33,29 +44,43 @@ export async function collectChangeEffect(repository: string, change: AppliedCha
         || run.path !== change.workflowPath || run.status !== "completed"
         || !Number.isSafeInteger(run.run_attempt) || (run.run_attempt as number) < 1
         || typeof run.conclusion !== "string" || typeof run.head_sha !== "string" || !/^[0-9a-f]{40}$/i.test(run.head_sha)) throw new Error("RUN_IDENTITY_MISMATCH");
-      // PR workflows may execute merge/base definitions rather than this head SHA.
-      if (!["push", "workflow_dispatch"].includes(String(run.event))) throw new Error("WORKFLOW_REF_UNVERIFIABLE");
+      if (!["push", "workflow_dispatch", "pull_request"].includes(String(run.event))) throw new Error("WORKFLOW_REF_UNVERIFIABLE");
+      let pullIdentity: unknown = null;
+      let definitionRefs = [run.head_sha];
+      if (run.event === "pull_request") {
+        // A PR head alone does not identify its executed merge definition.
+        if (!Array.isArray(run.pull_requests) || run.pull_requests.length !== 1) throw new Error("PR_SNAPSHOT_UNAVAILABLE");
+        const pull = record(run.pull_requests[0]), head = record(pull.head), target = record(pull.base);
+        if (!Number.isSafeInteger(pull.number) || (pull.number as number) < 1
+          || ![head.sha, target.sha].every((sha) => typeof sha === "string" && /^[0-9a-f]{40}$/i.test(sha))
+          || record(head.repo).id !== record(run.repository).id || record(target.repo).id !== record(run.repository).id
+          || !Number.isSafeInteger(record(run.repository).id)) throw new Error("PR_SNAPSHOT_UNVERIFIABLE");
+        if (run.head_sha === head.sha) {
+          // If both immutable parents have identical workflow bytes, their
+          // conflict-free merge cannot introduce a different workflow file.
+          definitionRefs = [target.sha as string, head.sha as string];
+          if (await fileHash(definitionRefs[0]!) !== await fileHash(definitionRefs[1]!)) throw new Error("PR_MERGE_DEFINITION_UNVERIFIABLE");
+        } else {
+          const commit = record((await transport.get({ path: base + "/git/commits/" + run.head_sha }, "discovery")).body);
+          if (commit.sha !== run.head_sha || !Array.isArray(commit.parents) || commit.parents.length !== 2
+            || record(commit.parents[0]).sha !== target.sha || record(commit.parents[1]).sha !== head.sha) throw new Error("PR_MERGE_DEFINITION_UNVERIFIABLE");
+        }
+        pullIdentity = [pull.number, record(target.repo).id];
+      }
       if (typeof run.head_branch !== "string" || !run.head_branch) throw new Error("RUN_IDENTITY_MISMATCH");
-      const runScope = JSON.stringify([run.head_branch, run.event]);
+      const runScope = JSON.stringify([run.head_branch, run.event, pullIdentity]);
       if (scope !== null && scope !== runScope) throw new Error("DIFFERENT_BRANCH_OR_EVENT");
       scope = runScope;
-      let hash = hashes.get(run.head_sha);
-      if (hash === undefined) {
-        const file = record((await transport.get({ path: base + "/contents/" + contentsSegments(change.workflowPath), query: { ref: run.head_sha } }, "definitions")).body);
-        if (file.type !== "file" || file.encoding !== "base64" || typeof file.content !== "string" || file.content.length > 3 * 1024 * 1024) throw new Error("WORKFLOW_CONTENT_UNAVAILABLE");
-        const bytes = Buffer.from(file.content, "base64");
-        const text = bytes.toString("utf8");
-        if (!Buffer.from(text, "utf8").equals(bytes)) throw new Error("WORKFLOW_NOT_UTF8");
-        hash = sourceHashOf(text);
-        hashes.set(run.head_sha, hash);
-      }
+      const hash = await fileHash(definitionRefs[definitionRefs.length - 1]!);
       if (hash !== expectedHash) throw new Error("WORKFLOW_HASH_MISMATCH:" + id);
       const observation = run.conclusion === "success" ? await collectRunObservation(repository, id, options) : null;
       if (observation !== null && (observation.sha !== run.head_sha || observation.attempt !== run.run_attempt
         || observation.branch !== run.head_branch || observation.event !== run.event)) throw new Error("RUN_CHANGED_DURING_COLLECTION");
       const check = record((await transport.get({ path }, "discovery")).body);
-      if (check.run_attempt !== run.run_attempt || check.head_sha !== run.head_sha || check.status !== run.status || check.conclusion !== run.conclusion) throw new Error("RUN_CHANGED_DURING_COLLECTION");
-      result.push({ id, attempt: run.run_attempt as number, conclusion: run.conclusion, workflowHash: hash, observation });
+      if (check.run_attempt !== run.run_attempt || check.head_sha !== run.head_sha || check.status !== run.status || check.conclusion !== run.conclusion
+        || check.event !== run.event || check.head_branch !== run.head_branch
+        || JSON.stringify(check.pull_requests) !== JSON.stringify(run.pull_requests)) throw new Error("RUN_CHANGED_DURING_COLLECTION");
+      result.push({ id, attempt: run.run_attempt as number, conclusion: run.conclusion, workflowHash: hash, definitionRefs, observation });
     }
     return result;
   };

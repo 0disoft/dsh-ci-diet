@@ -16,6 +16,7 @@ const REPO = String.raw`^/repos/[^/]+/[^/]+`;
 
 const RULES: readonly EndpointRule[] = [
   { name: "repository", pattern: new RegExp(REPO + "$"), query: [] },
+  { name: "git-commit", pattern: new RegExp(REPO + "/git/commits/[0-9a-fA-F]{40}$"), query: [] },
   { name: "run", pattern: new RegExp(REPO + "/actions/runs/[0-9]+$"), query: [] },
   { name: "workflows", pattern: new RegExp(REPO + "/actions/workflows$"), query: ["per_page", "page"] },
   {

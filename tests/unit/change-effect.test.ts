@@ -114,3 +114,36 @@ test("measure CLI enforces network opt-in and workspace binding and preserves ou
   assert.equal(await measureCommand([...args, "--network"], context, api({ noSuccess: true }).runner), 3);
   assert.equal(JSON.parse(stdout).observedReductionSeconds, null);
 });
+
+test("PR measurement requires immutable merge parents, never a moving merge ref", async () => {
+  const mock = api({ pull: true });
+  const run = async (mode: "merge" | "same-file" | "head-only" | "bad-parents") => {
+    const runner: GhRunner = async (args, options) => {
+      const path = args.find((a) => a.startsWith("/repos/"))!;
+      if (path.includes("/git/commits/")) {
+        const sha = path.endsWith("c".repeat(40)) ? "c".repeat(40) : "d".repeat(40);
+        const head = sha.startsWith("c") ? "a".repeat(40) : "b".repeat(40);
+        return { exitCode: 0, stderr: "", stdout: "HTTP/2.0 200 OK\r\n\r\n" + JSON.stringify({ sha,
+          parents: [{ sha: mode === "bad-parents" ? "f".repeat(40) : "e".repeat(40) }, { sha: head }] }) };
+      }
+      const response = await mock.runner(args, options);
+      const split = response.stdout.indexOf("\r\n\r\n");
+      const body = JSON.parse(response.stdout.slice(split + 4));
+      if (/\/runs\/[0-9]+$/.test(path)) {
+        const head = body.head_sha;
+        body.repository.id = 10;
+        body.pull_requests = [{ number: 42, head: { sha: head, repo: { id: 10 } },
+          base: { sha: mode === "same-file" && head.startsWith("b") ? "f".repeat(40) : "e".repeat(40), repo: { id: 10 } } }];
+        if (mode === "merge" || mode === "bad-parents") body.head_sha = (head.startsWith("a") ? "c" : "d").repeat(40);
+      }
+      if (path.includes("/contents/") && args.some((a) => a.includes("ref=" + "c".repeat(40)) || (mode === "same-file" && a.includes("ref=" + "e".repeat(40))))) body.content = Buffer.from(beforeText).toString("base64");
+      return { ...response, stdout: response.stdout.slice(0, split + 4) + JSON.stringify(body) };
+    };
+    return collectChangeEffect("owner/repo", change, [1], [2], { runner });
+  };
+  assert.equal((await run("merge")).observedReductionSeconds, 10);
+  assert.equal((await run("same-file")).observedReductionSeconds, 10);
+  await assert.rejects(run("head-only"), /PR_MERGE_DEFINITION_UNVERIFIABLE/);
+  await assert.rejects(run("bad-parents"), /PR_MERGE_DEFINITION_UNVERIFIABLE/);
+  assert.ok(mock.calls.every((args) => !args.some((a) => a.includes("refs/pull"))));
+});
