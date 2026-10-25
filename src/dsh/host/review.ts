@@ -1,3 +1,5 @@
+import { collectChangeEffect } from "../../adapters/github/change-effect.ts";
+import { withDeadline } from "../../core/support/deadline.ts";
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Context } from "@deepseek-ai/cordis";
@@ -16,7 +18,7 @@ import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 export const REVIEW_CHANNEL = "/api";
 export const REVIEW_ENDPOINT = "ci-diet-review";
 interface ReviewSettings { readonly engine: EngineSettings; readonly localApplyEnabled: boolean }
-interface ReviewRequest { action: "load" | "approve" | "apply" | "revert"; sessionId: string; id?: string; confirmation?: string }
+interface ReviewRequest { action: "load" | "approve" | "apply" | "revert" | "measure"; sessionId: string; id?: string; confirmation?: string; beforeRuns?: number[]; afterRuns?: number[] }
 interface WorkflowSource { readonly text: string; readonly hash: string }
 
 /** Share bytes and hashes only within one request; mutations always reread. */
@@ -42,21 +44,25 @@ function workflowSourceReader(binding: RepositoryBinding, maxBytes: number) {
 function requestOf(value: unknown): ReviewRequest {
   if (value === null || typeof value !== "object" || Array.isArray(value)) throw new Error("INVALID_REQUEST");
   const record = value as Record<string, unknown>;
-  if (Object.keys(record).some((key) => !["action", "sessionId", "id", "confirmation"].includes(key))) throw new Error("INVALID_REQUEST");
-  if (!["load", "approve", "apply", "revert"].includes(String(record.action))
+  if (Object.keys(record).some((key) => !["action", "sessionId", "id", "confirmation", "beforeRuns", "afterRuns"].includes(key))) throw new Error("INVALID_REQUEST");
+  if (!["load", "approve", "apply", "revert", "measure"].includes(String(record.action))
     || typeof record.sessionId !== "string" || record.sessionId.length === 0 || record.sessionId.length > 256
     || (record.id !== undefined && (typeof record.id !== "string" || !/^[A-Za-z0-9_-]{1,200}$/.test(record.id)))
     || (record.confirmation !== undefined && (typeof record.confirmation !== "string" || record.confirmation.length > 200))) throw new Error("INVALID_REQUEST");
   if (record.action !== "load" && typeof record.id !== "string") throw new Error("INVALID_REQUEST");
+  if (record.action === "measure" && ![record.beforeRuns, record.afterRuns].every((ids) => Array.isArray(ids)
+    && ids.length >= 1 && ids.length <= 10 && ids.every((id) => Number.isSafeInteger(id) && id > 0))) throw new Error("INVALID_RUN_SELECTION");
   return record as unknown as ReviewRequest;
 }
 
 export class ReviewService {
   private readonly rootForSession: (id: string) => string;
   private readonly settings: () => ReviewSettings;
-  constructor(rootForSession: (id: string) => string, settings: () => ReviewSettings) {
+  private readonly collect: typeof collectChangeEffect;
+  constructor(rootForSession: (id: string) => string, settings: () => ReviewSettings, collect: typeof collectChangeEffect = collectChangeEffect) {
     this.rootForSession = rootForSession;
     this.settings = settings;
+    this.collect = collect;
   }
 
   private preview(store: PatchStore, stored: StoredPlan, settings: ReviewSettings, now: Date, readSource: ReturnType<typeof workflowSourceReader>, usedPlans?: ReadonlySet<string>) {
@@ -104,7 +110,7 @@ export class ReviewService {
       const changes = binding === null ? [] : reader.listChanges().filter((change) => change.bindingId === binding.bindingId);
       const usedPlans = new Set(changes.filter((change) => change.state !== "NOT_APPLIED").map((change) => change.planId));
       const readSource = binding === null ? null : workflowSourceReader(binding, settings.engine.config.storage.workflowMaxBytes);
-      return { root, bindingId: binding?.bindingId ?? null, localApplyEnabled: settings.localApplyEnabled,
+      return { root, bindingId: binding?.bindingId ?? null, localApplyEnabled: settings.localApplyEnabled, networkEnabled: settings.engine.networkEnabled,
         report: report === null ? null : { ...report, findings: report.findings.map((finding) => {
           const localized = localizedFinding(finding, locale);
           return { ...finding, title: localized.title, renderedText: localized.text };
@@ -112,7 +118,22 @@ export class ReviewService {
         plans: binding === null ? [] : reader.listPlans().filter(({ plan }) => plan.payload.bindingId === binding.bindingId)
           .map((stored) => this.preview(reader, stored, settings, new Date(), readSource!, usedPlans)),
         changes: changes
-          .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state })) };
+          .map(({ changeId, workflowPath, state }) => ({ changeId, workflowPath, state, measurement: reader.readMeasurement(changeId) })) };
+    }
+    if (request.action === "measure") {
+      if (!settings.engine.networkEnabled) throw new Error("NETWORK_DISABLED");
+      if (binding === null) throw new Error("BINDING_NOT_FOUND");
+      const change = reader.readChange(request.id!);
+      if (change === null || change.bindingId !== binding.bindingId) throw new Error("CHANGE_NOT_FOUND");
+      const deadline = withDeadline(signal, 120_000, "measure");
+      try {
+        const effect = await this.collect(binding.repositoryFullName, change, request.beforeRuns!, request.afterRuns!, { signal: deadline.signal });
+        signal.throwIfAborted();
+        const current = reader.readChange(change.changeId);
+        if (current?.state !== "APPLIED" || current.planDigest !== change.planDigest) throw new Error("CHANGE_CHANGED_DURING_COLLECTION");
+        PatchStore.open(stateDir, settings.engine.config.storage).saveMeasurement(effect, new Date());
+        return { state: effect.comparable ? "measured" : "blocked", reasons: effect.blockers };
+      } finally { deadline.dispose(); }
     }
     if (!settings.localApplyEnabled) throw new Error("LOCAL_APPLY_DISABLED");
     if (binding === null) throw new Error("BINDING_NOT_FOUND");

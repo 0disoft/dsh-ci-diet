@@ -1,3 +1,4 @@
+import { DEFAULT_CONFIG } from "../core/data/default-config.ts";
 import { existsSync, realpathSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { collectChangeEffect } from "../adapters/github/change-effect.ts";
@@ -36,7 +37,7 @@ export async function measureCommand(argv: readonly string[], context: CliContex
     if (!network) throw new Error("NETWORK_OPT_IN_REQUIRED:--network");
     const statePath = state === null ? defaultStateDir(context.env) : resolve(cwd, state);
     if (!existsSync(statePath)) throw new Error("STATE_NOT_FOUND");
-    const store = PatchStore.open(statePath);
+    const store = PatchStore.open(statePath, DEFAULT_CONFIG.storage);
     const change = store.readChange(changeId);
     if (change === null) throw new Error("CHANGE_NOT_FOUND");
     const binding = store.readBinding(change.bindingId);
@@ -49,6 +50,7 @@ export async function measureCommand(argv: readonly string[], context: CliContex
       const output = JSON.stringify(report, null, 2) + "\n";
       if (out === null) context.stdout.write(output);
       else writeFileSync(resolve(cwd, out), output, { flag: "wx" });
+      store.saveMeasurement(report, context.clock.now());
       return report.comparable ? 0 : 3;
     } finally { deadline.dispose(); }
   } catch (error) {

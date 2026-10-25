@@ -102,6 +102,7 @@ test("measure CLI enforces network opt-in and workspace binding and preserves ou
   assert.equal(mock.calls.length, 0);
   assert.equal(await measureCommand([...args, "--network"], context, mock.runner), 0, stderr);
   assert.equal(JSON.parse(stdout).changeId, change.changeId);
+  assert.equal(store.readMeasurement(change.changeId)?.effect.observedReductionSeconds, 10);
   assert.equal(await measureCommand([...args, "--network", "--out", "effect.json"], context, mock.runner), 0, stderr);
   const saved = readFileSync(join(root, "effect.json"), "utf8");
   assert.equal(await measureCommand([...args, "--network", "--out", "effect.json"], context, mock.runner), 1);

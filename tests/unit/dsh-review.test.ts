@@ -1,3 +1,4 @@
+import { measureChangeEffect } from "../../src/core/analysis/change-effect.ts";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -236,4 +237,36 @@ test("browser route rejects owner API peers and never registers a model tool", a
   const denied = await handler!(request("api-owner")); assert.equal(denied.status,403);
   const allowed = await handler!(request("browser"));
   assert.equal((await allowed.json() as {result:{ok:boolean}}).result.ok,true);
+});
+
+test("browser measurement is workspace-bound, read-only on load, and independent of local apply", async (t) => {
+  const f = fixture(t), signal = new AbortController().signal;
+  await f.call("approve", { id: f.plan.planId, confirmation: f.plan.planDigest.slice(-12) });
+  const applied = await f.call("apply", { id: f.plan.planId }) as { change: { changeId: string } };
+  const change = f.store.readChange(applied.change.changeId)!;
+  const observation = (id: number, seconds: number) => ({ id, attempt: 1, repository: "owner/repo", workflow: change.workflowPath,
+    branch: "main", event: "push", sha: String(id).repeat(40), jobs: [{ name: "test", labels: ["ubuntu-latest"], seconds, steps: [] }] });
+  const effect = measureChangeEffect(change,
+    [{ id: 1, attempt: 1, conclusion: "success", workflowHash: change.before.hash, observation: observation(1, 30) }],
+    [{ id: 2, attempt: 1, conclusion: "success", workflowHash: change.after.hash, observation: observation(2, 35) }]);
+  let calls = 0;
+  const service = new ReviewService(() => f.root, () => ({ engine: f.engine, localApplyEnabled: false }), async (repo, journal, before, after) => {
+    calls++; assert.equal(repo, "owner/repo"); assert.equal(journal.changeId, change.changeId);
+    assert.deepEqual(before, [1]); assert.deepEqual(after, [2]); return effect;
+  });
+  const request = { action: "measure", sessionId: "session", id: change.changeId, beforeRuns: [1], afterRuns: [2] };
+  assert.equal((await service.execute(request, "browser", signal) as { state: string }).state, "measured");
+  const view = await service.execute({ action: "load", sessionId: "session" }, "browser", signal) as { changes: { measurement: { effect: { observedReductionSeconds: number } } }[] };
+  assert.equal(view.changes[0]!.measurement.effect.observedReductionSeconds, -5);
+  assert.equal(calls, 1, "rendering never starts another GitHub collection");
+  const off = new ReviewService(() => f.root, () => ({ engine: { ...f.engine, networkEnabled: false }, localApplyEnabled: false }));
+  await assert.rejects(off.execute(request, "browser", signal), /NETWORK_DISABLED/);
+  await assert.rejects(service.execute({ ...request, beforeRuns: [] }, "browser", signal), /INVALID_RUN_SELECTION/);
+  await assert.rejects(service.execute({ ...request, id: "foreign" }, "browser", signal), /CHANGE_NOT_FOUND/);
+  const file = join(f.stateDir, "cache", "effect-" + change.changeId + ".json");
+  const saved = JSON.parse(readFileSync(file, "utf8")); saved.effect.observedReductionSeconds = 999;
+  writeFileSync(file, JSON.stringify(saved));
+  assert.equal(f.store.readMeasurement(change.changeId), null, "tampered cached metrics are not displayed");
+  assert.throws(() => new PatchStore(f.stateDir, { storeMaxBytes: 1, warningPercent: 90, cacheMaxBytes: 0, pruneAppliedBackups: false })
+    .saveMeasurement(effect, new Date()), /STORAGE_QUOTA_EXCEEDED/);
 });

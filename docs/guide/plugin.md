@@ -288,6 +288,10 @@ selection bias are explicit warnings. Runs without successful comparable samples
 return JSON with null reduction and exit 3. Slower runs produce negative values.
 Byte differences caused by commit-time line-ending normalization also require new matching evidence; this slice does not normalize hashes. Actual billing and verified causal savings stay unknown/false. No report claims
 that an observed difference was caused by this patch. The output file is created
-without overwriting an existing file; this command currently has no DSH chart UI.
+without overwriting an existing file. The latest measurement per change is also saved
+in the local cache (subject to cache retention/cap and store quota). DSH rendering
+reads this saved result without network access. The browser owner can explicitly
+collect selected before/after run IDs when network access is enabled; local apply
+need not be enabled. Measurements cannot approve or apply a plan.
 
 CD006 Bun cache plans use the setup-bun step index, require a tracked text `bun.lock`, and preserve frozen installation and tests. Custom Bun configuration stays review-only; see the [rule specification](../spec/rules.md#bun-dependency-cache-variant). Cache restore/save overhead can exceed its benefit.

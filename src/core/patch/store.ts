@@ -1,3 +1,5 @@
+import { savedMeasurementOf, type SavedMeasurement } from "../analysis/saved-measurement.ts";
+import type { ChangeEffect } from "../analysis/change-effect.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
@@ -990,6 +992,21 @@ export class PatchStore {
 
   readChange(changeId: string): AppliedChange | null {
     return this.readJson<AppliedChange>(this.path("changes", requireId(changeId, "changeId") + ".json"), "AppliedChange");
+  }
+
+  /** Latest measurement per change; ordinary cache retention/cap and store quota apply. */
+  saveMeasurement(effect: ChangeEffect, now: Date): void {
+    const change = this.readChange(effect.changeId);
+    const saved = { measuredAt: now.toISOString(), bindingId: change?.bindingId, effect };
+    if (change === null || savedMeasurementOf(change, saved) === null) throw new Error("INVALID_MEASUREMENT");
+    this.writeJson(this.path("cache", "effect-" + requireId(change.changeId, "changeId") + ".json"), saved);
+  }
+
+  readMeasurement(changeId: string): SavedMeasurement | null {
+    const change = this.readChange(changeId);
+    if (change === null) return null;
+    try { return savedMeasurementOf(change, this.readJson<unknown>(this.path("cache", "effect-" + requireId(changeId, "changeId") + ".json"))); }
+    catch { return null; } // A missing/corrupt measurement never blocks approval or recovery.
   }
 
   listChanges(): AppliedChange[] {
