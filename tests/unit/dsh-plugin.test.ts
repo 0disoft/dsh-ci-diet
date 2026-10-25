@@ -5,7 +5,8 @@ import { join as joinPath } from "node:path";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { Config, apply, inject, buildNextCommand, isHistoryTruncated, shellQuoteArg } from "../../src/dsh/host/plugin.ts";
+import { Config, apply, inject, buildNextCommand, isHistoryTruncated, shellQuoteArg, readPluginSettings } from "../../src/dsh/host/plugin.ts";
+import { DEFAULTS_REVISION, migratePluginDefaults } from "../../src/dsh/host/defaults-migration.ts";
 import { DEFAULT_CONFIG } from "../../src/core/data/default-config.ts";
 import { defaultPluginSettings, engineSettingsOf } from "../../src/core/config/plugin-settings.ts";
 import type { PluginSettingsValues } from "../../src/core/config/plugin-settings.ts";
@@ -47,7 +48,7 @@ function harness(overrides: Partial<PluginSettingsValues> = {}, sessionCwd?: str
     ...overrides,
   };
   const refs = {} as Record<keyof PluginSettingsValues, ReturnType<typeof live>>;
-  const config = { localApplyEnabled: false } as Record<string, unknown>;
+  const config = { localApplyEnabled: false, defaultsRevision: live(DEFAULTS_REVISION), billingEnabled: live(false) } as Record<string, unknown>;
   for (const [key, value] of Object.entries(values)) {
     const ref = live(value);
     refs[key as keyof PluginSettingsValues] = ref;
@@ -179,11 +180,35 @@ test("the host schema rejects an out-of-contract save before a tool call", () =>
   assert.equal((saved.historyLookbackDays as { get(): unknown }).get(), 30);
 });
 
-test("enables billing only when the switch is on", () => {
+test("uses account inputs automatically only when both are provided, including explicit zero", () => {
   const off = engineSettingsOf(defaultPluginSettings());
   assert.equal(off.config.billing, undefined);
-  const on = engineSettingsOf({ ...defaultPluginSettings(), billingEnabled: true, billingIncludedMinutes: 2000, billingAccountMinutesUsed: 2100 });
+  const on = engineSettingsOf({ ...defaultPluginSettings(), billingIncludedMinutes: 2000, billingAccountMinutesUsed: 2100 });
   assert.deepEqual(on.config.billing, { includedMinutes: 2000, accountMinutesUsed: 2100 });
+  for (const inputs of [{ billingIncludedMinutes: 0 }, { billingAccountMinutesUsed: 0 }]) {
+    assert.equal(engineSettingsOf({ ...defaultPluginSettings(), ...inputs }).config.billing, undefined);
+  }
+  const zero = engineSettingsOf({ ...defaultPluginSettings(), billingIncludedMinutes: 0, billingAccountMinutesUsed: 0 });
+  assert.deepEqual(zero.config.billing, { includedMinutes: 0, accountMinutesUsed: 0 });
+  assert.equal(engineSettingsOf({ ...defaultPluginSettings(), billingIncludedMinutes: 2000, billingAccountMinutesUsed: null }).config.billing, undefined);
+  for (const invalid of [-1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => engineSettingsOf({ ...defaultPluginSettings(), billingIncludedMinutes: invalid }), /safe integer/);
+  }
+});
+
+test("host nullable account inputs and legacy migration preserve explicit values", () => {
+  const blank = Config({}) as never;
+  assert.equal(readPluginSettings(blank).billingIncludedMinutes, null);
+  assert.equal(readPluginSettings(blank).billingAccountMinutesUsed, null);
+  for (const raw of [{ billingIncludedMinutes: -1 }, { billingAccountMinutesUsed: 1.5 }]) assert.throws(() => Config(raw));
+  const legacy = { defaultsRevision: 1, billingEnabled: true, billingIncludedMinutes: 2000 };
+  const pending = engineSettingsOf(readPluginSettings(Config(legacy) as never));
+  const migrated = migratePluginDefaults(legacy);
+  const current = engineSettingsOf(readPluginSettings(Config(migrated) as never));
+  assert.deepEqual(current.config.billing, { includedMinutes: 2000, accountMinutesUsed: 0 });
+  assert.deepEqual(current.config.billing, pending.config.billing);
+  const cleared = readPluginSettings(Config({ ...migrated, billingAccountMinutesUsed: null }) as never);
+  assert.equal(engineSettingsOf(cleared).config.billing, undefined);
 });
 
 test("reads live settings on every tool call", async () => {

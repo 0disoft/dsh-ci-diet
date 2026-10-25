@@ -29,7 +29,7 @@ import { resolveRequestedLocale } from "../../shared/i18n/host.ts";
 import { createTranslator } from "../../shared/i18n/index.ts";
 import { registerPreflight } from "./preflight.ts";
 import { registerReview } from "./review.ts";
-import { registerDefaultsMigration } from "./defaults-migration.ts";
+import { DEFAULTS_REVISION, registerDefaultsMigration } from "./defaults-migration.ts";
 export const name = "ci-diet";
 export const inject = ["tools"];
 
@@ -56,9 +56,10 @@ export interface Config {
   storageCacheDays: Volatile<number>;
   storageReportDays: Volatile<number>;
   storagePlanDays: Volatile<number>;
+  /** Hidden compatibility input, removed from the profile by migration. */
   billingEnabled: Volatile<boolean>;
-  billingIncludedMinutes: Volatile<number>;
-  billingAccountMinutesUsed: Volatile<number>;
+  billingIncludedMinutes: Volatile<number | null>;
+  billingAccountMinutesUsed: Volatile<number | null>;
 }
 
 const SHIPPED = defaultPluginSettings();
@@ -87,13 +88,15 @@ export const Config = Schema.object({
   storageCacheDays: Schema.number().min(0).step(1).default(SHIPPED.storageCacheDays).volatile(),
   storageReportDays: Schema.number().min(0).step(1).default(SHIPPED.storageReportDays).volatile(),
   storagePlanDays: Schema.number().min(0).step(1).default(SHIPPED.storagePlanDays).volatile(),
-  billingEnabled: Schema.boolean().default(SHIPPED.billingEnabled).volatile(),
-  billingIncludedMinutes: Schema.number().min(0).step(1).default(SHIPPED.billingIncludedMinutes).volatile(),
-  billingAccountMinutesUsed: Schema.number().min(0).step(1).default(SHIPPED.billingAccountMinutesUsed).volatile(),
+  billingEnabled: Schema.boolean().default(false).hidden().volatile(),
+  billingIncludedMinutes: Schema.union([Schema.number().min(0).max(Number.MAX_SAFE_INTEGER).step(1), Schema.const(null)]).default(SHIPPED.billingIncludedMinutes).volatile(),
+  billingAccountMinutesUsed: Schema.union([Schema.number().min(0).max(Number.MAX_SAFE_INTEGER).step(1), Schema.const(null)]).default(SHIPPED.billingAccountMinutesUsed).volatile(),
 });
 
 /** Read every engine-facing setting from its live reference. */
 export function readPluginSettings(config: Config): PluginSettingsValues {
+  // Keep the previous meaning while the locked migration is still pending.
+  const legacyZero = config.defaultsRevision.get() < DEFAULTS_REVISION && config.billingEnabled.get() ? 0 : null;
   return {
     preflightEnabled: config.preflightEnabled.get(),
     networkEnabled: config.networkEnabled.get(),
@@ -111,9 +114,8 @@ export function readPluginSettings(config: Config): PluginSettingsValues {
     storageCacheDays: config.storageCacheDays.get(),
     storageReportDays: config.storageReportDays.get(),
     storagePlanDays: config.storagePlanDays.get(),
-    billingEnabled: config.billingEnabled.get(),
-    billingIncludedMinutes: config.billingIncludedMinutes.get(),
-    billingAccountMinutesUsed: config.billingAccountMinutesUsed.get(),
+    billingIncludedMinutes: config.billingIncludedMinutes.get() ?? legacyZero,
+    billingAccountMinutesUsed: config.billingAccountMinutesUsed.get() ?? legacyZero,
   };
 }
 

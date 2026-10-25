@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { JobInput } from "../../src/core/contracts/schema.ts";
 import { computeReportMetrics } from "../../src/core/savings/report-metrics.ts";
 import { knownString, unknownString } from "../../src/core/savings/metrics.ts";
+import { defaultPluginSettings, engineSettingsOf } from "../../src/core/config/plugin-settings.ts";
 
 function job(id: string, sku: "known" | "unknown" = "known"): JobInput {
   return {
@@ -22,6 +23,30 @@ test("marginal cost is unknown until the account allowance is configured", () =>
   assert.equal(value.status, "unknown");
   assert.equal(value.value, null);
   assert.equal(value.reason, "BILLING_ESTIMATE_UNCONFIGURED");
+});
+
+test("blank plugin account inputs keep monetary cost unknown without hiding runner time", () => {
+  const inputs = [
+    defaultPluginSettings(),
+    { ...defaultPluginSettings(), billingIncludedMinutes: 0 },
+    { ...defaultPluginSettings(), billingAccountMinutesUsed: 0 },
+    { ...defaultPluginSettings(), billingIncludedMinutes: 0, billingAccountMinutesUsed: 0 },
+  ];
+  for (const [index, values] of inputs.entries()) {
+    const { config } = engineSettingsOf(values);
+    const result = computeReportMetrics([job("j1", "known")], { unavailableReason: "NO_HISTORY", billing: config.billing ?? null });
+    assert.equal(result.metrics.observedRunnerSeconds.status, "known");
+    assert.equal(result.metrics.estimatedMarginalUsd.status, index === 3 ? "known" : "unknown");
+    assert.equal(result.metrics.estimatedMarginalUsd.value, index === 3 ? "0.000000" : null);
+  }
+});
+
+test("missing job history and missing account information have distinct reasons", () => {
+  const blank = computeReportMetrics([], { unavailableReason: "NO_HISTORY" });
+  assert.equal(blank.metrics.estimatedMarginalUsd.reason, "BILLING_ESTIMATE_UNCONFIGURED");
+  const configured = computeReportMetrics([], { unavailableReason: "NO_HISTORY", billing: { includedMinutes: 0, accountMinutesUsed: 0 } });
+  assert.equal(configured.metrics.estimatedMarginalUsd.reason, "NO_HISTORY");
+  assert.equal(configured.metrics.estimatedMarginalUsd.value, null);
 });
 
 test("savings inside the included allowance cost nothing", () => {

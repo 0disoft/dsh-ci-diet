@@ -1,19 +1,29 @@
 import type { Context } from "@deepseek-ai/cordis";
 import { DEFAULT_ENABLED_RULES } from "../../core/rules/index.ts";
 
-export const DEFAULTS_REVISION = 1;
+export const DEFAULTS_REVISION = 2;
 
 /** Run once per profile, including explicit legacy false overrides. */
 export function migratePluginDefaults(raw: Record<string, unknown>): Record<string, unknown> {
   if (typeof raw.defaultsRevision === "number" && raw.defaultsRevision >= DEFAULTS_REVISION) return raw;
-  return {
+  const next: Record<string, unknown> = {
     ...raw,
-    preflightEnabled: true,
-    networkEnabled: true,
-    localApplyEnabled: true,
-    rules: [...new Set([...DEFAULT_ENABLED_RULES, ...(Array.isArray(raw.rules) ? raw.rules : [])])],
+    ...(typeof raw.defaultsRevision === "number" && raw.defaultsRevision >= 1 ? {} : {
+      preflightEnabled: true,
+      networkEnabled: true,
+      localApplyEnabled: true,
+      rules: [...new Set([...DEFAULT_ENABLED_RULES, ...(Array.isArray(raw.rules) ? raw.rules : [])])],
+    }),
     defaultsRevision: DEFAULTS_REVISION,
   };
+  // Only explicitly enabled legacy billing implied zero for omitted values.
+  // Other profiles now inherit null, without changing any saved numeric input.
+  if (raw.billingEnabled === true) {
+    if (raw.billingIncludedMinutes === undefined) next.billingIncludedMinutes = 0;
+    if (raw.billingAccountMinutesUsed === undefined) next.billingAccountMinutesUsed = 0;
+  }
+  delete next.billingEnabled;
+  return next;
 }
 
 interface ProfileEntry { readonly fiber?: unknown }

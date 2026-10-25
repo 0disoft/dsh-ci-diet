@@ -41,7 +41,9 @@ export function computeReportMetrics(jobs: readonly JobInput[], options: Metrics
       candidateRemovableSeconds: unknownSeconds("no_observed_jobs", unknownReason),
       modeledRoundedMinutes: unknownCount("no_observed_jobs", unknownReason),
       listPriceUsd: unknownUsd("no_observed_jobs", unknownReason),
-      estimatedMarginalUsd: unknownUsd("allowance_unknown", "ACCOUNT_ALLOWANCE_UNKNOWN"),
+      estimatedMarginalUsd: options.billing
+        ? unknownUsd("no_observed_jobs", unknownReason)
+        : unknownUsd("allowance_unknown", "BILLING_ESTIMATE_UNCONFIGURED"),
       actualBilledUsd: unknownUsd("billing_not_queried", "BILLING_NOT_QUERIED"),
       queueSeconds: unknownSeconds("queue_not_observed", unknownReason),
       executionSpanSeconds: unknownSeconds("span_not_observed", unknownReason),

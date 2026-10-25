@@ -7,9 +7,27 @@ test("upgrades explicit legacy opt-outs and adds proven rules without changing a
   const raw = { preflightEnabled: false, networkEnabled: false, localApplyEnabled: false,
     rules: ["CD003", "CD001"], stateDir: "custom", billingEnabled: false, storageReportDays: 21 };
   const next = migratePluginDefaults(raw);
-  assert.deepEqual(next, { ...raw, preflightEnabled: true, networkEnabled: true, localApplyEnabled: true,
+  assert.deepEqual(next, { stateDir: "custom", storageReportDays: 21, preflightEnabled: true, networkEnabled: true, localApplyEnabled: true,
     rules: ["CD001", "CD002", "CD004", "CD006", "CD008", "CD003"], defaultsRevision: DEFAULTS_REVISION });
   assert.equal(raw.networkEnabled, false, "does not mutate the input");
+});
+
+test("revision two preserves later opt-outs and migrates only legacy account defaults", () => {
+  const raw = { defaultsRevision: 1, preflightEnabled: false, networkEnabled: false,
+    localApplyEnabled: false, rules: ["CD008"], billingEnabled: true, billingIncludedMinutes: 2000 };
+  const next = migratePluginDefaults(raw);
+  assert.deepEqual(next, { defaultsRevision: DEFAULTS_REVISION, preflightEnabled: false, networkEnabled: false,
+    localApplyEnabled: false, rules: ["CD008"], billingIncludedMinutes: 2000, billingAccountMinutesUsed: 0 });
+  assert.equal(migratePluginDefaults(next), next);
+  const absent = migratePluginDefaults({ defaultsRevision: 1, billingEnabled: false });
+  assert.equal("billingIncludedMinutes" in absent, false);
+  assert.equal("billingAccountMinutesUsed" in absent, false);
+  const zero = migratePluginDefaults({ defaultsRevision: 1, billingEnabled: false, billingIncludedMinutes: 0, billingAccountMinutesUsed: 0 });
+  assert.equal(zero.billingIncludedMinutes, 0);
+  assert.equal(zero.billingAccountMinutesUsed, 0);
+  const cleared = migratePluginDefaults({ defaultsRevision: 1, billingEnabled: true, billingIncludedMinutes: null });
+  assert.equal(cleared.billingIncludedMinutes, null, "explicit unknown is not replaced with zero");
+  assert.equal(raw.billingEnabled, true, "original profile is untouched");
 });
 
 test("records new installs and respects opt-outs after migration across reloads", () => {

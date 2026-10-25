@@ -25,9 +25,8 @@ export interface PluginSettingsValues {
   readonly storageCacheDays: number;
   readonly storageReportDays: number;
   readonly storagePlanDays: number;
-  readonly billingEnabled: boolean;
-  readonly billingIncludedMinutes: number;
-  readonly billingAccountMinutesUsed: number;
+  readonly billingIncludedMinutes: number | null;
+  readonly billingAccountMinutesUsed: number | null;
 }
 
 /** The engine configuration and enabled rules one tool call runs with. */
@@ -59,9 +58,8 @@ export function defaultPluginSettings(): PluginSettingsValues {
     storageCacheDays: DEFAULT_CONFIG.storage.cacheDays,
     storageReportDays: DEFAULT_CONFIG.storage.reportDays,
     storagePlanDays: DEFAULT_CONFIG.storage.planDays,
-    billingEnabled: DEFAULT_CONFIG.billing !== undefined,
-    billingIncludedMinutes: DEFAULT_CONFIG.billing?.includedMinutes ?? 0,
-    billingAccountMinutesUsed: DEFAULT_CONFIG.billing?.accountMinutesUsed ?? 0,
+    billingIncludedMinutes: DEFAULT_CONFIG.billing?.includedMinutes ?? null,
+    billingAccountMinutesUsed: DEFAULT_CONFIG.billing?.accountMinutesUsed ?? null,
   };
 }
 
@@ -85,6 +83,11 @@ function enabledRulesOf(selected: readonly RuleId[]): readonly RuleId[] {
  */
 export function engineSettingsOf(values: PluginSettingsValues): EngineSettings {
   const enabledRules = enabledRulesOf(values.rules);
+  for (const minutes of [values.billingIncludedMinutes, values.billingAccountMinutesUsed]) {
+    if (minutes !== null && (!Number.isSafeInteger(minutes) || minutes < 0)) {
+      throw new Error("account minutes must be null or a nonnegative safe integer");
+    }
+  }
   const override = {
     networkEnabled: values.networkEnabled,
     history: {
@@ -102,7 +105,7 @@ export function engineSettingsOf(values: PluginSettingsValues): EngineSettings {
       reportDays: values.storageReportDays,
       planDays: values.storagePlanDays,
     },
-    ...(values.billingEnabled
+    ...(values.billingIncludedMinutes !== null && values.billingAccountMinutesUsed !== null
       ? { billing: { includedMinutes: values.billingIncludedMinutes, accountMinutesUsed: values.billingAccountMinutesUsed } }
       : {}),
   };
