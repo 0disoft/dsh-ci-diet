@@ -153,6 +153,11 @@ These steps cannot authorize apply, including through previously saved approvals
 Literal relative `cd` commands (including `cd -- path`) update that base. A
 directory escape or an unsupported `cd` form records an unresolved dependency
 and stops collecting that step; subsequent commands never inherit the old base.
+Fallback (`||`) chains containing `cd`, and unconditional commands after a
+conditional `cd`, are unresolved for the entire step because the executable's
+directory cannot be proved. Pending operators continue across newlines and
+comments. Pure `&&` chains with literal `cd` commands, sequential unconditional
+`cd` commands, and conditionals without `cd` remain supported.
 Local `uses: ./...` references resolve from the repository root. Interpreter
 flags are classified by kind: boolean flags such as `--enable-source-maps` do
 not consume the script path, while `--require`, `--loader`, `--import`, and

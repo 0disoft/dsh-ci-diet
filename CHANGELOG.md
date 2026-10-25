@@ -76,6 +76,12 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ### Fixed
 
+- Dependency collection refuses fallback chains with `cd` and unconditional
+  continuations after conditional `cd`, instead of pinning a same-named decoy
+  script. Operators continued across newlines or comments retain their condition;
+  pure `&&` chains stay supported. Apply also rejects older approvals made
+  from the incomplete dependency set before creating backups or changing files.
+
 - Patch semantic validation reads only own mapping properties when comparing
   documents. Adding or removing an empty `__proto__` mapping outside the claimed
   edit paths is now rejected instead of being mistaken for an unchanged inherited

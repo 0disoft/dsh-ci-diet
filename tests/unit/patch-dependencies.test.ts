@@ -277,6 +277,84 @@ const SCRIPT_WORKFLOW = [
   "      - run: node task.js",
 ].join("\n");
 
+for (const command of ["true || cd sub; node task.js", "false && cd sub; node task.js", "cd sub || node task.js",
+  "true || cd sub && node task.js", "cd sub && node task.js || node task.js",
+  "true ||\n          cd sub; node task.js", "false && # branch\n          cd sub; node task.js"]) {
+  test("conditional cwd never pins a decoy: " + command, (t) => {
+    const text = SCRIPT_WORKFLOW.replace("node task.js", "|\n          " + command);
+    const space = workspace(text);
+    t.after(() => rmSync(space.root, { recursive: true, force: true }));
+    mkdirSync(join(space.root, "sub"));
+    writeFileSync(join(space.root, "task.js"), "// actual root script\n");
+    writeFileSync(join(space.root, "sub", "task.js"), "// decoy\n");
+    const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+    assert.deepEqual(collected.unresolved, ["jobs.build.steps[0] (unsupported shell syntax)"]);
+    assert.deepEqual(collected.dependencies, []);
+  });
+}
+
+for (const command of ["cd sub &&\n          node task.js", "node task.js || node fallback.js; cd sub && node task.js"]) {
+  test("unconditional cd remains supported across command boundaries: " + command, (t) => {
+    const text = SCRIPT_WORKFLOW.replace("node task.js", "|\n          " + command);
+    const space = workspace(text);
+    t.after(() => rmSync(space.root, { recursive: true, force: true }));
+    mkdirSync(join(space.root, "sub"));
+    for (const file of ["task.js", "fallback.js", "sub/task.js"]) writeFileSync(join(space.root, file), "// reviewed\n");
+    const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+    assert.deepEqual(collected.unresolved, []);
+    assert.deepEqual(collected.dependencies.map((entry) => entry.ref), command.startsWith("cd")
+      ? ["sub/task.js"] : ["fallback.js", "sub/task.js", "task.js"]);
+  });
+}
+
+test("conditional script calls without cwd changes still pin both possible scripts", (t) => {
+  const text = SCRIPT_WORKFLOW.replace("node task.js", "node task.js || node fallback.js");
+  const space = workspace(text);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  writeFileSync(join(space.root, "task.js"), "// primary\n");
+  writeFileSync(join(space.root, "fallback.js"), "// fallback\n");
+  const collected = collectDependencies(space.root, parseWorkflow(space.path, text));
+  assert.deepEqual(collected.unresolved, []);
+  assert.deepEqual(collected.dependencies.map((entry) => entry.ref), ["fallback.js", "task.js"]);
+});
+
+test("apply rejects legacy approval that pinned a decoy after a conditional cd", async (t) => {
+  const text = SCRIPT_WORKFLOW.replace("node task.js", "true || cd sub; node task.js");
+  const space = workspace(text);
+  t.after(() => rmSync(space.root, { recursive: true, force: true }));
+  mkdirSync(join(space.root, "sub"));
+  writeFileSync(join(space.root, "task.js"), "// reviewed root script\n");
+  const decoy = "// unchanged decoy\n";
+  writeFileSync(join(space.root, "sub", "task.js"), decoy);
+  const dependencies = [{ ref: "sub/task.js", sha256: "sha256:" + createHash("sha256").update(decoy).digest("hex") }];
+  const workflow = parseWorkflow(space.path, text);
+  const binding = createLocalBinding(space.root, NOW.toISOString(), { repositoryFullName: "owner/repo" }).binding;
+  const attestation = createAttestation({
+    bindingId: binding.bindingId, workflowPath: space.path, workflowHash: workflow.sha256,
+    dependencyHash: dependencyHashOf(dependencies), scope: "job", jobKey: "build", stepKey: null,
+    claims: { ciOnly: true, replaceSafe: true, artifactPurpose: "unknown", consumerMinDays: null, reviewedOpaqueNodes: [] },
+    evidenceRefs: ["test:conditional-cwd"], issuedBy: { channel: "human-cli", subjectId: "tester" }, now: NOW,
+  });
+  const { plan } = buildPatchPlan({ binding, workflow, text, dependencies,
+    edits: [planTimeoutEdit(text, workflow, workflow.jobs[0]!, 15).edit!], attestations: [attestation],
+    policies: buildPolicySnapshots({ binding, protection: null, retention: null, now: NOW }),
+    blockers: [], coverageWriteAllowed: true, now: NOW });
+  const store = PatchStore.open(join(space.root, ".ci-diet"));
+  store.saveBinding(binding);
+  store.saveAttestation(attestation);
+  store.savePlan(plan, { coverageWriteAllowed: true, reportId: null });
+  const approval = approvePlan({ store, planId: plan.planId, confirmation: approvalConfirmation(plan),
+    subjectId: "tester", channel: "human-cli", now: NOW });
+  writeFileSync(join(space.root, "task.js"), "// changed after approval\n");
+  const result = await applyPlan({ store, planId: plan.planId, now: NOW, subjectId: "tester" });
+  assert.equal(result.state, "not_applied");
+  assert.deepEqual(result.reasons, ["DEPENDENCY_HASH_MISMATCH"]);
+  assert.equal(readFileSync(join(space.root, space.path), "utf8"), text);
+  assert.equal(store.readNonce(plan.planId)?.nonceId, approval.nonce.nonceId);
+  assert.deepEqual(store.listChanges(), []);
+  assert.equal(store.readBackup(store.changeIdFor(plan.planId, NOW)), null);
+});
+
 test("apply re-collects the workflow dependencies instead of trusting the stored refs", async (t) => {
   const space = workspace(SCRIPT_WORKFLOW);
   t.after(() => rmSync(space.root, { recursive: true, force: true }));

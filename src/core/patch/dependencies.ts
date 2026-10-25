@@ -168,6 +168,8 @@ function commandSegments(run: string): string[][] | null {
   let quote: string | null = null;
   let started = false, closedQuote = false;
   let isolatedCommands = false;
+  let conditionalCommand = false, chainHasCd = false, chainHasFallback = false;
+  let conditionalCwd = false, ambiguousCwd = false;
   const finishWord = (): void => {
     // Literal assignments before the command are environment, not argv[0].
     // Keep quoted assignment-looking words and arguments after the command:
@@ -178,10 +180,22 @@ function commandSegments(run: string): string[][] | null {
     started = false;
     closedQuote = false;
   };
-  const finishCommand = (): void => {
+  const finishCommand = (): boolean => {
     finishWord();
-    if (words.length > 0) segments.push(words);
+    const complete = words.length > 0;
+    if (complete) {
+      // Pure && chains may follow cd linearly: a later command runs only if
+      // every preceding command succeeded. An unconditional continuation cannot.
+      if (conditionalCwd && !conditionalCommand) ambiguousCwd = true;
+      if (words[0] === "cd") {
+        if (chainHasFallback) ambiguousCwd = true;
+        if (conditionalCommand) conditionalCwd = true;
+        chainHasCd = true;
+      }
+      segments.push(words);
+    }
     words = [];
+    return complete;
   };
   for (let i = 0; i < run.length; i += 1) {
     const char = run[i]!;
@@ -194,12 +208,26 @@ function commandSegments(run: string): string[][] | null {
     // Grouped commands need a shell AST; never treat their cwd as linear.
     if (char === "(" || char === ")") return null;
     if (char === "|" || char === "&") {
-      if (run[i + 1] === char) i += 1; // && and || keep the current shell.
+      const logical = run[i + 1] === char;
+      if (logical) i += 1;
       else isolatedCommands = true; // Pipelines/background jobs may isolate cd.
       finishCommand();
+      // A conditional cd may not run. A fallback after cd may run in either
+      // directory. Neither case has a single statically provable cwd.
+      if (logical && char === "|") {
+        chainHasFallback = true;
+        if (chainHasCd) ambiguousCwd = true;
+      }
+      conditionalCommand = logical;
       continue;
     }
-    if (char === "\n" || char === ";") { finishCommand(); continue; }
+    if (char === "\n" || char === ";") {
+      // A newline/comment after && or || continues its pending command.
+      if (finishCommand() || char === ";") {
+        conditionalCommand = false; chainHasCd = false; chainHasFallback = false;
+      }
+      continue;
+    }
     if (/\s/.test(char)) { finishWord(); continue; }
     if (char === "#" && !started) {
       while (i + 1 < run.length && run[i + 1] !== "\n") i += 1;
@@ -220,6 +248,7 @@ function commandSegments(run: string): string[][] | null {
   // Never return a complete-looking subset when a reserved word hides the
   // actual executable (e.g. `then node build.js`) or branches the cwd.
   if (segments.some((words) => SHELL_CONTROL_WORDS.has(words[0] ?? ""))) return null;
+  if (ambiguousCwd) return null;
   if (isolatedCommands && segments.some((words) => words[0] === "cd")) return null;
   return segments;
 }
