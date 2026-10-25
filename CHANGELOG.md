@@ -5,6 +5,13 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Resolve the settings form from the current profile's active `dsh-ci-diet`
+  inventory entry instead of requiring the installation ID `ciDiet.bootstrap`.
+  Explain missing, inactive, duplicate, unreachable, and unexposed settings
+  connections in all six languages, with entry IDs and a retry action. Keep
+  atomic saves and the original revision fence; refuse to reuse drafts for a
+  replacement installation.
+
 ## 0.5.0 (2026-10-26)
 
 - Prepare each run's job identities, sorted signature and totals once per

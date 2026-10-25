@@ -5,30 +5,12 @@ import { CLIENT_LANGUAGES, DICTIONARIES, NS } from "./i18n.ts";
 import { installStyles } from "./styles.ts";
 import { ReviewPage } from "./review.ts";
 import { REVIEW_DICTIONARIES, REVIEW_NS } from "./review-i18n.ts";
-
-const FORM_NAMESPACE = "ciDiet.bootstrap";
+import { SettingsConnection } from "./settings-connection.ts";
+import type { ConfigForm, ConfigForms, FormSnapshot } from "./settings-connection.ts";
 
 type Translate = (key: string, params?: Record<string, string | number>) => string;
 type Draft = Record<string, SettingsDraftValue>;
 type Errors = Record<string, string>;
-
-interface FormSnapshot {
-  readonly status: "loading" | "ready" | "unavailable";
-  readonly value?: Record<string, unknown> | undefined;
-  readonly user?: unknown;
-  readonly revision?: number | undefined;
-  readonly writable: boolean;
-}
-
-type SettingsPathOp =
-  | { readonly op: "set"; readonly path: string[]; readonly value: unknown }
-  | { readonly op: "unset"; readonly path: string[] };
-
-interface ConfigForm {
-  getSnapshot(): FormSnapshot;
-  subscribe(listener: () => void): () => void;
-  mutate(ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<boolean>;
-}
 
 const EN = DICTIONARIES.en as Record<string, string>;
 
@@ -181,7 +163,11 @@ function SettingsPage(props: { form?: ConfigForm; t?: Translate }) {
   };
 
   if (snapshot.status === "loading") return React.createElement("div", { className: "ci-diet-notice" }, t("page.loading"));
-  if (snapshot.status === "unavailable" || form === undefined) return React.createElement("div", { className: "ci-diet-notice" }, t("page.unavailable"));
+  if (snapshot.status === "unavailable" || form === undefined) return React.createElement("div", { className: "ci-diet-notice", role: "alert" },
+    React.createElement("h2", null, t("connection.title")),
+    React.createElement("p", null, t(snapshot.issue === undefined ? "page.unavailable" : "connection." + snapshot.issue, { ids: snapshot.entryIds?.join(", ") ?? "" })),
+    form?.retry === undefined ? null : React.createElement("button", { type: "button", className: "ci-diet-discard", onClick: () => form.retry!() }, t("connection.retry")),
+  );
   const readOnly = !snapshot.writable;
 
   const changedKeys = new Set([...Object.keys(draft), ...resets]);
@@ -351,7 +337,7 @@ interface ClientContext {
     getLocale?(): { readonly locales: readonly { readonly id: string }[] };
     addLanguage?(language: { id: string; label: string; fallback: string }): () => void;
   } | undefined;
-  readonly configForms: { get(namespace: string): ConfigForm };
+  readonly configForms: ConfigForms;
   readonly connection: { readonly rpc: { call(channel: string, endpoint: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; error: { message: string } }> } };
   readonly uiSession: { readonly adapter: { readonly current: { getSnapshot(): { key: string | undefined }; subscribe(listener: () => void): () => void } } };
   effect?(run: () => unknown): unknown;
@@ -384,13 +370,15 @@ const plugin = {
     }
     if (ctx.effect !== undefined) ctx.effect(() => installStyles());
     else installStyles();
+    const settings = new SettingsConnection(ctx.configForms, ctx.connection);
+    if (ctx.effect !== undefined) ctx.effect(() => () => settings.dispose());
     const register = () => ctx.slots.inject("settings.section", () => ctx.slots.register({
       name: "settings.section",
       id: "ci-diet",
       order: 91,
       label: () => t("nav"),
       locale: NS,
-      inject: () => ({ form: ctx.configForms.get(FORM_NAMESPACE) }),
+      inject: () => { settings.connect(); return { form: settings }; },
     }, SettingsPage));
     if (ctx.effect !== undefined) ctx.effect(register);
     else register();

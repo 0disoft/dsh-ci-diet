@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "lib": ["ES2023", "DOM"],
     "noEmit": false,
     "outDir": ".client-build",
     "rootDir": "src/client",

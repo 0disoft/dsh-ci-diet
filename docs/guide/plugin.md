@@ -41,6 +41,15 @@ A useful chat request names the calls and stops before any mutation:
 
 The Settings page edits the engine configuration read by DSH tools. Every engine field is live: the next tool call reads the current value without reloading the plugin. Saves are validated against the same contract as the CLI and applied as one atomic batch. A save that conflicts with a newer revision is refused. CLI `--config` files and flags remain separate.
 
+The page resolves its host entry ID from the current DSH profile's plugin
+inventory, so the installation does not have to use `ciDiet.bootstrap`. If
+connection fails, the page distinguishes a missing host, an inactive host,
+multiple active entries, an inventory connection failure, and settings the
+host is not exposing. It shows the relevant entry IDs and a **Retry connection**
+button. Multiple active entries are not selected arbitrarily; configure them
+under **Settings → Plugins** or disable duplicates. After replacing an entry,
+reload the page before editing so an existing draft cannot target the new entry.
+
 | Group | Fields |
 | --- | --- |
 | Connection | `networkEnabled`, `stateDir`, `preflightEnabled`, `localApplyEnabled` |

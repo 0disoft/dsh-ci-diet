@@ -2,6 +2,13 @@
 export const NS = "dsh-ci-diet";
 
 const EN = {
+  "connection.title": "Settings connection failed",
+  "connection.retry": "Retry connection",
+  "connection.missing": "No CI Diet host entry was found in this DSH profile. Enable or reinstall CI Diet under Settings → Plugins, then restart DSH and reload this page.",
+  "connection.inactive": "CI Diet is installed but disabled, still starting, or failed to start. Check its status under Settings → Plugins. Entry IDs: {ids}.",
+  "connection.multiple": "Multiple CI Diet entries are active. Use Settings → Plugins to configure an entry or disable duplicates. Entry IDs: {ids}.",
+  "connection.transport": "The DSH plugin inventory could not be read. Check the DSH connection, update DSH and CI Diet together, then retry.",
+  "connection.form": "The CI Diet host entry was found, but DSH is not exposing its settings. Check the plugin startup log, restart DSH, and reload the page. Entry ID: {ids}.",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "Basic settings to reduce CI waste",
@@ -86,6 +93,13 @@ const EN = {
 export type MessageKey = keyof typeof EN;
 
 const KO: Record<MessageKey, string> = {
+  "connection.title": "설정 연결 실패",
+  "connection.retry": "연결 다시 시도",
+  "connection.missing": "이 DSH 프로필에서 CI Diet 호스트 항목을 찾지 못했어요. 설정 → 플러그인에서 CI Diet를 활성화하거나 다시 설치한 뒤 DSH를 재시작하고 이 페이지를 새로고침하세요.",
+  "connection.inactive": "CI Diet가 설치되어 있지만 비활성화되었거나, 아직 시작 중이거나, 시작에 실패했어요. 설정 → 플러그인에서 상태를 확인하세요. 항목 ID: {ids}.",
+  "connection.multiple": "활성화된 CI Diet 항목이 여러 개예요. 다른 항목을 잘못 편집하지 않도록 설정 → 플러그인에서 개별 설정을 사용하거나 중복 항목을 비활성화하세요. 항목 ID: {ids}.",
+  "connection.transport": "DSH 플러그인 목록을 읽지 못했어요. DSH 연결을 확인하고 DSH와 CI Diet를 함께 업데이트한 뒤 다시 시도하세요.",
+  "connection.form": "CI Diet 호스트 항목은 찾았지만 DSH가 해당 설정을 제공하지 않아요. 플러그인 시작 로그를 확인하고 DSH를 재시작한 뒤 페이지를 새로고침하세요. 항목 ID: {ids}.",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "CI 낭비를 줄이는 기본 설정",
@@ -168,6 +182,13 @@ const KO: Record<MessageKey, string> = {
 };
 
 const ZH: Record<MessageKey, string> = {
+  "connection.title": "设置连接失败",
+  "connection.retry": "重试连接",
+  "connection.missing": "在此 DSH 配置中未找到 CI Diet 主机条目。请在“设置 → 插件”中启用或重新安装 CI Diet，然后重启 DSH 并重新加载此页面。",
+  "connection.inactive": "CI Diet 已安装，但已停用、仍在启动或启动失败。请在“设置 → 插件”中检查其状态。条目 ID：{ids}。",
+  "connection.multiple": "有多个 CI Diet 条目处于启用状态。为避免编辑错误的实例，请使用“设置 → 插件”配置条目或停用重复项。条目 ID：{ids}。",
+  "connection.transport": "无法读取 DSH 插件清单。请检查 DSH 连接，同时更新 DSH 和 CI Diet，然后重试。",
+  "connection.form": "已找到 CI Diet 主机条目，但 DSH 未公开其设置。请检查插件启动日志，重启 DSH，并重新加载页面。条目 ID：{ids}。",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "减少 CI 浪费的基本设置",
@@ -250,6 +271,13 @@ const ZH: Record<MessageKey, string> = {
 };
 
 const HI: Record<MessageKey, string> = {
+  "connection.title": "सेटिंग्स कनेक्शन विफल",
+  "connection.retry": "कनेक्शन फिर से आज़माएँ",
+  "connection.missing": "इस DSH प्रोफ़ाइल में CI Diet होस्ट प्रविष्टि नहीं मिली। सेटिंग्स → प्लगइन्स में CI Diet को सक्षम या फिर से इंस्टॉल करें, फिर DSH को फिर से शुरू करके यह पेज फिर से लोड करें।",
+  "connection.inactive": "CI Diet इंस्टॉल है, लेकिन बंद है, अभी शुरू हो रहा है या शुरू होने में विफल रहा। सेटिंग्स → प्लगइन्स में इसकी स्थिति जाँचें। प्रविष्टि ID: {ids}।",
+  "connection.multiple": "कई CI Diet प्रविष्टियाँ सक्रिय हैं। गलत इंस्टेंस को संपादित करने से बचने के लिए सेटिंग्स → प्लगइन्स में किसी एक को कॉन्फ़िगर करें या डुप्लिकेट को बंद करें। प्रविष्टि ID: {ids}।",
+  "connection.transport": "DSH प्लगइन सूची पढ़ी नहीं जा सकी। DSH कनेक्शन जाँचें, DSH और CI Diet को एक साथ अपडेट करें, फिर दोबारा प्रयास करें।",
+  "connection.form": "CI Diet होस्ट प्रविष्टि मिली, लेकिन DSH उसकी सेटिंग्स नहीं दिखा रहा। प्लगइन स्टार्टअप लॉग जाँचें, DSH फिर से शुरू करें और पेज फिर से लोड करें। प्रविष्टि ID: {ids}।",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "CI अपव्यय कम करने की बुनियादी सेटिंग्स",
@@ -332,6 +360,13 @@ const HI: Record<MessageKey, string> = {
 };
 
 const ES: Record<MessageKey, string> = {
+  "connection.title": "Error de conexión de ajustes",
+  "connection.retry": "Reintentar conexión",
+  "connection.missing": "No se encontró ninguna entrada de host de CI Diet en este perfil de DSH. Activa o reinstala CI Diet en Ajustes → Complementos, luego reinicia DSH y vuelve a cargar esta página.",
+  "connection.inactive": "CI Diet está instalado, pero está desactivado, todavía se está iniciando o no pudo iniciarse. Comprueba su estado en Ajustes → Complementos. ID de entradas: {ids}.",
+  "connection.multiple": "Hay varias entradas de CI Diet activas. Para evitar editar la instancia equivocada, usa Ajustes → Complementos para configurar una entrada o desactivar las duplicadas. ID de entradas: {ids}.",
+  "connection.transport": "No se pudo leer el inventario de complementos de DSH. Comprueba la conexión con DSH, actualiza DSH y CI Diet juntos y vuelve a intentarlo.",
+  "connection.form": "Se encontró la entrada de host de CI Diet, pero DSH no muestra sus ajustes. Revisa el registro de inicio del complemento, reinicia DSH y vuelve a cargar la página. ID de entrada: {ids}.",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "Ajustes básicos para reducir el desperdicio de CI",
@@ -414,6 +449,13 @@ const ES: Record<MessageKey, string> = {
 };
 
 const FR: Record<MessageKey, string> = {
+  "connection.title": "Échec de la connexion aux paramètres",
+  "connection.retry": "Réessayer la connexion",
+  "connection.missing": "Aucune entrée d’hôte CI Diet n’a été trouvée dans ce profil DSH. Activez ou réinstallez CI Diet dans Paramètres → Extensions, puis redémarrez DSH et rechargez cette page.",
+  "connection.inactive": "CI Diet est installé, mais désactivé, encore en cours de démarrage ou n’a pas pu démarrer. Vérifiez son état dans Paramètres → Extensions. ID des entrées : {ids}.",
+  "connection.multiple": "Plusieurs entrées CI Diet sont actives. Pour éviter de modifier la mauvaise instance, utilisez Paramètres → Extensions pour configurer une entrée ou désactiver les doublons. ID des entrées : {ids}.",
+  "connection.transport": "L’inventaire des extensions DSH n’a pas pu être lu. Vérifiez la connexion DSH, mettez à jour DSH et CI Diet ensemble, puis réessayez.",
+  "connection.form": "L’entrée d’hôte CI Diet a été trouvée, mais DSH n’expose pas ses paramètres. Consultez le journal de démarrage de l’extension, redémarrez DSH et rechargez la page. ID de l’entrée : {ids}.",
   nav: "CI Diet",
   "page.title": "CI Diet",
   "page.intro": "Réglages de base pour réduire le gaspillage de CI",

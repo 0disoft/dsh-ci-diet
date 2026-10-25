@@ -82,10 +82,10 @@ function findElement(node: unknown, predicate: (element: FakeElement) => boolean
   return findElement(element.props.children, predicate);
 }
 
-function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
+function loadBundle(fake?: Record<string, unknown>, settings?: { configForms: unknown; connection: unknown }): LoadedBundle {
   const captured: { id: string; factory(require: (id: string) => unknown): unknown }[] = [];
   const sandbox = { window: { __ModuleLoader__: { load(entry: unknown) { captured.push(entry as never); } } } };
-  Object.assign(sandbox, { setInterval: () => 0, clearInterval: () => {} });
+  Object.assign(sandbox, { setInterval: () => 0, clearInterval: () => {}, AbortController, AbortSignal });
   vm.runInNewContext(readFileSync(join(ROOT, "client", "index.js"), "utf8"), sandbox);
   assert.equal(captured.length, 1);
   const entry = captured[0]!;
@@ -124,9 +124,9 @@ function loadBundle(fake?: Record<string, unknown>): LoadedBundle {
         return () => {};
       },
     },
-    configForms: { get: () => form },
+    configForms: settings?.configForms ?? { get: () => form },
     uiSession: { adapter: { current: { getSnapshot: () => ({ key: "current-dsh-session" }), subscribe: () => () => {} } } },
-    connection: { rpc: { call: async () => ({ ok: true, value: null }) } },
+    connection: settings?.connection ?? { rpc: { call: async () => ({ ok: true, value: null }) } },
     effect(run: () => unknown) { return run(); },
   };
   plugin.apply(ctx);
@@ -161,6 +161,50 @@ test("review dictionaries have the same complete nonempty key set", () => {
     assert.deepEqual(Object.keys(dictionary).sort(), keys, locale);
     assert.ok(Object.values(dictionary).every((text) => text.trim().length > 0));
   }
+});
+
+test("the bundled settings page discovers a nonstandard installation ID and saves through its form", async () => {
+  const fake = fakeReact();
+  const selected: string[] = [];
+  const mutations: unknown[] = [];
+  const hostForm = {
+    getSnapshot: () => ({ status: "ready", writable: true, revision: 17, value: { networkEnabled: false } }),
+    subscribe: () => () => {},
+    mutate: async (ops: unknown, revision: number) => { mutations.push({ ops, revision }); return true; },
+  };
+  const loaded = loadBundle(fake.react, {
+    configForms: { get: (id: string) => { selected.push(id); return hostForm; } },
+    connection: { rpc: { call: async (channel: string, endpoint: string, payload: unknown) => {
+      assert.equal(channel, "/api"); assert.equal(endpoint, "pluginInventory/list");
+      assert.equal(JSON.stringify(payload), '{"args":{}}');
+      return { ok: true, value: { entries: [{ entryId: "plugin.random-install-id", moduleName: "dsh-ci-diet", enabled: true, fiberPhase: "active" }] } };
+    } } },
+  });
+  const form = (loaded.sections[0]!.options.inject as () => { form: unknown })().form;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(selected, ["plugin.random-install-id"]);
+  const render = () => renderPage(fake.react, loaded.sections[0]!.component, { form });
+  const toggle = findElement(render(), (e) => e.props.role === "switch" && e.props["aria-label"] === DICTIONARIES.en["field.networkEnabled"])!;
+  (toggle.props.onClick as () => void)();
+  await (findElement(render(), (e) => e.props.className === "ci-diet-save")!.props.onClick as () => Promise<void>)();
+  assert.deepEqual(JSON.parse(JSON.stringify(mutations)), [{ ops: [{ op: "set", path: ["networkEnabled"], value: true }], revision: 17 }]);
+});
+
+test("settings connection failures display the cause and entry IDs with a retry action", () => {
+  const fake = fakeReact();
+  const loaded = loadBundle(fake.react);
+  let retries = 0;
+  const form = {
+    getSnapshot: () => ({ status: "unavailable", writable: false, issue: "multiple", entryIds: ["ci.one", "ci.two"] }),
+    subscribe: () => () => {}, retry: () => { retries++; },
+  };
+  const tree = renderPage(fake.react, loaded.sections[0]!.component, { form });
+  assert.equal(tree.props.role, "alert");
+  assert.ok(findElement(tree, (e) => e.type === "p" && String(e.props.children).includes("ci.one, ci.two")));
+  const retry = findElement(tree, (e) => e.type === "button" && e.props.children === DICTIONARIES.en["connection.retry"])!;
+  (retry.props.onClick as () => void)();
+  assert.equal(retries, 1);
+  assert.equal(findElement(tree, (e) => e.props.className === "ci-diet-save"), undefined);
 });
 
 test("review reads current session from the public UI scope adapter", () => {
