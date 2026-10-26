@@ -10,7 +10,7 @@
   <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**Find likely wasted GitHub Actions runner time, keep the evidence, and turn small fixes into plans for human review.**
+**Find GitHub Actions jobs that run longer or more often than they need to. Review small YAML fixes before applying them.**
 
 CI Diet is an alpha CLI and DeepSeek Harness (DSH) plugin. It reads workflow definitions and, when enabled, GitHub Actions history; then it shows findings and prepares narrow YAML edits without changing a workflow on its own.
 
@@ -46,9 +46,9 @@ ci-diet report --cwd . --format html --out report.html
 ## What it finds
 
 <p align="center">
-  <img src="docs/assets/settings-preview.png" alt="CI Diet configuration page with default-on preflight in the Korean UI" width="560">
+  <img src="docs/assets/settings-preview.png" alt="CI Diet settings in English, with preflight and history analysis enabled" width="820">
 </p>
-<p align="center"><sub>Settings → CI Diet configuration. Korean UI shown; preflight is on by default.</sub></p>
+<p align="center"><sub>Settings → CI Diet. Preflight and history analysis are enabled by default.</sub></p>
 
 | Rule | Default | Looks for | Usual output |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Approval authorizes only that plan. Apply creates a backup, rewrites the planned bytes, and performs source, dependency, policy, digest, lock, and backup checks. Revert restores the backup. CI Diet does not commit, push, deploy, run a workflow, change branch protection, or delete artifacts.
 
-## Evidence and honest limits
+## Measurement and limits
 
 - No savings are claimed before measurement. A finding can be wrong when history or workflow attribution is incomplete.
 - A dependency cache can add restore/save time. Its overhead can exceed the installation time it avoids; compare compatible cold and warm runs and include cache steps.
-- `measure` compares selected real runs and reports observed runner-time differences, success and rerun rates. It is evidence about those samples, not proof of causality or actual billing.
+- `measure` compares selected real runs and reports observed runner-time differences, success and rerun rates. The comparison covers those samples only; it does not establish the cause of a change or reproduce your bill.
 - The Settings page stores tool configuration and shows session-scoped reports and plans. It does not optimize a workflow by itself.
-- Policy and evidence checks can block an otherwise useful edit. Review the report, the diff, and the repository's own checks before keeping a change.
+- Source hashes, approval expiry, and policy checks can block an edit. Review the report, the diff, and the repository's own checks before keeping a change.
 
 | Measure | Meaning |
 | --- | --- |

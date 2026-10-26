@@ -44,7 +44,7 @@
       <text x="18" y="32" fill="#70ebc1" font-size="12" font-weight="700" letter-spacing="1">05 / CHECK RESULTS</text>
       <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Measure</text>
       <text x="18" y="100" fill="#b4c3d1" font-size="13">Selected before/after runs</text>
-      <text x="18" y="120" fill="#b4c3d1" font-size="13">Evidence, not a promise</text>
+      <text x="18" y="120" fill="#b4c3d1" font-size="13">Compare actual runs</text>
     </g>
   </g>
 </svg>

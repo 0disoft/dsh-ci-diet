@@ -10,7 +10,7 @@
   <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**Encuentra tiempo de runner de GitHub Actions que probablemente se desperdicia, conserva las pruebas y convierte pequeñas correcciones en planes para revisión humana.**
+**Encuentra jobs de GitHub Actions que se ejecutan más veces o durante más tiempo del necesario. Revisa los cambios YAML antes de aplicarlos.**
 
 CI Diet es una CLI y un plugin de DeepSeek Harness (DSH) en fase alpha. Lee definiciones de workflow y, cuando está habilitado, el historial de GitHub Actions; después muestra hallazgos y prepara cambios YAML acotados sin modificar un workflow por su cuenta.
 
@@ -46,9 +46,9 @@ ci-diet report --cwd . --format html --out report.html
 ## Lo que detecta
 
 <p align="center">
-  <img src="docs/assets/settings-preview.png" alt="página de configuración de CI Diet en coreano con la comprobación previa activada por defecto" width="560">
+  <img src="docs/assets/settings-preview.png" alt="Configuración de CI Diet en inglés, con comprobación previa y análisis del historial activados" width="820">
 </p>
-<p align="center"><sub>Settings → CI Diet configuration. Interfaz en coreano; la comprobación previa está activa por defecto.</sub></p>
+<p align="center"><sub>Settings → CI Diet, en inglés. La comprobación previa y el análisis del historial están activados por defecto.</sub></p>
 
 | Regla | Por defecto | Busca | Resultado habitual |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Una aprobación vale solo para ese plan. Aplicar crea una copia de seguridad, reescribe los bytes planificados y comprueba source, dependency, policy, digest, lock y backup. Revertir restaura la copia. CI Diet no hace commit, push ni deploy, no ejecuta workflows, no cambia branch protection y no borra artifacts.
 
-## Evidencia y límites
+## Mediciones y límites
 
 - No se afirma un ahorro antes de medirlo. Un hallazgo puede ser erróneo si el historial o la atribución del workflow están incompletos.
 - La caché de dependencias puede añadir tiempo de restore y save. Su overhead puede superar el tiempo de instalación que evita; compara ejecuciones cold y warm equivalentes e incluye los pasos de caché.
-- `measure` compara ejecuciones reales seleccionadas y muestra diferencias observadas de runner time, tasa de éxito y de relanzamiento. Es evidencia sobre esas muestras, no prueba de causalidad ni de la factura real.
+- `measure` compara ejecuciones reales seleccionadas y muestra diferencias observadas de runner time, tasa de éxito y de relanzamiento. La comparación solo cubre esas muestras; no determina la causa del cambio ni reproduce la factura real.
 - La página Settings guarda la configuración de herramientas y muestra informes y planes ligados a la sesión. No optimiza un workflow por sí misma.
-- Las comprobaciones de policy y evidencia pueden bloquear una edición útil. Revisa el informe, el diff y las propias comprobaciones del repositorio antes de conservar un cambio.
+- Los hashes del archivo original, la caducidad de la aprobación y las comprobaciones de policy pueden bloquear un cambio. Revisa el informe, el diff y las propias comprobaciones del repositorio antes de conservarlo.
 
 | Medida | Significado |
 | --- | --- |

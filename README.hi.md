@@ -10,7 +10,7 @@
   <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**संभावित रूप से बर्बाद हो रहे GitHub Actions runner समय को पहचानें, सबूत साथ रखें और छोटे सुधारों को मानवीय समीक्षा के लिए योजनाओं में बदलें।**
+**ज़रूरत से ज़्यादा बार या देर तक चलने वाले GitHub Actions jobs खोजें। YAML बदलाव लागू करने से पहले उनकी समीक्षा करें।**
 
 CI Diet alpha चरण का CLI और DeepSeek Harness (DSH) plugin है। यह workflow definitions पढ़ता है और सक्षम होने पर GitHub Actions history भी; फिर findings दिखाता है और workflow खुद बदले बिना सीमित YAML edits तैयार करता है।
 
@@ -46,9 +46,9 @@ ci-diet report --cwd . --format html --out report.html
 ## यह क्या ढूँढता है
 
 <p align="center">
-  <img src="docs/assets/settings-preview.png" alt="कोरियाई UI में default-on preflight वाला CI Diet configuration page" width="560">
+  <img src="docs/assets/settings-preview.png" alt="अंग्रेज़ी में CI Diet settings, preflight और history analysis चालू हैं" width="820">
 </p>
-<p align="center"><sub>Settings → CI Diet configuration. कोरियाई UI दिखाया गया है; preflight डिफ़ॉल्ट रूप से चालू है।</sub></p>
+<p align="center"><sub>Settings → CI Diet का अंग्रेज़ी इंटरफ़ेस। Preflight और history analysis डिफ़ॉल्ट रूप से चालू हैं।</sub></p>
 
 | नियम | डिफ़ॉल्ट | क्या ढूँढता है | सामान्य output |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 Approval केवल उसी plan के लिए है। Apply backup बनाता है, planned bytes बदलता है और source, dependency, policy, digest, lock तथा backup की जाँच करता है। Revert backup बहाल करता है। CI Diet commit, push, deploy, workflow run, branch protection बदलना या artifacts हटाना नहीं करता।
 
-## सबूत और साफ़ सीमाएँ
+## माप और सीमाएँ
 
 - Measurement से पहले savings का दावा नहीं होता। History या workflow attribution अधूरी हो तो finding गलत हो सकती है।
 - Dependency cache restore और save समय जोड़ सकता है। इसका overhead उस installation समय से बड़ा हो सकता है जिसे वह बचाता है; बराबर परिस्थितियों वाले cold और warm runs की तुलना करें और cache steps को शामिल करें।
-- `measure` चुने गए वास्तविक runs की तुलना करता है और observed runner-time difference, success और rerun rates दिखाता है। यह उन samples के बारे में evidence है; causality या actual billing का proof नहीं।
+- `measure` चुने गए वास्तविक runs की तुलना करता है और observed runner-time difference, success और rerun rates दिखाता है। तुलना केवल उन्हीं samples की है; इससे बदलाव का कारण या वास्तविक बिल तय नहीं होता।
 - Settings page tool configuration save करता है और session-scoped reports तथा plans दिखाता है। यह खुद workflow optimize नहीं करता।
-- Policy और evidence checks किसी उपयोगी edit को भी रोक सकते हैं। बदलाव रखने से पहले report, diff और repository की अपनी checks देखें।
+- Source hashes, approval expiry और policy checks बदलाव रोक सकते हैं। बदलाव रखने से पहले report, diff और repository की अपनी checks देखें।
 
 | माप | अर्थ |
 | --- | --- |

@@ -10,7 +10,7 @@
   <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**找出可能浪费的 GitHub Actions runner 时间，保留证据，并把小修改整理成供人审查的计划。**
+**找出运行过于频繁或耗时过长的 GitHub Actions 任务，应用前先审查 YAML 修改。**
 
 CI Diet 是 alpha 阶段的 CLI 和 DeepSeek Harness（DSH）插件。它会读取 workflow 定义，并在启用后读取 GitHub Actions 历史，然后展示发现并准备范围很小的 YAML 修改；它不会自行改动 workflow。
 
@@ -46,9 +46,9 @@ ci-diet report --cwd . --format html --out report.html
 ## 检测内容
 
 <p align="center">
-  <img src="docs/assets/settings-preview.png" alt="韩语界面中默认启用 preflight 的 CI Diet 设置页面" width="560">
+  <img src="docs/assets/settings-preview.png" alt="启用部署前检查和历史分析的 CI Diet 英文设置页面" width="820">
 </p>
-<p align="center"><sub>Settings → CI Diet 设置页面。界面使用韩语，preflight 默认启用。</sub></p>
+<p align="center"><sub>Settings → CI Diet 英文界面。部署前检查和历史分析默认启用。</sub></p>
 
 | 规则 | 默认 | 查找内容 | 常见输出 |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 批准只对当前计划有效。应用会创建备份、重写计划中的字节，并检查 source、dependency、policy、digest、lock 和 backup。回退会恢复备份。CI Diet 不会 commit、push、deploy、运行 workflow、更改 branch protection 或删除 artifact。
 
-## 证据与限制
+## 测量结果与限制
 
 - 在测量前不声称节省。当历史或 workflow 归属不完整时，发现可能出错。
 - dependency cache 会增加 restore 和 save 时间。缓存开销可能超过它节省的安装时间；请比较条件相同的 cold 和 warm 运行，并把缓存步骤计算在内。
 - `measure` 会比较选定的真实运行，显示观察到的 runner-time 差异、成功率和重跑率。它只说明这些样本，不能证明因果关系或实际账单。
 - Settings 页面保存工具配置，并显示会话范围内的报告和计划。它本身不会优化 workflow。
-- 策略和证据检查可能阻止本来有用的修改。保留修改前，请检查报告、diff 和仓库自己的检查。
+- 源文件哈希不匹配、审批过期或策略检查都可能阻止修改。保留修改前，请检查报告、diff 和仓库自己的检查。
 
 | 指标 | 含义 |
 | --- | --- |

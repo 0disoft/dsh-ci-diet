@@ -10,7 +10,7 @@
   <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
-**낭비 가능성이 높은 GitHub Actions 러너 시간을 찾아 근거를 남기고, 작은 수정안을 사람이 검토할 수 있는 계획으로 만듭니다.**
+**불필요하게 반복되거나 오래 걸리는 GitHub Actions 작업을 찾고, 적용 전에 YAML 수정안을 검토하세요.**
 
 CI Diet는 알파 단계의 CLI이자 DeepSeek Harness(DSH) 플러그인입니다. workflow 정의와, 켜져 있을 때 GitHub Actions 이력을 읽고 발견 사항을 보여줍니다. workflow는 스스로 바꾸지 않고 좁은 범위의 YAML 수정안을 준비합니다.
 
@@ -46,9 +46,9 @@ ci-diet report --cwd . --format html --out report.html
 ## 찾는 것
 
 <p align="center">
-  <img src="docs/assets/settings-preview.png" alt="한국어 UI에서 preflight가 기본으로 켜진 CI Diet 설정 화면" width="560">
+  <img src="docs/assets/settings-preview.png" alt="배포 전 점검과 이력 분석이 켜진 CI Diet 영문 설정 화면" width="820">
 </p>
-<p align="center"><sub>Settings → CI Diet 설정 화면입니다. 한국어 UI이며 preflight는 기본으로 켜져 있습니다.</sub></p>
+<p align="center"><sub>Settings → CI Diet 영문 화면입니다. 배포 전 점검과 이력 분석은 기본으로 켜져 있습니다.</sub></p>
 
 | 규칙 | 기본값 | 찾는 것 | 보통의 결과 |
 | --- | --- | --- | --- |
@@ -113,13 +113,13 @@ ci-diet revert --cwd . --change CHANGE_ID
 
 승인은 그 계획 하나에만 유효합니다. 적용은 백업을 만들고 계획된 바이트를 고친 뒤 source, dependency, policy, digest, lock, backup을 확인합니다. 되돌리기는 백업을 복원합니다. CI Diet는 commit, push, deploy, workflow 실행, branch protection 변경, artifact 삭제를 하지 않습니다.
 
-## 근거와 솔직한 한계
+## 측정 결과와 한계
 
 - 측정 전에는 절감을 주장하지 않습니다. 이력이나 workflow 귀속이 불완전하면 발견이 틀릴 수 있습니다.
 - dependency cache는 restore와 save 시간을 더할 수 있습니다. 줄이는 설치 시간보다 cache overhead가 클 수 있으니 조건이 같은 cold 실행과 warm 실행을 비교하고 cache 단계도 포함하세요.
-- `measure`는 선택한 실제 실행을 비교해 관찰된 runner-time 차이와 성공, 재실행률을 보여줍니다. 그 표본에 대한 근거일 뿐 인과관계나 실제 청구 금액의 증명이 아닙니다.
+- `measure`는 선택한 실제 실행의 소요 시간 차이와 성공률, 재실행률을 비교합니다. 선택한 표본의 비교 결과이며, 수정 때문에 차이가 발생했다고 단정하거나 실제 청구 금액으로 해석할 수는 없습니다.
 - Settings 화면은 도구 설정을 저장하고 세션에 묶인 보고서와 계획을 보여줍니다. 스스로 workflow를 최적화하지 않습니다.
-- 정책과 근거 확인 때문에 유용한 수정도 막힐 수 있습니다. 변경을 남기기 전에 보고서, diff, 저장소 자체 검사를 확인하세요.
+- 원본 해시 불일치, 승인 만료, 정책 검사로 수정이 차단될 수 있습니다. 변경을 남기기 전에 보고서, diff, 저장소 자체 검사를 확인하세요.
 
 | 값 | 의미 |
 | --- | --- |
