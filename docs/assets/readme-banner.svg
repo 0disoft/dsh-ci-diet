@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">CI Diet — less CI waste, clear evidence</title>
+  <desc id="desc">A local-first GitHub Actions analyzer and DSH plugin. The illustrated patch adds an npm download cache while keeping npm ci. Every change requires approval.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1">
+      <stop stop-color="#101c2b"/>
+      <stop offset="1" stop-color="#101a23"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#46d4ab" stop-opacity=".14"/>
+      <stop offset="1" stop-color="#46d4ab" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#c7e8ed" stroke-opacity=".045"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="360" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="360" rx="20" fill="url(#grid)"/>
+  <ellipse cx="1020" cy="160" rx="410" ry="280" fill="url(#glow)"/>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <rect x="44" y="38" width="36" height="36" rx="10" fill="#70ebc1"/>
+    <path d="m59 48-7 8 7 8m7-16 7 8-7 8" fill="none" stroke="#101c2b" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="94" y="62" fill="#a9bbc9" font-size="14" font-weight="600" letter-spacing="1.8">GITHUB ACTIONS · CLI + DSH</text>
+    <text x="42" y="159" fill="#f5fafc" font-size="77" font-weight="750" letter-spacing="-3">CI Diet<tspan fill="#70ebc1">.</tspan></text>
+    <text x="46" y="207" fill="#d6e4ec" font-size="27" font-weight="500">Less waste. Clear evidence.</text>
+    <text x="46" y="239" fill="#9db0c1" font-size="17">Find the waste. Review the diff. Measure the change.</text>
+    <rect x="46" y="284" width="112" height="28" rx="14" fill="#70ebc1" fill-opacity=".1" stroke="#70ebc1" stroke-opacity=".3"/>
+    <text x="102" y="303" text-anchor="middle" fill="#9bf2d2" font-size="11" font-weight="700" letter-spacing="1.2">LOCAL FIRST</text>
+    <rect x="168" y="284" width="167" height="28" rx="14" fill="#70ebc1" fill-opacity=".1" stroke="#70ebc1" stroke-opacity=".3"/>
+    <text x="251.5" y="303" text-anchor="middle" fill="#9bf2d2" font-size="11" font-weight="700" letter-spacing="1.2">EXPLICIT APPROVAL</text>
+    <g transform="translate(670 49)">
+      <rect width="482" height="262" rx="14" fill="#0c1420" stroke="#344453"/>
+      <path d="M0 44h482" stroke="#2b3947"/>
+      <circle cx="20" cy="22" r="4" fill="#657789"/>
+      <circle cx="35" cy="22" r="4" fill="#657789"/>
+      <circle cx="50" cy="22" r="4" fill="#657789"/>
+      <text x="76" y="27" fill="#9fb2c3" font-size="11" font-weight="600" letter-spacing="1.1">REVIEWABLE WORKFLOW PATCH</text>
+      <g font-family="Consolas, Menlo, monospace" font-size="14">
+        <text x="24" y="80" fill="#8ba0b3">.github/workflows/ci.yml</text>
+        <text x="24" y="116" fill="#d7e3ec">  - uses: actions/setup-node@v4</text>
+        <text x="24" y="142" fill="#d7e3ec">    with:</text>
+        <rect x="14" y="154" width="454" height="53" rx="5" fill="#70ebc1" fill-opacity=".08"/>
+        <text x="24" y="175" fill="#9bf2d2">+     cache: npm</text>
+        <text x="24" y="197" fill="#9bf2d2">+     cache-dependency-path: package-lock.json</text>
+        <text x="24" y="234" fill="#d7e3ec">  - run: npm ci</text>
+      </g>
+    </g>
+  </g>
+</svg>

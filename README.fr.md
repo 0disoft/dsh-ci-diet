@@ -1,65 +1,37 @@
+<p align="center"><img src="docs/assets/readme-banner.svg" alt="CI Diet" width="820"></p>
+
 # CI Diet
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**État :** alpha ; `dsh-ci-diet@0.5.2` est publié sur npm. L’arbre source actuel ajoute l’écran de revue **Réglages → CI Diet Reports** aux contrats, aux moteurs d’analyse et de correctifs, à la CLI, aux outils DSH, à la page Réglages et au rapport HTML autonome. L’écran de revue avait déjà passé un test E2E dans un vrai navigateur lors d’un commit précédent. La migration unique des valeurs par défaut a été vérifiée séparément dans le runtime DSH `0.2.1-rc.2` avec configEditor, SettingsForms et Loader ; ce n’est pas une nouvelle vérification du rendu navigateur. Le plugin DSH démarre désormais avec preflight, l’accès réseau pour l’historique et l’application locale activés.
+<p align="center">
+  <a href="https://www.npmjs.com/package/dsh-ci-diet"><img src="https://img.shields.io/npm/v/dsh-ci-diet.svg" alt="version npm"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="licence : MIT"></a>
+  <a href="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml"><img src="https://github.com/0disoft/dsh-ci-diet/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+</p>
 
-**Valeurs par défaut et migration DSH.** Les nouveaux profils activent `preflightEnabled`, `networkEnabled`, `localApplyEnabled` ainsi que CD001, CD002, CD004, CD006 et CD008. La migration des profils verrouillés enregistre `defaultsRevision: 2`. Les profils déjà migrés vers la révision 1 conservent les choix ultérieurs de commutateurs et de règles. Les chemins d’état, la durée de conservation, les quotas et les saisies numériques existantes du compte sont préservés. CD003 et CD005 restent désactivés sauf s’ils sont activés. Les estimations financières utilisent automatiquement les deux saisies du compte ; une valeur vide signifie inconnue et un `0` explicite est valide. Les champs de facturation déjà activés conservent leurs valeurs par défaut à zéro lorsqu’une valeur a été omise.
+**Repérez le temps de runner GitHub Actions probablement gaspillé, conservez les preuves et transformez les petites corrections en plans soumis à une revue humaine.**
 
-CI Diet repère le travail GitHub Actions probablement inutile, conserve les preuves associées à chaque constat et prévisualise de petites modifications de workflow pour qu’une personne les examine.
+CI Diet est une CLI et un plugin DeepSeek Harness (DSH) en phase alpha. Il lit les définitions de workflow et, lorsqu’il est activé, l’historique GitHub Actions ; il présente ensuite les constats et prépare des modifications YAML limitées sans modifier un workflow de lui-même.
 
-**L’installation seule ne permet pas d’économiser des minutes de runner.** Les commandes de déploiement DSH prises en charge recherchent automatiquement des candidats d’économie avant de s’exécuter ; les modifications de workflow ne sont appliquées qu’après examen et approbation. Le plugin DSH n’a pas d’outils d’approbation, d’application ou d’annulation, et preflight ne modifie jamais de fichier. Ses pages Réglages stockent la configuration et affichent les rapports et plans de session fournis par l’hôte ; elles n’optimisent pas un workflow. Les écritures locales approuvées sont activées par défaut, mais l’application exige toujours une approbation de digest distincte. Rien ne garantit qu’un constat réduise le coût.
+## Installation
 
-`preflightEnabled` est activé par défaut. Avant un `git push`, `npm|pnpm|bun publish`, `wrangler deploy` ou `npm|pnpm|bun run deploy` littéral dans un outil bash DSH sans état pris en charge (avec argument `workdir`), CI Diet effectue une vérification hors ligne. Il signale pour examen les candidats npm CD006, l’absence de concurrency dans un workflow réservé aux PR et une installation Bun frozen sans cache de téléchargement explicite. Si un candidat existe, la première commande ne s’exécute pas ; après examen, le modèle peut relancer la même commande. Preflight lui-même n’effectue aucune requête réseau ni modification automatique de fichier, et l’application d’un plan demande toujours une approbation humaine. Les shells persistants et les wrappers shell complexes ne sont pas identifiés de façon fiable, donc preflight les ignore. L’économie reste non mesurée, donc aucun gain n’est affirmé.
+La CLI nécessite Node `^22.19.0 || >=24.0.0`. La version npm actuelle est `0.5.2`.
 
-## Ce qu’il fait
-
-Le scan statique lit le YAML des workflows dans un checkout cible. La synchronisation facultative de l’historique utilise des appels `gh api` en lecture seule pour collecter les exécutions récentes. Les constats comportent un niveau de preuve (`observed`, `inferred` ou `static`) et une couverture de collecte par axe.
-
-| Règle | Ce qu’elle détecte | Modification possible |
-| --- | --- | --- |
-| CD001 | Exécutions de PR rendues obsolètes par un commit plus récent | modification de `concurrency` |
-| CD002 | Déclencheurs qui se chevauchent | explication uniquement |
-| CD003 | Vérifications lourdes pour des changements documentaires | explication uniquement ; désactivée par défaut |
-| CD004 | Matrices surdimensionnées | explication uniquement |
-| CD005 | Tâches sans `timeout-minutes` | modification du délai d’expiration ; désactivée par défaut |
-| CD006 | npm / pnpm / Bun | [CD006](docs/spec/rules.md) |
-| CD008 | Rétention prolongée des artefacts | modification de la rétention |
-
-CD001 aide à traiter les exécutions de PR qui se chevauchent et sont devenues obsolètes. CD005 limite les exécutions anormales ; elle ne réduit pas la durée d’exécution normale d’une tâche. CD008 modifie la rétention du stockage des artefacts, et non les minutes de runner. CD003 et CD005 restent désactivées jusqu’à ce qu’elles réussissent leurs contrôles de qualité.
-
-CD006 prend également en charge les configurations npm/pnpm vérifiées et les jobs Bun qui utilisent `oven-sh/setup-bun@v2` suivi de `bun install --frozen-lockfile`, avec un fichier texte `bun.lock` versionné. Bun ajoute une étape de cache de téléchargement ; l’installation et les tests s’exécutent toujours. La surcharge de restauration et d’enregistrement du cache peut dépasser le gain. Voir les [garde-fous actuels du cache](docs/spec/rules.md#bun-dependency-cache-variant) et [un exemple mesuré](docs/measurements/2026-10-25-cache-review.md). L’exemple npm ci-dessous illustre l’une des formes prises en charge.
-
-## Installation et mise à jour
-
-La CLI exige Node `^22.19.0 || >=24.0.0`. Le plugin prend en charge DSH `>=0.2.1-rc.2 <0.3.0-0` et `>=0.2.2-rc.1 <0.3.0-0`. La version `0.3.1` a été testée avec DSH `0.2.1-rc.2` ; DSH `0.3.0` n’est pas pris en charge.
-
-```
+```bash
 npm install --global dsh-ci-diet@0.5.2
 ci-diet --version
-```
-
-Si vous ne faites pas d’installation globale, remplacez le nom de commande `ci-diet` par `npx dsh-ci-diet@0.5.2`, par exemple `npx dsh-ci-diet@0.5.2 report --cwd .`.
-
-```
 dsh plugin --profile web add dsh-ci-diet@0.5.2
 dsh --profile web
 ```
 
-L’installation enregistre les outils du plugin, la page Réglages et l’écran de revue **Réglages → CI Diet Reports**. Le preflight, l’accès réseau et l’application locale du plugin sont activés par défaut. L’installation et le démarrage n’appellent pas `gh`, ne collectent aucun historique, ne lancent aucun scan et ne modifient aucun workflow.
+Le plugin enregistre les outils DSH ainsi que les écrans **Settings → CI Diet** et **Revue CI Diet**. L’installation seule n’analyse pas un dépôt, ne fait pas gagner de minutes runner et ne modifie pas un workflow. Sans installation globale de la CLI, utilisez `npx dsh-ci-diet@0.5.2` à la place de `ci-diet`.
 
-```
-npm install --global dsh-ci-diet@latest
-dsh plugin --profile web add dsh-ci-diet@latest
-```
+## Premier scan et historique
 
-Redémarrez DSH après la mise à jour du plugin. Utilisez `dsh plugin --profile web list`, `ci-diet --version` ou `npx dsh-ci-diet@latest --version` pour vérifier les versions installées.
+Exécutez ces commandes depuis le dépôt à inspecter. Le scan statique fonctionne hors ligne et enregistre son rapport. La synchronisation de l’historique est une étape réseau distincte qui lit les exécutions et jobs récents via des requêtes en lecture seule à l’API GitHub avec la CLI `gh` authentifiée.
 
-## Premier scan et rapport d’historique
-
-Exécutez ces commandes depuis le dépôt que vous voulez inspecter. `--cwd .` désigne ce dépôt ; `--cwd` accepte un autre chemin, et les chemins relatifs sont résolus depuis le répertoire de travail effectif. La première commande fonctionne sans réseau. La collecte de l’historique est une activation réseau distincte et explicite.
-
-```
+```bash
 ci-diet scan --cwd .
 gh auth status
 ci-diet sync --cwd . --network
@@ -67,127 +39,117 @@ ci-diet report --cwd .
 ci-diet report --cwd . --format html --out report.html
 ```
 
-`scan` affiche un rapport statique sans accès réseau ; `--json` ou `--out FILE` écrit cette sortie, mais le scan de la CLI n’enregistre pas de rapport dans le stockage d’état. `report` exige un rapport enregistré par `sync` de la CLI, par `ci_diet_scan` du plugin ou par `ci_diet_sync` du plugin. Dans cette séquence utilisant uniquement la CLI, sync enregistre le rapport ; l’option HTML écrit ensuite un seul fichier autonome. La synchronisation de l’historique exige que `gh` soit installé, authentifié et capable de lire les exécutions et tâches Actions du dépôt. `sync --network` est l’activation explicite de la CLI. Elle n’a jamais besoin d’un droit d’écriture sur GitHub. Un historique partiel produit et enregistre tout de même un rapport, en signalant une couverture incomplète. Le `ci_diet_scan` hors ligne du plugin enregistre bien son rapport, donc `ci_diet_report` peut le suivre directement.
+`gh` a besoin d’un accès en lecture aux exécutions et aux jobs Actions du dépôt. CI Diet ne demande jamais d’accès en écriture à GitHub. Le rapport HTML est un fichier autonome avec CSS inline, sans scripts ni requêtes externes. Dans DSH, `ci_diet_scan` et `ci_diet_sync` enregistrent des rapports ; les nouveaux profils du plugin activent le réseau et la vérification préalable par défaut.
 
-Pour le plugin DSH, l’accès réseau est activé par défaut : `ci_diet_sync` peut donc s’exécuter dès que `gh` est installé et authentifié. Cet interrupteur autorise seulement cet outil à appeler `gh` ; l’installation, le démarrage et l’enregistrement des réglages ne collectent pas d’historique à eux seuls. Pour empêcher le plugin d’utiliser le réseau, désactivez **Autoriser l’accès réseau** dans **Réglages → CI Diet**, puis choisissez **Enregistrer**. Le réglage de la page s’applique aux outils du plugin ; il n’active pas l’option `--network` de la CLI. Le scan statique et le rapport fonctionnent sans réseau. La page Réglages ne lance aucune optimisation à elle seule.
+![Flux CI Diet : scan, preview, approbation humaine, apply et measure](docs/assets/workflow.svg)
 
-Une demande utile dans le chat rend explicites la séquence et la limite de la revue. Remplacez le chemin absolu de l’exemple par celui de votre dépôt :
+## Ce qu’il détecte
 
-> Exécute `ci_diet_scan` avec le cwd `C:\work\my-repo`, puis `ci_diet_sync` pour ce même cwd et `ci_diet_report`. Si `gh` n’est pas authentifié ou si je désactive l’accès réseau, arrête-toi après le scan. Si tu prévisualises un correctif avec `ci_diet_plan`, affiche uniquement les modifications. N’approuve, n’applique et n’annule rien ; ne fais aucun commit, aucun push et aucun déploiement.
+<p align="center">
+  <img src="docs/assets/settings-preview.png" alt="page de configuration CI Diet en interface coréenne avec la vérification préalable activée par défaut" width="560">
+</p>
+<p align="center"><sub>Settings → CI Diet configuration. Interface coréenne ; la vérification préalable est activée par défaut.</sub></p>
 
-La prévisualisation du plugin n’enregistre pas de plan. Son `nextCommand` recrée le plan via la CLI afin que le plan soit durable et puisse entrer dans le flux d’approbation humaine.
+| Règle | Par défaut | Recherche | Sortie habituelle |
+| --- | --- | --- | --- |
+| CD001 | active | exécutions PR remplacées par un commit plus récent | plan `concurrency` |
+| CD002 | active | candidats de trigger chevauchants ou en double | explication |
+| CD003 | désactivée | contrôles lourds pour des changements déclarés limités à la documentation | explication |
+| CD004 | active | matrices volumineuses résolubles statiquement | note de revue |
+| CD005 | désactivée | jobs sans timeout | plan `timeout-minutes` mesuré |
+| CD006 | active | jobs npm, pnpm ou Bun frozen-install pris en charge sans cache explicite | plan de cache de téléchargement |
+| CD008 | active | rétention d’artifact plus longue que nécessaire | plan `retention-days` avec attestation humaine |
 
-## Plan hors ligne pour le cache npm (CD006)
+CD003 et CD005 sont désactivées par défaut. CD002, CD003 et CD004 ne produisent pas de patch. CD005 limite les exécutions anormales ; il ne raccourcit pas l’exécution normale. CD008 modifie la rétention du stockage d’artifacts, pas les minutes runner. Tout plan reste une hypothèse tant qu’il n’a pas été examiné et mesuré.
 
-CD006 n’a pas besoin de l’historique des exécutions. Elle reconnaît une tâche à la racine du dépôt où `actions/checkout` n’a aucune option `with` fournie par l’utilisateur, suivie d’exactement une étape `actions/setup-node@v3` ou `@v4` sans cache, puis d’une étape dont le `run` vaut exactement `npm ci`. Les fichiers `package.json` et `package-lock.json` de la racine doivent être versionnés comme des fichiers JSON ordinaires. Le plan ajoute uniquement `cache: npm` et `cache-dependency-path: package-lock.json` à setup-node ; il ne change ni Node, ni les versions d’action, ni `npm ci`, ni les tests, ni la mise en cache locale.
+## Exemple de cache npm pris en charge
 
+CD006 reconnaît une forme étroite : une étape `actions/setup-node@v4` prise en charge suivie de `npm ci`, avec un manifest et un lockfile suivis. Le plan ajoute uniquement des entrées de cache ; les versions, l’installation et les tests restent en place.
+
+**Avant**
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
 ```
+
+**Après**
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+```
+
+Dans une commande plan, `--step 1` désigne la deuxième étape de ce tableau YAML : checkout est l’étape `0` et setup-node l’étape `1`. C’est un index commençant à zéro, pas un libellé d’étape. Consultez le [guide du plugin](docs/guide/plugin.md) pour pnpm, Bun, les timeouts, la rétention et les protections actuelles.
+
+## Vérifier avant d’écrire
+
+Le flux est **scan → preview → human approval → apply → measure**. Les outils de modèle, dont `ci_diet_plan`, prévisualisent les modifications et calculent un plan digest ; ils ne peuvent ni approuver, ni appliquer, ni annuler. L’écran de revue permet d’approuver, d’appliquer et d’annuler après qu’une personne a saisi le suffixe du plan digest ou le change ID. Les écritures locales modifient des plages d’octets dans un seul workflow existant.
+
+```bash
 ci-diet plan --cwd . --rule CD006 --workflow .github/workflows/ci.yml --job test --step 1
-ci-diet plans --cwd . --plan PLAN_ID
-```
-
-`--step` est l’index commençant à zéro de l’étape setup-node ; l’exemple suppose checkout en 0 et setup-node en 1. La CLI `plan` exécute cette analyse statique en mémoire et enregistre le plan sans `sync` préalable ; elle laisse le dernier rapport enregistré intact. L’outil de plugin `ci_diet_plan` a toujours besoin d’un rapport enregistré ; lancez donc `ci_diet_scan` d’abord. L’approbation et l’application utilisent les commandes existantes ci-dessous. Le plan et son attestation sont enregistrés pendant la planification ; aucun fichier de workflow ne change avant qu’une personne approuve le plan et lance apply.
-
-## Référence des commandes CLI
-
-```
-ci-diet scan --cwd .
-ci-diet sync --cwd . --network
-ci-diet sync --cwd . --network --repo OWNER/REPO --days 7
-ci-diet report --cwd .
-ci-diet report --cwd . --format json
-ci-diet report --cwd . --format html --out report.html
-ci-diet diagnose --cwd .
-ci-diet prune
-ci-diet changes --cwd .
-ci-diet plans --cwd . --plan PLAN_ID
-ci-diet report --cwd . --lang ko
-```
-
-`scan` vérifie les fichiers de workflow. `sync` lit l’historique uniquement après `--network` ; `--repo` sélectionne explicitement `OWNER/REPO` et `--days` ajuste la période rétrospective dans les limites configurées. `report` produit du texte, du JSON ou du HTML et écrit `--out` relativement à `--cwd`. `diagnose` explique la correspondance des noms de tâches et la couverture à partir de l’historique enregistré ; ajoutez `--require-complete` pour sortir avec le code `3` lorsque les données sont incomplètes. `prune` supprime les rapports, plans et entrées de cache expirés selon la configuration du stockage d’état. `changes` liste les modifications appliquées ; `plans` rouvre un plan enregistré. `--config FILE` fusionne une configuration JSON partielle pour n’importe quelle commande.
-
-## Examiner, approuver, appliquer et annuler
-
-Un `plan` réussi de la CLI affiche le diff proposé, un véritable identifiant de plan tel que `p_...` et une confirmation formée à partir des 12 derniers caractères du digest du plan. La création du plan refuse les preuves obsolètes et les autres écritures risquées ; un workflow manquant peut être une erreur d’utilisation avec le code de sortie `1`. Si un plan enregistré est consulté après la disparition de son workspace ou de son workflow, `plans --plan` masque le diff, conserve le JSON du plan, demande de replanifier et sort avec `3`. Il en va de même lorsque les octets du workflow ne correspondent plus au hash source enregistré. Examinez de nouveau le diff et le plan avant d’approuver.
-
-```
-ci-diet plan --cwd . --rule CD001 --workflow .github/workflows/ci.yml --claims ci-only,replace-safe
 ci-diet plans --cwd . --plan PLAN_ID
 ci-diet approve --cwd . --plan PLAN_ID --confirm CONFIRMATION
 ci-diet apply --cwd . --plan PLAN_ID
+ci-diet measure --cwd . --change CHANGE_ID --before-runs 100,101 --after-runs 110,111 --network
 ci-diet revert --cwd . --change CHANGE_ID
 ```
 
-Remplacez `PLAN_ID` par l’identifiant affiché par le plan, `CONFIRMATION` par les 12 derniers caractères de son digest et `CHANGE_ID` par l’identifiant affiché par apply. Chaque valeur est un argument littéral ; ne saisissez pas de chevrons. `approve` crée une approbation à usage unique, `apply` ne réécrit que la plage d’octets prévue dans un fichier de workflow et `revert` restaure la sauvegarde de cette modification. Examinez le diff obtenu et lancez les vérifications du dépôt selon vos besoins. CI Diet ne fait aucun commit, push ni déploiement, n’exécute aucun workflow, ne modifie pas la protection des branches et ne supprime aucun artefact.
+Une approbation ne vaut que pour ce plan. L’application crée une sauvegarde, réécrit les octets prévus et vérifie source, dependency, policy, digest, lock et backup. L’annulation restaure la sauvegarde. CI Diet ne fait ni commit, ni push, ni deploy, n’exécute pas de workflow, ne modifie pas branch protection et ne supprime pas d’artifacts.
 
-Pour une CI éligible qui ne s’exécute que sur les PR, l’exemple CD001 utilise `ci-only` et `replace-safe` comme attestations humaines. Elles indiquent que l’opérateur a examiné la sémantique d’annulation ; ce ne sont pas des interrupteurs de contournement. CD005 nécessite un `--job` et un `--minutes` mesurés, et CD008 nécessite `--job`, un index numérique de tableau `--step` commençant à zéro pour l’étape cible, ainsi que des déclarations concernant les artefacts. CD006 nécessite `--job` et l’index `--step` commençant à zéro de l’étape setup-node/setup-bun ; elle ne demande aucune déclaration. Pour les deux règles d’étape, le nombre est un index de tableau, pas un jeton fondé sur le nom de l’étape.
+## Preuves et limites
 
-## État et limites
+- Aucun gain n’est affirmé avant mesure. Un constat peut être faux lorsque l’historique ou l’attribution du workflow est incomplet.
+- Le cache de dépendances peut ajouter du temps de restore et de save. Son overhead peut dépasser le temps d’installation évité ; comparez des exécutions cold et warm équivalentes et incluez les étapes de cache.
+- `measure` compare des exécutions réelles sélectionnées et montre la différence observée de runner time, les taux de succès et de relance. C’est une preuve sur ces échantillons, pas une preuve de causalité ni de la facture réelle.
+- La page Settings enregistre la configuration des outils et affiche les rapports et plans liés à la session. Elle n’optimise pas un workflow à elle seule.
+- Les contrôles de policy et de preuve peuvent bloquer une modification utile. Examinez le rapport, le diff et les vérifications du dépôt avant de conserver un changement.
 
-La CLI et le plugin partagent le répertoire d’état par défaut : `%LOCALAPPDATA%\CI-Diet\profiles\default` sous Windows, sinon `~/.local/state/ci-diet/profiles/default`. Une valeur `stateDir` définie dans le plugin désigne un stockage distinct ; transmettez le même chemin absolu à la CLI avec `--state-dir` pour `plan`, `approve`, `apply` et `revert`. Les chemins relatifs de `--state-dir` de la CLI sont résolus par rapport au `--cwd` effectif. L’état existant n’est jamais migré automatiquement d’un répertoire à l’autre.
-
-Le client Web propose Réglages et l’écran de revue **CI Diet Reports**. Les contrôles de rapport, d’approbation, d’application et d’annulation avaient déjà passé un test E2E dans un vrai navigateur lors d’un commit précédent. La migration des valeurs par défaut a été vérifiée séparément dans le runtime DSH `0.2.1-rc.2` avec configEditor, SettingsForms, Loader et un profil temporaire : les valeurs `false` héritées ont été enregistrées comme `true`, puis un `false` enregistré ensuite est resté désactivé après redémarrage. Cette vérification du runtime n’a pas testé un nouveau rendu navigateur. L’approbation et l’application passent par l’hôte depuis cet écran, et `localApplyEnabled` est activé par défaut. Aucun outil du plugin n’effectue d’approbation ni d’application. Un plan modifie un seul workflow existant par plages d’octets et refuse les structures non prises en charge. Les constats peuvent être erronés ou incomplets lorsque l’historique ou l’attribution des workflows est partiel, et un autre système peut disposer de données de facturation plus précises. Utilisez le rapport comme preuve pour la revue, puis vérifiez l’effet dans GitHub.
-
-## Coût et preuves
-
-| Champ | Signification |
+| Mesure | Signification |
 | --- | --- |
-| `observedRunnerSeconds` | Temps de runner enregistré par les exécutions collectées |
-| `modeledRoundedMinutes` | Minutes par tâche arrondies à l’entier supérieur pour la modélisation |
-| `listPriceUsd` | Coût selon l’instantané des tarifs catalogue intégré |
-| `actualBilledUsd` | Toujours `null` tant que la facture réelle ne peut pas être prouvée |
+| `observedRunnerSeconds` | Temps runner observé dans les exécutions collectées |
+| `modeledRoundedMinutes` | Minutes par job arrondies au supérieur ; une estimation seulement |
+| `listPriceUsd` | Estimation au prix catalogue selon l’instantané de prix inclus |
+| `actualBilledUsd` | `unknown` tant qu’une facture réelle n’est pas démontrée |
 
-Les rapports intègrent l’instantané des tarifs et un hash du contenu afin de permettre de reproduire les chiffres. Ils ne promettent pas d’économies automatiques. Le rapport HTML utilise du CSS en ligne, ne contient aucun script et ne fait aucune requête externe.
-
-## Langues
-
-L’interface Réglages de DSH, les messages de la CLI, les rapports HTML et ces six READMEs prennent en charge l’anglais, le coréen, le chinois simplifié, l’hindi, l’espagnol et le français. Les spécifications détaillées restent en anglais. L’ordre de sélection est `--lang`, la locale DSH, `LC_ALL`/`LC_MESSAGES`/`LANG`, puis l’anglais. Les codes de langue de la CLI sont `en`, `ko`, `zh-Hans`, `hi`, `es` et `fr` ; remplacez `ko` dans la commande d’exemple par le code souhaité. Les étiquettes régionales sont résolues par langue. Les rapports sont stockés en anglais et localisés au moment de l’affichage. Les identifiants de règle, codes d’erreur, valeurs d’énumération, chemins, hashes et nombres restent littéraux. L’attribut `lang` du HTML suit la locale sélectionnée. Les descriptions des outils DSH sont capturées au chargement du plugin ; rechargez donc après avoir changé la préférence de langue de DSH.
-
-## Développement
-
-```
-bun install
-node scripts/test-core.mjs
-node scripts/gen-types.mjs --check
-node scripts/sync-contracts.mjs --check
-bun run typecheck
-bun run lint
-bun run test:docs
-```
-
-Exécutez les tests avec Node afin que les points d’entrée publiés restent compatibles avec Node. Bun sert uniquement à gérer les dépendances.
-
-## Publication
-
-Pousser une étiquette qui correspond à `package.json` démarre `.github/workflows/publish.yml`. Dans les commandes suivantes, remplacez le littéral `VERSION` dans les deux arguments par une nouvelle version ; la version `0.3.1` est déjà publiée, donc ne recréez pas cette étiquette.
-
-```
-git tag vVERSION
-git push origin vVERSION
-```
-
-Le workflow compare l’étiquette à `package.json`, exécute les vérifications de publication, refuse une version npm déjà existante et publie avec la publication de confiance npm via GitHub OIDC. Le publieur de confiance doit nommer `publish.yml`.
-
-## Structure
-
-```
-src/core        workflow parsing, rules, savings, patch engine
-src/adapters    GitHub, git, storage
-src/client      Web Settings and review UI
-src/dsh         host plugin and bundle code
-src/cli         command-line entry
-src/shared      i18n and shared helpers
-contracts       JSON Schemas from the frozen design pack
-examples        sample records and evaluation vectors
-docs/spec       normative specification
-scripts         contract and documentation checks
-tests/unit      fast checks that need no network
-```
+Garder ces valeurs séparées évite de transformer des minutes modélisées en affirmation de facturation.
 
 ## Documentation
 
-Les documents détaillés de spécification, de règles, de coûts, de correctifs, de stockage et de décision sont en anglais. L’index de la spécification est [docs/spec/README.md](docs/spec/README.md). Sont également disponibles, en anglais : [rules](docs/spec/rules.md), [cost model](docs/spec/cost-model.md), [patch model](docs/spec/patch-model.md), [storage and errors](docs/spec/storage.md), [decisions](docs/spec/decisions.md), [measurement](docs/spikes/a0a-rules.md), le [plugin and CLI guide](docs/guide/plugin.md) et [contract provenance](contracts/UPSTREAM.md).
+| Besoin | À lire |
+| --- | --- |
+| Installation, réglages, CLI, revue et mesure | [Guide du plugin](docs/guide/plugin.md) · [Section mesure](docs/guide/plugin.md#measuring-an-applied-change) |
+| Description normative et carte des contrats | [Index de spécification](docs/spec/README.md) |
+| Protections des règles, modèle de coût, patches et storage | [Règles](docs/spec/rules.md) · [Modèle de coût](docs/spec/cost-model.md) · [Modèle de patch](docs/spec/patch-model.md) · [Storage](docs/spec/storage.md) |
+| Une mesure réelle de l’overhead du cache | [Revue du cache du 2026-10-25](docs/measurements/2026-10-25-cache-review.md) |
 
-## Licence
+<details>
+<summary>Valeurs par défaut, migration et compatibilité du plugin</summary>
 
-MIT
+Les nouveaux profils DSH activent `preflightEnabled`, `networkEnabled`, `localApplyEnabled` et les règles CD001, CD002, CD004, CD006 et CD008. La migration unique enregistre `defaultsRevision: 2` ; les choix ultérieurs de switches et de règles survivent aux redémarrages. CD003 et CD005 restent désactivées jusqu’à leur activation explicite. Les chemins d’état, la rétention, les quotas et les entrées de facturation existantes sont conservés.
+
+Le plugin cible DSH `>=0.2.1-rc.2 <0.3.0-0` et `>=0.2.2-rc.1 <0.3.0-0`. DSH `0.3.0` n’est pas pris en charge. La vérification préalable du plugin examine les commandes de déploiement prises en charge avant leur exécution, mais ne fait aucune requête réseau ni modification de fichier et ignore les shells opaques. L’historique CLI nécessite `--network` ; l’interrupteur réseau du plugin autorise les appels à `gh` uniquement lorsque l’outil de sync est invoqué. Mettez à jour avec les mêmes commandes et `@latest`, puis redémarrez DSH.
+
+</details>
+
+## Contribution et licence
+
+Les rapports de bug et les propositions ciblées sont bienvenus dans [GitHub Issues](https://github.com/0disoft/dsh-ci-diet/issues). Avant de modifier une règle ou un contrat, lisez le [guide du plugin](docs/guide/plugin.md) et les [décisions](docs/spec/decisions.md). Les spécifications détaillées et la documentation publique sont en anglais.
+
+MIT © Rodisoft

@@ -35,6 +35,7 @@
     "client",
     "cordis.patch.yml",
     "README*.md",
+    "docs/assets",
     "LICENSE"
   ],
   "engines": {

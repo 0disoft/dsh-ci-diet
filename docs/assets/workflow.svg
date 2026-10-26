@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="190" viewBox="0 0 1120 190" role="img" aria-labelledby="title desc">
+  <title id="title">The CI Diet workflow</title>
+  <desc id="desc">Scan workflow YAML and optional run history, preview a patch, approve its digest, apply with a journal and backup, then measure selected before-and-after runs.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="m1 1 4 3-4 3" fill="none" stroke="#8b9cae" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect width="1120" height="190" rx="16" fill="#101c2b"/>
+  <g fill="none" stroke="#8b9cae" stroke-width="1.4" marker-end="url(#arrow)">
+    <path d="M216 95h20"/><path d="M436 95h20"/><path d="M656 95h20"/><path d="M876 95h20"/>
+  </g>
+  <g font-family="Inter, Segoe UI, Arial, sans-serif">
+    <g transform="translate(20 24)">
+      <rect width="196" height="142" rx="11" fill="#172638" stroke="#34475a"/>
+      <text x="18" y="32" fill="#70ebc1" font-size="12" font-weight="700" letter-spacing="1">01 / INSPECT</text>
+      <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Scan</text>
+      <text x="18" y="100" fill="#b4c3d1" font-size="13">Workflow YAML</text>
+      <text x="18" y="120" fill="#b4c3d1" font-size="13">+ optional run history</text>
+    </g>
+    <g transform="translate(240 24)">
+      <rect width="196" height="142" rx="11" fill="#172638" stroke="#34475a"/>
+      <text x="18" y="32" fill="#70ebc1" font-size="12" font-weight="700" letter-spacing="1">02 / PLAN</text>
+      <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Preview</text>
+      <text x="18" y="100" fill="#b4c3d1" font-size="13">Inspect a precise diff</text>
+      <text x="18" y="120" fill="#b4c3d1" font-size="13">before files change</text>
+    </g>
+    <g transform="translate(460 24)">
+      <rect width="196" height="142" rx="11" fill="#18342f" stroke="#70ebc1"/>
+      <text x="18" y="32" fill="#9bf2d2" font-size="12" font-weight="700" letter-spacing="1">03 / HUMAN REVIEW</text>
+      <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Approve</text>
+      <text x="18" y="100" fill="#c0ddd3" font-size="13">Confirm this plan's digest</text>
+      <text x="18" y="120" fill="#c0ddd3" font-size="13">with a single-use approval</text>
+    </g>
+    <g transform="translate(680 24)">
+      <rect width="196" height="142" rx="11" fill="#172638" stroke="#34475a"/>
+      <text x="18" y="32" fill="#70ebc1" font-size="12" font-weight="700" letter-spacing="1">04 / LOCAL PATCH</text>
+      <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Apply</text>
+      <text x="18" y="100" fill="#b4c3d1" font-size="13">One workflow file</text>
+      <text x="18" y="120" fill="#b4c3d1" font-size="13">Journal + recovery backup</text>
+    </g>
+    <g transform="translate(900 24)">
+      <rect width="196" height="142" rx="11" fill="#172638" stroke="#34475a"/>
+      <text x="18" y="32" fill="#70ebc1" font-size="12" font-weight="700" letter-spacing="1">05 / CHECK RESULTS</text>
+      <text x="18" y="70" fill="#f0f6fb" font-size="25" font-weight="650">Measure</text>
+      <text x="18" y="100" fill="#b4c3d1" font-size="13">Selected before/after runs</text>
+      <text x="18" y="120" fill="#b4c3d1" font-size="13">Evidence, not a promise</text>
+    </g>
+  </g>
+</svg>
