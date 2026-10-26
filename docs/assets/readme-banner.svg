@@ -37,7 +37,7 @@
       <text x="76" y="27" fill="#9fb2c3" font-size="11" font-weight="600" letter-spacing="1.1">REVIEWABLE WORKFLOW PATCH</text>
       <g font-family="Consolas, Menlo, monospace" font-size="14">
         <text x="24" y="80" fill="#8ba0b3">.github/workflows/ci.yml</text>
-        <text x="24" y="116" fill="#d7e3ec">  - uses: actions/setup-node@v4</text>
+        <text x="24" y="116" fill="#d7e3ec">  - uses: actions/setup-node@v7</text>
         <text x="24" y="142" fill="#d7e3ec">    with:</text>
         <rect x="14" y="154" width="454" height="53" rx="5" fill="#70ebc1" fill-opacity=".08"/>
         <text x="24" y="175" fill="#9bf2d2">+     cache: npm</text>

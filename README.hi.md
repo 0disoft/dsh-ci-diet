@@ -64,7 +64,7 @@ CD003 और CD005 डिफ़ॉल्ट रूप से बंद हैं
 
 ## समर्थित npm cache उदाहरण
 
-CD006 केवल एक संकरा रूप पहचानता है: supported `actions/setup-node@v4` step के तुरंत बाद `npm ci`, साथ में tracked manifest और lockfile। Plan केवल cache inputs जोड़ता है; versions, installation और tests जगह पर रहते हैं।
+CD006 केवल एक संकरा रूप पहचानता है: supported `actions/setup-node@v7` step के तुरंत बाद `npm ci`, साथ में tracked manifest और lockfile। Plan केवल cache inputs जोड़ता है; versions, installation और tests जगह पर रहते हैं। यह उदाहरण मानता है कि `package.json` में `packageManager` या `devEngines.packageManager` में npm घोषित नहीं है; npm घोषित होने पर v7 खुद cache चालू कर देता है, इसलिए CI Diet अतिरिक्त cache प्रस्तावित नहीं करता।
 
 **पहले**
 
@@ -73,8 +73,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -87,8 +87,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

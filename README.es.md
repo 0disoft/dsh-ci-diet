@@ -64,7 +64,7 @@ CD003 y CD005 están desactivadas por defecto. CD002, CD003 y CD004 no generan p
 
 ## Ejemplo de caché npm compatible
 
-CD006 reconoce una forma concreta: un paso `actions/setup-node@v4` compatible seguido de `npm ci`, con un manifest y un lockfile rastreados. El plan solo añade entradas de caché; las versiones, la instalación y las pruebas permanecen igual.
+CD006 reconoce una forma concreta: un paso `actions/setup-node@v7` compatible seguido de `npm ci`, con un manifest y un lockfile rastreados. El plan solo añade entradas de caché; las versiones, la instalación y las pruebas permanecen igual. El ejemplo supone que `package.json` no declara npm en `packageManager` ni en `devEngines.packageManager`; si npm está declarado, v7 activa la caché automáticamente y CI Diet no propone una caché redundante.
 
 **Antes**
 
@@ -73,8 +73,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -87,8 +87,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

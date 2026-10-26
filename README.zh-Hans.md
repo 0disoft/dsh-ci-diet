@@ -64,7 +64,7 @@ CD003 和 CD005 默认关闭。CD002、CD003 和 CD004 不生成补丁。CD005 �
 
 ## 受支持的 npm 缓存示例
 
-CD006 只识别范围很窄的形式：受支持的 `actions/setup-node@v4` 步骤后紧跟 `npm ci`，并且存在受跟踪的 manifest 和 lockfile。计划只添加缓存输入，版本、安装和测试保持不变。
+CD006 只识别范围很窄的形式：受支持的 `actions/setup-node@v7` 步骤后紧跟 `npm ci`，并且存在受跟踪的 manifest 和 lockfile。计划只添加缓存输入，版本、安装和测试保持不变。该示例假设 `package.json` 未在 `packageManager` 或 `devEngines.packageManager` 中声明 npm；若已声明 npm，v7 会自动启用缓存，因此 CI Diet 不会建议重复的缓存配置。
 
 **修改前**
 
@@ -73,8 +73,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -87,8 +87,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

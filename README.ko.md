@@ -64,7 +64,7 @@ CD003과 CD005는 기본으로 꺼져 있습니다. CD002, CD003, CD004는 patch
 
 ## 지원되는 npm 캐시 예시
 
-CD006은 지원되는 `actions/setup-node@v4` 단계 뒤에 `npm ci`가 오고, 추적 중인 manifest와 lockfile이 있는 좁은 형태를 인식합니다. 계획은 캐시 입력만 추가하며 버전, 설치, 테스트는 그대로 둡니다.
+CD006은 지원되는 `actions/setup-node@v7` 단계 뒤에 `npm ci`가 오고, 추적 중인 manifest와 lockfile이 있는 좁은 형태를 인식합니다. 계획은 캐시 입력만 추가하며 버전, 설치, 테스트는 그대로 둡니다. 이 예시는 `package.json`의 `packageManager`나 `devEngines.packageManager`에 npm이 선언되지 않은 경우를 가정합니다. npm이 선언되어 있으면 v7이 캐시를 자동으로 켜므로 CI Diet는 중복 캐시를 제안하지 않습니다.
 
 **변경 전**
 
@@ -73,8 +73,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -87,8 +87,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm

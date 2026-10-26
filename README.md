@@ -64,7 +64,7 @@ CD003 and CD005 are disabled by default. CD002, CD003, and CD004 do not produce 
 
 ## Supported npm cache example
 
-CD006 recognizes a narrow shape: a supported `actions/setup-node@v4` step followed by `npm ci`, with a tracked manifest and lockfile. The plan adds cache inputs only; versions, installation, and tests stay in place.
+CD006 recognizes a narrow shape: a supported `actions/setup-node@v7` step followed by `npm ci`, with a tracked manifest and lockfile. The plan adds cache inputs only; versions, installation, and tests stay in place. The example assumes `package.json` does not declare npm in either `packageManager` or `devEngines.packageManager`; v7 enables caching automatically when npm is declared, so CI Diet does not propose a redundant cache.
 
 **Before**
 
@@ -73,8 +73,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm ci
@@ -87,8 +87,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
