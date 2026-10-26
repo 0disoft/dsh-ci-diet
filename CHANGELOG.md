@@ -3,7 +3,7 @@
 All notable changes to this project are recorded here. The format follows
 Keep a Changelog, and the project uses semantic versioning.
 
-## Unreleased
+## 0.5.2 (2026-10-26)
 
 - Map the installed bundle's `include:<entry>` inventory id back to the
   settings namespace the Host serves, so the Settings page works when the

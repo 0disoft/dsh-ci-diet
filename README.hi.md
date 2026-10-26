@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**स्थिति:** alpha; `dsh-ci-diet@0.5.1` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। Review screen ने पिछले commit में असली browser E2E पास किया था। एक बार होने वाली defaults migration को अलग से DSH `0.2.1-rc.2` के configEditor, SettingsForms और Loader runtime में verify किया गया; यह नए browser render का verification नहीं है। DSH plugin अब preflight, history के लिए network access और local apply के साथ चालू होता है।
+**स्थिति:** alpha; `dsh-ci-diet@0.5.2` npm पर उपलब्ध है। Current source tree में मौजूद contracts, analysis और patch engines, CLI, DSH tools, Settings page और self-contained HTML report के साथ **सेटिंग्स → CI Diet Reports** review screen जोड़ा गया है। Review screen ने पिछले commit में असली browser E2E पास किया था। एक बार होने वाली defaults migration को अलग से DSH `0.2.1-rc.2` के configEditor, SettingsForms और Loader runtime में verify किया गया; यह नए browser render का verification नहीं है। DSH plugin अब preflight, history के लिए network access और local apply के साथ चालू होता है।
 
 **DSH डिफ़ॉल्ट और माइग्रेशन।** नई प्रोफ़ाइल में `preflightEnabled`, `networkEnabled`, `localApplyEnabled` तथा CD001, CD002, CD004, CD006, CD008 सक्षम होते हैं। लॉक की गई प्रोफ़ाइल माइग्रेशन `defaultsRevision: 2` दर्ज करता है। संशोधन 1 में पहले ही माइग्रेट की गई प्रोफ़ाइलें बाद के स्विच और नियम चयन को बनाए रखती हैं। स्टेट पाथ, रिटेंशन, कोटा और मौजूदा संख्यात्मक खाता इनपुट सुरक्षित रहते हैं। CD003 और CD005 सक्षम किए जाने तक बंद रहते हैं। मौद्रिक अनुमान दोनों खाता इनपुट का स्वतः उपयोग करते हैं; खाली होने का अर्थ अज्ञात है और स्पष्ट `0` मान्य है। पहले सक्षम बिलिंग में कोई मान छोड़े जाने पर उसके शून्य डिफ़ॉल्ट बने रहते हैं।
 
@@ -35,14 +35,14 @@ CD006 सत्यापित npm/pnpm सेटअप और ऐसे Bun ज
 CLI के लिए Node `^22.19.0 || >=24.0.0` चाहिए। Plugin DSH `>=0.2.1-rc.2 <0.3.0-0` और `>=0.2.2-rc.1 <0.3.0-0` का समर्थन करता है। Version `0.3.1` को DSH `0.2.1-rc.2` पर जाँचा गया; DSH `0.3.0` समर्थित नहीं है।
 
 ```
-npm install --global dsh-ci-diet@0.5.1
+npm install --global dsh-ci-diet@0.5.2
 ci-diet --version
 ```
 
-Global install न चाहें तो command नाम `ci-diet` की जगह `npx dsh-ci-diet@0.5.1` रखें, उदाहरण `npx dsh-ci-diet@0.5.1 report --cwd .`।
+Global install न चाहें तो command नाम `ci-diet` की जगह `npx dsh-ci-diet@0.5.2` रखें, उदाहरण `npx dsh-ci-diet@0.5.2 report --cwd .`।
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.5.1
+dsh plugin --profile web add dsh-ci-diet@0.5.2
 dsh --profile web
 ```
 

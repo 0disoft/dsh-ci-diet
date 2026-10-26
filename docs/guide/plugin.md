@@ -9,8 +9,8 @@ The plugin checks supported DSH deployment commands automatically for savings ca
 ## Install and update
 
 ```
-npm install --global dsh-ci-diet@0.5.1
-dsh plugin --profile web add dsh-ci-diet@0.5.1
+npm install --global dsh-ci-diet@0.5.2
+dsh plugin --profile web add dsh-ci-diet@0.5.2
 ```
 
 The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported. Installing registers the plugin tools and the **Settings → CI Diet** page. In this source tree, preflight, network access, and local apply are on by default. Installation and startup do not call `gh`, collect history, start a scan, or modify a workflow.

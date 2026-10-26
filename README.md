@@ -2,7 +2,7 @@
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-Hans.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md)
 
-**Status:** alpha; `dsh-ci-diet@0.5.1` is on npm. The current source tree adds the **Settings → CI Diet Reports** review screen to the existing contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report. The review screen passed a real-browser E2E check in an earlier commit. The one-time defaults migration was verified separately in a DSH `0.2.1-rc.2` runtime with configEditor, SettingsForms, and Loader; it was not a new browser render. The DSH plugin now starts with preflight, history network access, and local apply enabled.
+**Status:** alpha; `dsh-ci-diet@0.5.2` is on npm. The current source tree adds the **Settings → CI Diet Reports** review screen to the existing contracts, analysis and patch engines, CLI, DSH tools, Settings page, and self-contained HTML report. The review screen passed a real-browser E2E check in an earlier commit. The one-time defaults migration was verified separately in a DSH `0.2.1-rc.2` runtime with configEditor, SettingsForms, and Loader; it was not a new browser render. The DSH plugin now starts with preflight, history network access, and local apply enabled.
 
 **DSH defaults and migration.** New profiles enable `preflightEnabled`, `networkEnabled`, `localApplyEnabled` and CD001, CD002, CD004, CD006, CD008. The locked profile migration records `defaultsRevision: 2`. Profiles already migrated to revision 1 keep later switch and rule choices. State paths, retention, quotas, and existing numeric account inputs are preserved. CD003 and CD005 remain off unless enabled. Monetary estimates use both account inputs automatically; blank means unknown and explicit `0` is valid. Previously enabled billing keeps its zero defaults when a value was omitted.
 
@@ -35,14 +35,14 @@ CD006 also supports verified npm/pnpm setups and Bun jobs using `oven-sh/setup-b
 The CLI requires Node `^22.19.0 || >=24.0.0`. The plugin supports DSH `>=0.2.1-rc.2 <0.3.0-0` and `>=0.2.2-rc.1 <0.3.0-0`. Version `0.3.1` was tested against DSH `0.2.1-rc.2`; DSH `0.3.0` is not supported.
 
 ```
-npm install --global dsh-ci-diet@0.5.1
+npm install --global dsh-ci-diet@0.5.2
 ci-diet --version
 ```
 
-Without a global install, replace the `ci-diet` command name with `npx dsh-ci-diet@0.5.1`, for example `npx dsh-ci-diet@0.5.1 report --cwd .`.
+Without a global install, replace the `ci-diet` command name with `npx dsh-ci-diet@0.5.2`, for example `npx dsh-ci-diet@0.5.2 report --cwd .`.
 
 ```
-dsh plugin --profile web add dsh-ci-diet@0.5.1
+dsh plugin --profile web add dsh-ci-diet@0.5.2
 dsh --profile web
 ```
 
