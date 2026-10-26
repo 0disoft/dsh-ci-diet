@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SettingsConnection } from "../../src/client/settings-connection.ts";
+import { SettingsConnection, settingsNamespace } from "../../src/client/settings-connection.ts";
 import type { FormSnapshot, SettingsPathOp } from "../../src/client/settings-connection.ts";
 
 const entry = (entryId = "custom.ci-diet", extra = {}) => ({ entryId, moduleName: "dsh-ci-diet", enabled: true, fiberPhase: "active", ...extra });
@@ -71,6 +71,19 @@ for (const [name, entries, issue, ids] of [
     assert.equal(h.selected.length, 0); assert.equal(h.writes.length, 0);
   });
 }
+
+test("a nested entry falls back to its row id before describe is ready", () => {
+  assert.equal(settingsNamespace("include:ciDiet.bootstrap", undefined), "ciDiet.bootstrap");
+  assert.equal(settingsNamespace("custom.ci-diet", undefined), "custom.ci-diet");
+});
+
+test("nested include entries resolve to the served settings namespace", async () => {
+  const h = harness([entry("include:ciDiet.bootstrap")]);
+  h.mirror({ view: { namespaces: [{ ns: "ciDiet.bootstrap" }] }, error: null });
+  h.connection.connect(); await settle();
+  assert.deepEqual(h.selected, ["ciDiet.bootstrap"]);
+  assert.equal(h.connection.getSnapshot().status, "ready");
+});
 
 test("one active host is selected even if an older disabled installation remains", async () => {
   const h = harness([entry("old", { enabled: false }), entry("new")]);

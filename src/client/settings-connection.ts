@@ -58,6 +58,25 @@ function inventoryEntries(value: unknown): Entry[] {
   });
 }
 
+/** Map a Loader entry id to the settings namespace DSH serves for it.
+ *
+ * Bundle rows are nested under a synthetic include entry, so the public
+ * inventory id is `include:<entry id>` while Settings keys the same row by
+ * `<entry id>`. Prefer the served namespace when the describe mirror is
+ * available, and fall back to the row id itself.
+ */
+export function settingsNamespace(entryId: string, view: unknown): string {
+  const rowId = entryId.startsWith("include:") ? entryId.slice("include:".length) : entryId;
+  if (view === null || typeof view !== "object" || !("namespaces" in view) || !Array.isArray(view.namespaces)) return rowId;
+  const served = new Set<string>();
+  for (const namespace of view.namespaces) {
+    if (namespace !== null && typeof namespace === "object" && "ns" in namespace && typeof namespace.ns === "string") served.add(namespace.ns);
+  }
+  if (served.has(rowId)) return rowId;
+  if (served.has(entryId)) return entryId;
+  return rowId;
+}
+
 /** Keep the host form's atomic writes/revision fence; never infer ownership from settings values. */
 export class SettingsConnection implements ConfigForm {
   private snapshot: FormSnapshot = { status: "loading", writable: false };
@@ -138,8 +157,9 @@ export class SettingsConnection implements ConfigForm {
       // A retry must not move an existing draft/revision onto a replacement entry.
       if (this.entryId !== undefined && this.entryId !== id) { this.fail("form", [id]); return; }
       this.entryId = id;
-      this.form = this.forms.get(id);
       const mirror = this.forms.describe?.();
+      const namespace = settingsNamespace(id, mirror?.getSnapshot().view);
+      this.form = this.forms.get(namespace);
       const sync = () => {
         const current = this.form!.getSnapshot();
         if (current.status === "unavailable") this.fail("form", [id]);

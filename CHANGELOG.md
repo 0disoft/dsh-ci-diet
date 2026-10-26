@@ -5,6 +5,10 @@ Keep a Changelog, and the project uses semantic versioning.
 
 ## Unreleased
 
+- Map the installed bundle's `include:<entry>` inventory id back to the
+  settings namespace the Host serves, so the Settings page works when the
+  bundle is composed through a nested include entry.
+
 ## 0.5.1 (2026-10-26)
 
 - Resolve the settings form from the current profile's active `dsh-ci-diet`
